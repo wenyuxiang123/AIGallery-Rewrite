@@ -220,9 +220,6 @@ fun MobileActionsScreen(
                         // 播放手势
                     },
                     onQuickSwipe = { }
-                        val gesture = deviceControlManager?.gestureRecorder?.createQuickSwipeGesture(direction)
-                        gesture?.let { deviceControlManager?.playGesture(it) }
-                    }
                 )
                 
                 4 -> OperationLogPanel(
