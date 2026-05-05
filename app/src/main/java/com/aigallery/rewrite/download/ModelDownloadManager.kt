@@ -294,6 +294,8 @@ enum class ModelSource {
  * 下载状态枚举
  */
 enum class DownloadStatus {
+    NOT_DOWNLOADED, // 未下载
+    DOWNLOADED,      // 已下载
     PENDING,      // 等待中
     DOWNLOADING,  // 下载中
     PAUSED,       // 已暂停

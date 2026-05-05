@@ -118,7 +118,7 @@ fun MemoryScreen(
                         items(filteredMemories, key = { it.id }) { memory ->
                             MemoryCard(
                                 memory = memory,
-                                onClick = { onNavigateToDetail(memory.id) },
+                                onClick = { onMemoryClick(memory.id) },
                                 onDelete = { viewModel.deleteMemory(memory.id) }
                             )
                         }

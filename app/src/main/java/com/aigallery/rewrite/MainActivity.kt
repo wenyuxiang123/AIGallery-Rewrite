@@ -90,7 +90,7 @@ private fun MainScreen() {
         ) {
             AppNavHost(
                 navController = navController,
-                paddingValues = paddingValues
+                
             )
         }
     }
