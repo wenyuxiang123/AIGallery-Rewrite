@@ -1,6 +1,5 @@
 package com.aigallery.rewrite.ui.screens.llmchat
 
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 
 
 
