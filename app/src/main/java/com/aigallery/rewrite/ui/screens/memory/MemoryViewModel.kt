@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.aigallery.rewrite.memory.MemoryItem
 import com.aigallery.rewrite.memory.MemoryManager
 import com.aigallery.rewrite.memory.MemoryType
+import com.aigallery.rewrite.memory.VectorStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
