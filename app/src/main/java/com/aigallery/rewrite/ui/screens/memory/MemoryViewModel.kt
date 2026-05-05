@@ -18,7 +18,8 @@ class MemoryViewModel @Inject constructor(
 
     // 由于没有完整的依赖注入图，直接创建实例（演示用）
     // 真实项目中应该通过 Hilt 注入
-    private val memoryManager = MemoryManager(application, vectorStore = TODO())
+    private val vectorStore = VectorStore(application)
+    private val memoryManager = MemoryManager(application, vectorStore)
 
     private val _state = MutableStateFlow(MemoryState())
     val state: StateFlow<MemoryState> = _state.asStateFlow()

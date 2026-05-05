@@ -25,44 +25,44 @@ sealed class Screen(
     data object ModelManager : Screen(
         route = "model_manager",
         title = "模型管理",
-        selectedIcon = Icons.Filled.ModelTraining,
-        unselectedIcon = Icons.Outlined.ModelTraining
+        selectedIcon = Icons.Filled.Download,
+        unselectedIcon = Icons.Outlined.Download
     )
 
     data object LLMChat : Screen(
         route = "llm_chat",
         title = "AI对话",
-        selectedIcon = Icons.Filled.Chat,
-        unselectedIcon = Icons.Outlined.Chat
+        selectedIcon = Icons.Filled.ChatBubble,
+        unselectedIcon = Icons.Outlined.ChatBubble
     )
 
     data object Memory : Screen(
         route = "memory",
         title = "记忆中心",
-        selectedIcon = Icons.Filled.Psychology,
-        unselectedIcon = Icons.Outlined.Psychology
+        selectedIcon = Icons.Filled.Memory,
+        unselectedIcon = Icons.Outlined.Memory
     )
 
     data object CustomTasks : Screen(
         route = "custom_tasks",
         title = "自定义任务",
-        selectedIcon = Icons.Filled.Build,
-        unselectedIcon = Icons.Outlined.Build
+        selectedIcon = Icons.Filled.Settings,
+        unselectedIcon = Icons.Outlined.Settings
     )
 
     data object SingleTurn : Screen(
         route = "single_turn",
         title = "单轮任务",
-        selectedIcon = Icons.Filled.Lightbulb,
-        unselectedIcon = Icons.Outlined.Lightbulb
+        selectedIcon = Icons.Filled.Bolt,
+        unselectedIcon = Icons.Outlined.Bolt
     )
 
     // Sub-screens
     data object ChatSession : Screen(
         route = "chat_session/{sessionId}",
         title = "聊天",
-        selectedIcon = Icons.Filled.Chat,
-        unselectedIcon = Icons.Outlined.Chat
+        selectedIcon = Icons.Filled.ChatBubble,
+        unselectedIcon = Icons.Outlined.ChatBubble
     ) {
         fun createRoute(sessionId: String) = "chat_session/$sessionId"
     }
