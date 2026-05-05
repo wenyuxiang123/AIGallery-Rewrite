@@ -38,7 +38,7 @@ fun ModelCard(
                 .padding(16.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -69,7 +69,7 @@ fun ModelCard(
             Spacer(modifier = Modifier.height(8.dp))
 
             Row(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -112,15 +112,15 @@ fun ModelCard(
             // Progress indicator for downloading
             if (model.status == ModelStatus.DOWNLOADING) {
                 LinearProgressIndicator(
-                    progress = { model.downloadProgress },
-                    modifier = Modifier.fillMaxWidth()
+                    progress = model.downloadProgress,
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
             // Action buttons
             Row(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
                 when (model.status) {
@@ -240,7 +240,7 @@ fun MemoryCard(
 
             Column(modifier = Modifier.weight(1f)) {
                 Row(
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
