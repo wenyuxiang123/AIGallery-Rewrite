@@ -158,7 +158,7 @@ fun SingleTurnScreen(
                         // Output area
                         if (state.outputText.isNotEmpty() || state.isLoading) {
                             Spacer(modifier = Modifier.height(16.dp))
-                            HorizontalDivider()
+                            Divider()
                             Spacer(modifier = Modifier.height(16.dp))
 
                             Text(

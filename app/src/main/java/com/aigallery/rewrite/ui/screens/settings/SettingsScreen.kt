@@ -165,7 +165,7 @@ private fun SettingsSection(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
         content()
-        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+        Divider(modifier = Modifier.padding(vertical = 8.dp))
     }
 }
 
