@@ -37,6 +37,20 @@ class ModelDownloadManager @Inject constructor(
     private val downloadIdToModel = mutableMapOf<Long, String>()
 
     /**
+     * 下载完成广播接收器
+     */
+    private val downloadReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == DownloadManager.ACTION_DOWNLOAD_COMPLETE) {
+                val downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
+                if (downloadId != -1L) {
+                    updateProgress()
+                }
+            }
+        }
+    }
+
+    /**
      * 初始化下载接收器
      */
     init {
@@ -58,91 +72,97 @@ class ModelDownloadManager @Inject constructor(
         downloadUrl: String? = null
     ): Long {
         val url = downloadUrl ?: generateDownloadUrl(modelId, source)
-        Log.d(TAG, "Starting download for $modelName from $url")
+        val fileName = "$modelId.mnn"
 
-        val request = DownloadManager.Request(Uri.parse(url)).apply {
-            setTitle(modelName)
-            setDescription("正在下载 AI 模型...")
-            setAllowedOverMetered(false) // 不允许使用计量网络（移动数据）
-            setAllowedOverRoaming(false) // 不允许漫游
-            setDestinationInExternalFilesDir(
-                context,
-                Environment.DIRECTORY_DOWNLOADS,
-                "models/$modelId.bin"
-            )
-            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-        }
+        // 创建下载请求
+        val request = DownloadManager.Request(Uri.parse(url))
+            .setTitle("下载模型: $modelName")
+            .setDescription("正在下载 $modelName")
+            .setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE)
+            .setAllowedOverRoaming(false)
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
 
+        // 开始下载
         val downloadId = downloadManager?.enqueue(request) ?: -1L
 
         if (downloadId != -1L) {
             downloadIdToModel[downloadId] = modelId
-            updateDownloadState(
-                modelId,
-                DownloadState(
-                    modelId = modelId,
-                    modelName = modelName,
-                    status = DownloadStatus.DOWNLOADING,
-                    progress = 0f,
-                    downloadId = downloadId
-                )
-            )
+            updateDownloadState(modelId, DownloadState(
+                modelId = modelId,
+                modelName = modelName,
+                status = DownloadStatus.PENDING,
+                downloadId = downloadId
+            ))
         }
 
         return downloadId
     }
 
     /**
+     * 暂停下载
+     */
+    fun pauseDownload(downloadId: Long) {
+        val modelId = downloadIdToModel[downloadId] ?: return
+        updateDownloadState(modelId, DownloadState(
+            modelId = modelId,
+            modelName = "",
+            status = DownloadStatus.PAUSED,
+            downloadId = downloadId
+        ))
+    }
+
+    /**
      * 取消下载
      */
-    fun cancelDownload(modelId: String) {
-        val state = _downloadStates.value[modelId]
-        state?.downloadId?.let { downloadId ->
-            downloadManager?.remove(downloadId)
-            downloadIdToModel.remove(downloadId)
-            updateDownloadState(modelId, state.copy(status = DownloadStatus.CANCELLED))
+    fun cancelDownload(downloadId: Long) {
+        downloadManager?.remove(downloadId)
+        val modelId = downloadIdToModel.remove(downloadId)
+        if (modelId != null) {
+            updateDownloadState(modelId, DownloadState(
+                modelId = modelId,
+                modelName = "",
+                status = DownloadStatus.CANCELLED,
+                downloadId = downloadId
+            ))
         }
     }
 
     /**
-     * 暂停下载（DownloadManager 不直接支持暂停，使用取消模拟）
+     * 重试下载
      */
-    fun pauseDownload(modelId: String) {
-        cancelDownload(modelId)
-        val state = _downloadStates.value[modelId]
-        state?.let {
-            updateDownloadState(modelId, it.copy(status = DownloadStatus.PAUSED))
-        }
+    fun retryDownload(modelId: String, modelName: String, source: ModelSource) {
+        cancelDownload(getDownloadIdByModelId(modelId))
+        downloadModel(modelId, modelName, source)
     }
 
     /**
-     * 获取下载状态
+     * 根据模型 ID 获取下载 ID
      */
-    fun getDownloadState(modelId: String): DownloadState? {
-        return _downloadStates.value[modelId]
+    private fun getDownloadIdByModelId(modelId: String): Long {
+        return downloadIdToModel.entries.find { it.value == modelId }?.key ?: -1L
     }
 
     /**
-     * 查询下载进度
+     * 更新下载进度
      */
-    fun updateProgress() {
-        val query = DownloadManager.Query()
-        downloadIdToModel.keys.forEach { query.setFilterById(it) }
+    private fun updateProgress() {
+        downloadIdToModel.keys.toList().forEach { downloadId ->
+            val modelId = downloadIdToModel[downloadId] ?: return@forEach
 
-        val cursor = downloadManager?.query(query) ?: return
-        cursor.use {
-            while (it.moveToNext()) {
-                val downloadId = it.getLong(it.getColumnIndexOrThrow(DownloadManager.COLUMN_ID))
-                val bytesDownloaded = it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
-                val bytesTotal = it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
-                val status = it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+            val query = DownloadManager.Query().setFilterById(downloadId)
+            val cursor = downloadManager?.query(query) ?: return@forEach
 
-                val modelId = downloadIdToModel[downloadId] ?: continue
-                val currentState = _downloadStates.value[modelId] ?: continue
+            if (cursor.moveToFirst()) {
+                val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                val bytesDownloadedIndex = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                val bytesTotalIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
 
-                val progress = if (bytesTotal > 0) bytesDownloaded.toFloat() / bytesTotal else 0f
+                val status = cursor.getInt(statusIndex)
+                val bytesDownloaded = cursor.getLong(bytesDownloadedIndex)
+                val bytesTotal = cursor.getLong(bytesTotalIndex)
 
-                val newStatus = when (status) {
+                val downloadStatus = when (status) {
                     DownloadManager.STATUS_SUCCESSFUL -> DownloadStatus.COMPLETED
                     DownloadManager.STATUS_FAILED -> DownloadStatus.FAILED
                     DownloadManager.STATUS_PAUSED -> DownloadStatus.PAUSED
@@ -151,31 +171,35 @@ class ModelDownloadManager @Inject constructor(
                     else -> DownloadStatus.UNKNOWN
                 }
 
-                updateDownloadState(
-                    modelId,
-                    currentState.copy(
-                        status = newStatus,
-                        progress = progress,
-                        downloadedSize = bytesDownloaded.toLong(),
-                        totalSize = bytesTotal.toLong()
-                    )
-                )
+                val progress = if (bytesTotal > 0) bytesDownloaded.toFloat() / bytesTotal.toFloat() else 0f
 
-                // 下载完成时清理映射
-                if (newStatus == DownloadStatus.COMPLETED) {
+                updateDownloadState(modelId, DownloadState(
+                    modelId = modelId,
+                    modelName = "",
+                    status = downloadStatus,
+                    progress = progress,
+                    downloadedSize = bytesDownloaded,
+                    totalSize = bytesTotal,
+                    downloadId = downloadId
+                ))
+
+                // 下载完成后移动模型文件到应用私有目录
+                if (downloadStatus == DownloadStatus.COMPLETED) {
+                    moveModelToAppDir(modelId)
                     downloadIdToModel.remove(downloadId)
-                    moveModelToAppDirectory(modelId)
                 }
             }
+
+            cursor.close()
         }
     }
 
     /**
-     * 将下载完成的模型移动到应用私有目录
+     * 将下载的模型移动到应用私有目录
      */
-    private fun moveModelToAppDirectory(modelId: String) {
+    private fun moveModelToAppDir(modelId: String) {
         try {
-            val sourceDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            val sourceDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             val sourceFile = File(sourceDir, "models/$modelId.bin")
 
             if (sourceFile.exists()) {
@@ -218,20 +242,6 @@ class ModelDownloadManager @Inject constructor(
     private fun updateDownloadState(modelId: String, state: DownloadState) {
         _downloadStates.value = _downloadStates.value.toMutableMap().apply {
             put(modelId, state)
-        }
-    }
-
-    /**
-     * 下载完成广播接收器
-     */
-    private val downloadReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == DownloadManager.ACTION_DOWNLOAD_COMPLETE) {
-                val downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
-                if (downloadId != -1L) {
-                    updateProgress()
-                }
-            }
         }
     }
 

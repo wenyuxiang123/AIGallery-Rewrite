@@ -2,13 +2,10 @@ package com.aigallery.rewrite.memory
 
 import android.content.Context
 import android.util.Log
-import androidx.room.Room
-import com.aigallery.rewrite.data.local.AIGalleryDatabase
-import com.aigallery.rewrite.data.local.entity.MemoryEntities
-import com.aigallery.rewrite.inference.InferenceManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -29,16 +26,8 @@ class VectorStore @Inject constructor(
     // 内存中的向量缓存 (memoryId -> FloatArray)
     private val vectorCache = mutableMapOf<String, FloatArray>()
 
-    // Room 数据库（复用现有数据库）
-    private val database: AIGalleryDatabase by lazy {
-        Room.databaseBuilder(
-            context,
-            AIGalleryDatabase::class.java,
-            "aigallery_db"
-        ).build()
-    }
-
-    private val memoryDao = database.memoryDao()
+    // 内存存储（替代数据库）
+    private val memoryStorage = MutableStateFlow<MutableList<MemoryItem>>(mutableListOf())
 
     /**
      * 添加记忆
@@ -49,21 +38,8 @@ class VectorStore @Inject constructor(
                 // 生成向量嵌入
                 val embedding = generateEmbedding(memory.content)
 
-                // 存入数据库
-                val entity = MemoryEntities.MemoryEntity(
-                    id = memory.id,
-                    content = memory.content,
-                    embedding = embedding.toList(),
-                    memoryType = memory.type.name,
-                    importance = memory.importance,
-                    createdAt = memory.createdAt,
-                    updatedAt = System.currentTimeMillis(),
-                    accessCount = 0,
-                    lastAccessedAt = memory.createdAt,
-                    metadataJson = memory.metadata?.let { serializeMetadata(it) }
-                )
-
-                memoryDao.insertMemory(entity)
+                // 存入内存
+                memoryStorage.value.add(memory)
                 vectorCache[memory.id] = embedding
 
                 Log.d(TAG, "Memory added: ${memory.id}")
@@ -102,19 +78,20 @@ class VectorStore @Inject constructor(
                 val queryVector = generateEmbedding(query)
 
                 // 获取所有候选记忆
-                val allMemories = memoryType?.let {
-                    memoryDao.getMemoriesByType(it.name)
-                } ?: memoryDao.getAllMemories()
+                val allMemories = memoryType?.let { type ->
+                    memoryStorage.value.filter { it.type == type }
+                } ?: memoryStorage.value
 
                 // 计算相似度
-                val results = allMemories.mapNotNull { entity ->
-                    val memoryVector = entity.embedding.toFloatArray()
+                val results = allMemories.mapNotNull { memory ->
+                    val memoryVector = vectorCache[memory.id] ?: generateEmbedding(memory.content)
+                    vectorCache[memory.id] = memoryVector
                     val similarity = cosineSimilarity(queryVector, memoryVector)
 
                     // 只返回相似度大于阈值的结果
                     if (similarity > 0.5f) {
                         MemorySearchResult(
-                            memory = entity.toMemoryItem(),
+                            memory = memory,
                             similarityScore = similarity
                         )
                     } else null
@@ -161,8 +138,7 @@ class VectorStore @Inject constructor(
      */
     suspend fun getMemoriesByType(type: MemoryType): List<MemoryItem> {
         return withContext(Dispatchers.IO) {
-            memoryDao.getMemoriesByType(type.name)
-                .map { it.toMemoryItem() }
+            memoryStorage.value.filter { it.type == type }
         }
     }
 
@@ -170,10 +146,7 @@ class VectorStore @Inject constructor(
      * 获取所有记忆（Flow 形式，UI 可订阅更新）
      */
     fun getAllMemoriesFlow(): Flow<List<MemoryItem>> {
-        return memoryDao.getAllMemoriesFlow()
-            .map { entities ->
-                entities.map { it.toMemoryItem() }
-            }
+        return memoryStorage.map { it.toList() }
     }
 
     /**
@@ -182,11 +155,15 @@ class VectorStore @Inject constructor(
     suspend fun updateMemory(memory: MemoryItem): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                memoryDao.updateMemoryContent(memory.id, memory.content)
-                memoryDao.updateMemoryMetadata(memory.id, serializeMetadata(memory.metadata ?: emptyMap()))
-                memoryDao.updateMemoryType(memory.id, memory.type.name)
-                memoryDao.updateImportance(memory.id, memory.importance)
-                true
+                val index = memoryStorage.value.indexOfFirst { it.id == memory.id }
+                if (index != -1) {
+                    memoryStorage.value[index] = memory
+                    // 重新生成向量
+                    vectorCache[memory.id] = generateEmbedding(memory.content)
+                    true
+                } else {
+                    false
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Update failed", e)
                 false
@@ -200,9 +177,9 @@ class VectorStore @Inject constructor(
     suspend fun deleteMemory(memoryId: String): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                memoryDao.deleteMemoryById(memoryId)
+                val removed = memoryStorage.value.removeAll { it.id == memoryId }
                 vectorCache.remove(memoryId)
-                true
+                removed
             } catch (e: Exception) {
                 Log.e(TAG, "Delete failed", e)
                 false
@@ -215,7 +192,9 @@ class VectorStore @Inject constructor(
      */
     suspend fun clearMemoryType(type: MemoryType): Int {
         return withContext(Dispatchers.IO) {
-            memoryDao.deleteMemoriesByType(type.name)
+            val toRemove = memoryStorage.value.filter { it.type == type }
+            memoryStorage.value.removeAll(toRemove)
+            toRemove.size
         }
     }
 
@@ -224,8 +203,14 @@ class VectorStore @Inject constructor(
      */
     suspend fun recordAccess(memoryId: String) {
         withContext(Dispatchers.IO) {
-            memoryDao.incrementAccessCount(memoryId)
-            memoryDao.updateLastAccessed(memoryId, System.currentTimeMillis())
+            val index = memoryStorage.value.indexOfFirst { it.id == memoryId }
+            if (index != -1) {
+                val memory = memoryStorage.value[index]
+                memoryStorage.value[index] = memory.copy(
+                    accessCount = memory.accessCount + 1,
+                    lastAccessedAt = System.currentTimeMillis()
+                )
+            }
         }
     }
 
@@ -282,40 +267,6 @@ class VectorStore @Inject constructor(
 
         val denominator = sqrt(normA) * sqrt(normB)
         return if (denominator > 0) dotProduct / denominator else 0f
-    }
-
-    /**
-     * 序列化元数据
-     */
-    private fun serializeMetadata(metadata: Map<String, String>): String {
-        return metadata.entries.joinToString("||") { "${it.key}=${it.value}" }
-    }
-
-    /**
-     * 反序列化元数据
-     */
-    private fun deserializeMetadata(json: String?): Map<String, String> {
-        if (json.isNullOrEmpty()) return emptyMap()
-        return json.split("||").associate {
-            val parts = it.split("=", limit = 2)
-            parts.getOrElse(0) { "" } to parts.getOrElse(1) { "" }
-        }
-    }
-
-    /**
-     * Entity 转 MemoryItem
-     */
-    private fun MemoryEntities.MemoryEntity.toMemoryItem(): MemoryItem {
-        return MemoryItem(
-            id = this.id,
-            content = this.content,
-            type = MemoryType.valueOf(this.memoryType),
-            importance = this.importance,
-            createdAt = this.createdAt,
-            accessCount = this.accessCount,
-            lastAccessedAt = this.lastAccessedAt,
-            metadata = deserializeMetadata(this.metadataJson)
-        )
     }
 }
 

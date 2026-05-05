@@ -144,7 +144,7 @@ object InferenceEngineFactory {
     /**
      * 设置活动引擎
      */
-    fun setActiveEngine(engine: InferenceEngine) {
+    suspend fun setActiveEngine(engine: InferenceEngine) {
         activeEngine?.release()
         activeEngine = engine
     }
