@@ -81,7 +81,7 @@ fun AppNavHost(
         }
 
         composable(Screen.Settings.route) {
-            SettingsScreen()
+            SettingsScreen(onNavigateBack = { navController.popBackStack() })
         }
 
         // Detail screens
