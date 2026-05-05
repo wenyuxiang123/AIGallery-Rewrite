@@ -203,7 +203,7 @@ class DeviceControlManager @Inject constructor(
                     "SCREENSHOT" -> AccessibilityService.GLOBAL_ACTION_TAKE_SCREENSHOT
                     else -> return Result.failure(IllegalArgumentException("Unknown key: $keyName"))
                 }
-                val success = service.performGlobalAction(action)
+                val success = service.executeGlobalAction(action)
                 logOperation("pressKey", "按键 $keyName", success)
                 if (success) Result.success(Unit) else Result.failure(Exception("Key press failed"))
             }
@@ -285,8 +285,8 @@ class DeviceControlManager @Inject constructor(
     /**
      * 执行全局操作
      */
-    fun performGlobalAction(action: Int): Boolean {
-        val success = accessibilityService?.performGlobalAction(action) ?: false
+    fun executeGlobalAction(action: Int): Boolean {
+        val success = accessibilityService?.executeGlobalAction(action) ?: false
         logOperation("globalAction", "执行全局操作 $action", success)
         return success
     }

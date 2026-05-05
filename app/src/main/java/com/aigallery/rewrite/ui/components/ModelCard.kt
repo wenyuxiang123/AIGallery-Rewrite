@@ -74,30 +74,36 @@ fun ModelCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AssistChip(
-                        onClick = {},
-                        label = { Text(model.parameters) },
-                        leadingIcon = {
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.padding(4.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                             Icon(
                                 Icons.Default.Memory,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )
-                        },
-                        enabled = false
-                    )
-                    AssistChip(
-                        onClick = {},
-                        label = { Text(model.size) },
-                        leadingIcon = {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(text = model.parameters, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.padding(4.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                             Icon(
                                 Icons.Default.Storage,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )
-                        },
-                        enabled = false
-                    )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(text = model.size, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
                 }
             }
 

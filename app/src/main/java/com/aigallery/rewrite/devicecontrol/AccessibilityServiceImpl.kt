@@ -318,7 +318,7 @@ class AccessibilityServiceImpl : AccessibilityService() {
     /**
      * 执行全局操作
      */
-    fun performGlobalAction(action: Int): Boolean {
+    fun executeGlobalAction(action: Int): Boolean {
         return try {
             super.performGlobalAction(action)
         } catch (e: Exception) {
