@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AI Gallery</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">首页</string>
+    <string name="nav_model_manager">模型管理</string>
+    <string name="nav_llm_chat">AI 对话</string>
+    <string name="nav_memory">记忆中心</string>
+    <string name="nav_custom_tasks">自定义任务</string>
+    <string name="nav_single_turn">单轮任务</string>
+    <string name="nav_settings">设置</string>
+
+    <!-- Model Manager -->
+    <string name="model_download">下载</string>
+    <string name="model_delete">删除</string>
+    <string name="model_downloading">下载中…</string>
+    <string name="model_downloaded">已下载</string>
+    <string name="model_not_downloaded">未下载</string>
+    <string name="model_download_failed">下载失败</string>
+    <string name="model_size">大小: %s</string>
+    <string name="model_provider">来源: %s</string>
+
+    <!-- LLM Chat -->
+    <string name="chat_placeholder">输入您的问题…</string>
+    <string name="chat_send">发送</string>
+    <string name="chat_clear">清空对话</string>
+    <string name="chat_thinking">思考中…</string>
+    <string name="chat_voice_input">语音输入</string>
+    <string name="chat_image_input">图片输入</string>
+
+    <!-- Memory -->
+    <string name="memory_working">工作记忆</string>
+    <string name="memory_short_term">短期记忆</string>
+    <string name="memory_long_term">长期记忆</string>
+    <string name="memory_knowledge_base">知识库</string>
+    <string name="memory_persona">角色记忆</string>
+    <string name="memory_add">添加记忆</string>
+    <string name="memory_edit">编辑记忆</string>
+    <string name="memory_delete">删除记忆</string>
+    <string name="memory_search">搜索记忆</string>
+
+    <!-- Custom Tasks -->
+    <string name="task_agent_chat">Agent 对话</string>
+    <string name="task_mobile_actions">手机控制</string>
+    <string name="task_example">示例任务</string>
+    <string name="task_tiny_garden">Tiny Garden</string>
+
+    <!-- Single Turn -->
+    <string name="single_writing">写作助手</string>
+    <string name="single_translation">翻译</string>
+    <string name="single_summary">摘要</string>
+    <string name="single_rewrite">改写</string>
+
+    <!-- Settings -->
+    <string name="settings_theme">主题</string>
+    <string name="settings_language">语言</string>
+    <string name="settings_clear_cache">清理缓存</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_version">版本 %s</string>
+
+    <!-- Common -->
+    <string name="confirm">确认</string>
+    <string name="cancel">取消</string>
+    <string name="save">保存</string>
+    <string name="delete">删除</string>
+    <string name="edit">编辑</string>
+    <string name="error">错误</string>
+    <string name="success">成功</string>
+    <string name="loading">加载中…</string>
+    <string name="retry">重试</string>
+    <string name="empty">暂无数据</string>
+
+    <!-- Device Control - 爱马仕级全操控 -->
+    <string name="accessibility_service_name">AI Gallery 设备控制</string>
+    <string name="accessibility_service_description">AI Gallery 设备控制服务可让您通过语音或文字命令控制您的手机设备，包括点击、滑动、输入文本、开关WiFi/蓝牙、调节音量/亮度、发送短信、拨打电话等操作。\n\n使用此服务即表示您同意授权AI Gallery访问您的屏幕内容以实现设备控制功能。</string>
+    
+    <!-- Device Control UI -->
+    <string name="device_control_title">爱马仕级全操控</string>
+    <string name="accessibility_service_enabled">无障碍服务已启用</string>
+    <string name="accessibility_service_disabled">无障碍服务未启用</string>
+    <string name="enable_accessibility_service">启用无障碍服务</string>
+    <string name="quick_control_panel">快捷控制面板</string>
+    <string name="natural_language_control">自然语言控制</string>
+    <string name="enter_command_hint">输入自然语言命令，如\"打开微信\"、\"关闭WiFi\"…</string>
+    <string name="gesture_recording">手势录制</string>
+    <string name="gesture_playback">手势回放</string>
+    <string name="operation_log">操作日志</string>
+    <string name="screen_preview">屏幕预览</string>
+    <string name="screen_analysis">屏幕分析</string>
+    
+    <!-- Quick Controls -->
+    <string name="wifi">WiFi</string>
+    <string name="bluetooth">蓝牙</string>
+    <string name="flashlight">手电筒</string>
+    <string name="brightness">亮度</string>
+    <string name="volume">音量</string>
+    <string name="airplane_mode">飞行模式</string>
+    <string name="location">定位</string>
+    <string name="vibrate_mode">震动模式</string>
+    
+    <!-- Danger Confirmation -->
+    <string name="danger_operation_warning">危险操作警告</string>
+    <string name="danger_operation_message">此操作需要您的确认才能执行：%s</string>
+    <string name="proceed_anyway">仍然执行</string>
+    
+    <!-- Operation Results -->
+    <string name="operation_success">操作成功</string>
+    <string name="operation_failed">操作失败</string>
+    <string name="permission_denied">权限不足</string>
+</resources>
