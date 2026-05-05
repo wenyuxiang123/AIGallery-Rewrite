@@ -1,4 +1,8 @@
 package com.aigallery.rewrite.ui.screens.llmchat
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.annotation.OptIn
+
+@file:OptIn(ExperimentalMaterial3Api::class)
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
