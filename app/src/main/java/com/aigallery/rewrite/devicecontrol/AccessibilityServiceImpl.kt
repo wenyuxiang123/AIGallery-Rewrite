@@ -170,13 +170,13 @@ class AccessibilityServiceImpl : AccessibilityService() {
      */
     fun clickNode(node: AccessibilityNodeInfo): Boolean {
         return if (node.isClickable) {
-            performAction(node, AccessibilityNodeInfo.ACTION_CLICK)
+            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         } else {
             // 尝试向上查找可点击的父节点
             var parent = node.parent
             while (parent != null) {
                 if (parent.isClickable) {
-                    val result = performAction(parent, AccessibilityNodeInfo.ACTION_CLICK)
+                    val result = parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                     parent.recycle()
                     return result
                 }
@@ -193,9 +193,9 @@ class AccessibilityServiceImpl : AccessibilityService() {
      */
     fun longClickNode(node: AccessibilityNodeInfo): Boolean {
         return if (node.isLongClickable) {
-            performAction(node, AccessibilityNodeInfo.ACTION_LONG_CLICK)
+            node.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)
         } else {
-            performAction(node, AccessibilityNodeInfo.ACTION_LONG_CLICK)
+            node.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)
         }
     }
 
@@ -258,7 +258,7 @@ class AccessibilityServiceImpl : AccessibilityService() {
         val arguments = Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
         }
-        return performAction(node, AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+        return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
     }
 
     /**
@@ -266,7 +266,7 @@ class AccessibilityServiceImpl : AccessibilityService() {
      */
     fun scrollForward(node: AccessibilityNodeInfo): Boolean {
         return if (node.isScrollable) {
-            performAction(node, AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
         } else {
             false
         }
@@ -277,7 +277,7 @@ class AccessibilityServiceImpl : AccessibilityService() {
      */
     fun scrollBackward(node: AccessibilityNodeInfo): Boolean {
         return if (node.isScrollable) {
-            performAction(node, AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
+            node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
         } else {
             false
         }
@@ -317,7 +317,7 @@ class AccessibilityServiceImpl : AccessibilityService() {
     /**
      * 执行全局操作
      */
-    override fun performGlobalAction(action: Int): Boolean {
+    fun doPerformGlobalAction(action: Int): Boolean {
         return try {
             super.performGlobalAction(action)
         } catch (e: Exception) {
@@ -341,13 +341,13 @@ class AccessibilityServiceImpl : AccessibilityService() {
                 moveTo(x.toFloat(), y.toFloat())
             }
             
-            val stroke = GestureDescription.StrokeDescription(
+            val stroke = AccessibilityService.GestureDescription.StrokeDescription(
                 path,
                 0,
                 duration
             )
             
-            val gesture = GestureDescription.Builder()
+            val gesture = AccessibilityService.GestureDescription.Builder()
                 .addStroke(stroke)
                 .build()
             
@@ -377,13 +377,13 @@ class AccessibilityServiceImpl : AccessibilityService() {
                 lineTo(endX.toFloat(), endY.toFloat())
             }
             
-            val stroke = GestureDescription.StrokeDescription(
+            val stroke = AccessibilityService.GestureDescription.StrokeDescription(
                 path,
                 0,
                 duration
             )
             
-            val gesture = GestureDescription.Builder()
+            val gesture = AccessibilityService.GestureDescription.Builder()
                 .addStroke(stroke)
                 .build()
             

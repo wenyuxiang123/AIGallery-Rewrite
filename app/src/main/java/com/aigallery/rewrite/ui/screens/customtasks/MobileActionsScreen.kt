@@ -1202,7 +1202,7 @@ private suspend fun processNaturalLanguageCommand(
         
         // 分析屏幕
         cmd.contains("分析") || cmd.contains("看看") || cmd.contains("这是什么") -> {
-            val analysis = manager.analyzeScreen()
+            val analysis = manager.screenAnalyzer.analyzeScreen()
             if (analysis != null) {
                 manager.generateLLMDescription()
             } else {

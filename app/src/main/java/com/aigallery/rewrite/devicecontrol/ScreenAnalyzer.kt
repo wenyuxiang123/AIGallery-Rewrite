@@ -88,9 +88,9 @@ class ScreenAnalyzer(
      * 返回结构化的屏幕描述，供LLM理解界面
      */
     fun analyzeScreen(): ScreenDescription? {
-        val rootNode = accessibilityService?.rootNode?.value ?: return null
+        val rootNode = AccessibilityServiceImpl.rootNode.value ?: return null
         
-        val activityName = accessibilityService.currentActivity.value ?: "Unknown"
+        val activityName = AccessibilityServiceImpl.currentActivity.value ?: "Unknown"
         val packageName = rootNode.packageName?.toString() ?: "Unknown"
         
         val allElements = mutableListOf<UIElement>()

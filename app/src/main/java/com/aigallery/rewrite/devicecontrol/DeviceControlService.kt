@@ -637,7 +637,7 @@ class DeviceControlService @Inject constructor(
      */
     fun toggleLocation(enabled: Boolean): Result<Unit> {
         return try {
-            if (Settings.Secure.canWrite(context)) {
+            if (Settings.System.canWrite(context)) {
                 Settings.Secure.putInt(
                     context.contentResolver,
                     Settings.Secure.LOCATION_MODE,
