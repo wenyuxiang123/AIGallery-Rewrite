@@ -594,7 +594,7 @@ private fun InfoCard() {
  */
 private fun openAccessibilitySettings(context: Context) {
     val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        Intent(Settings.ACTION_ACCESSIBILITY_DETAILS_SETTINGS)
+        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
     } else {
         Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
     }

@@ -139,14 +139,14 @@ class ModelDownloadManager @Inject constructor(
     /**
      * 根据模型 ID 获取下载 ID
      */
-    private fun getDownloadIdByModelId(modelId: String): Long {
+    fun getDownloadIdByModelId(modelId: String): Long {
         return downloadIdToModel.entries.find { it.value == modelId }?.key ?: -1L
     }
 
     /**
      * 更新下载进度
      */
-    private fun updateProgress() {
+    fun updateProgress() {
         downloadIdToModel.keys.toList().forEach { downloadId ->
             val modelId = downloadIdToModel[downloadId] ?: return@forEach
 

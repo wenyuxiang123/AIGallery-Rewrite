@@ -11,6 +11,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.aigallery.rewrite.download.DownloadStatus
+import com.aigallery.rewrite.domain.model.ModelStatus
 import com.aigallery.rewrite.ui.components.EmptyState
 import com.aigallery.rewrite.ui.components.ModelCard
 
@@ -94,10 +96,22 @@ fun ModelManagerScreen(
                         }
 
                         items(filteredModels, key = { it.id }) { model ->
+                            // 将 ModelStatus 转换为 DownloadStatus
+                            val downloadStatus = when (model.status) {
+                                ModelStatus.DOWNLOADING -> DownloadStatus.DOWNLOADING
+                                ModelStatus.PAUSED -> DownloadStatus.PAUSED
+                                ModelStatus.DOWNLOADED -> DownloadStatus.DOWNLOADED
+                                ModelStatus.FAILED, ModelStatus.DOWNLOAD_FAILED -> DownloadStatus.FAILED
+                                else -> DownloadStatus.NOT_DOWNLOADED
+                            }
+
                             ModelCard(
                                 model = model,
+                                downloadState = downloadStatus,
+                                downloadProgress = model.downloadProgress,
                                 onDownload = { viewModel.downloadModel(model.id) },
-                                onPause = { /* TODO: Implement pause */ },
+                                onPause = { viewModel.pauseDownload(model.id) },
+                                onResume = { viewModel.resumeDownload(model.id) },
                                 onCancel = { viewModel.cancelDownload(model.id) },
                                 onDelete = { viewModel.deleteModel(model.id) },
                                 onSelect = { onModelSelected(model.id) }

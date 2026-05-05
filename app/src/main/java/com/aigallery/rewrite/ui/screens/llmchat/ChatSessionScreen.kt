@@ -46,7 +46,7 @@ fun ChatSessionScreen(
             TopAppBar(
                 title = { Text("AI 对话") },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
                 },

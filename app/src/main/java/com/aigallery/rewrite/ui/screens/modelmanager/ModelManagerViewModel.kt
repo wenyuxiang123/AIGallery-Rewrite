@@ -67,7 +67,7 @@ class ModelManagerViewModel @Inject constructor(
                             status = ModelStatus.PAUSED,
                             downloadProgress = downloadState.progress
                         )
-                        DownloadStatus.COMPLETED -> model.copy(
+                        DownloadStatus.COMPLETED, DownloadStatus.DOWNLOADED -> model.copy(
                             status = ModelStatus.DOWNLOADED,
                             downloadProgress = 1f
                         )
@@ -137,7 +137,10 @@ class ModelManagerViewModel @Inject constructor(
     }
 
     fun cancelDownload(modelId: String) {
-        downloadManager.cancelDownload(modelId)
+        val downloadId = downloadManager.getDownloadIdByModelId(modelId)
+        if (downloadId != -1L) {
+            downloadManager.cancelDownload(downloadId)
+        }
         _state.update { state ->
             state.copy(
                 models = state.models.map { m ->
@@ -150,7 +153,15 @@ class ModelManagerViewModel @Inject constructor(
     }
 
     fun pauseDownload(modelId: String) {
-        downloadManager.pauseDownload(modelId)
+        val downloadId = downloadManager.getDownloadIdByModelId(modelId)
+        if (downloadId != -1L) {
+            downloadManager.pauseDownload(downloadId)
+        }
+    }
+
+    fun resumeDownload(modelId: String) {
+        val model = _state.value.models.find { it.id == modelId } ?: return
+        downloadModel(modelId) // 简单实现：重新启动下载
     }
 
     fun deleteModel(modelId: String) {

@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.aigallery.rewrite.domain.model.AIModel
 import com.aigallery.rewrite.domain.model.ModelStatus
+import com.aigallery.rewrite.download.DownloadStatus
 
 /**
  * 模型卡片组件
@@ -24,8 +25,11 @@ import com.aigallery.rewrite.domain.model.ModelStatus
 @Composable
 fun ModelCard(
     model: AIModel,
+    downloadState: DownloadStatus = DownloadStatus.NOT_DOWNLOADED,
+    downloadProgress: Float = 0f,
     onDownload: () -> Unit,
     onPause: () -> Unit = {},
+    onResume: () -> Unit = {},
     onCancel: () -> Unit = {},
     onDelete: () -> Unit,
     onSelect: () -> Unit = {}
@@ -59,145 +63,170 @@ fun ModelCard(
                         text = model.description,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
+                        maxLines = 2
                     )
                 }
 
                 // 状态标签
-                StatusBadge(model.status)
+                StatusBadge(status = downloadState)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 模型元数据
+            // 模型信息标签行
             Row(
-                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 ModelInfoChip(
                     icon = Icons.Default.Memory,
-                    label = "${model.sizeInGB} GB"
+                    label = model.size
                 )
                 ModelInfoChip(
                     icon = Icons.Default.Speed,
-                    label = "${model.params}B 参数"
+                    label = "${model.parameters} 参数"
                 )
                 ModelInfoChip(
                     icon = Icons.Default.Language,
-                    label = model.provider.name
+                    label = model.provider.displayName
                 )
             }
 
+            Spacer(modifier = Modifier.height(12.dp))
+
             // 下载进度条（下载中显示）
-            if (model.status == ModelStatus.DOWNLOADING) {
+            if (downloadState == DownloadStatus.DOWNLOADING ||
+                downloadState == DownloadStatus.PAUSED) {
+                val progress by animateFloatAsState(
+                    targetValue = if (downloadProgress > 0f) downloadProgress else 0f,
+                    label = "download_progress"
+                )
+
+                Column {
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "${(progress * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(12.dp))
-                DownloadProgressBar(progress = model.downloadProgress)
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 操作按钮区域
+            // 操作按钮行
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                when (model.status) {
-                    ModelStatus.NOT_DOWNLOADED -> {
+                when (downloadState) {
+                    DownloadStatus.NOT_DOWNLOADED -> {
                         Button(
                             onClick = onDownload,
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
-                            )
+                            modifier = Modifier.weight(1f)
                         ) {
                             Icon(Icons.Default.Download, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text("下载")
                         }
                     }
 
-                    ModelStatus.DOWNLOADING -> {
+                    DownloadStatus.DOWNLOADING -> {
                         OutlinedButton(
-                            onClick = onCancel,
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
-                            )
-                        ) {
-                            Icon(Icons.Default.Close, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("取消")
-                        }
-                        Button(
                             onClick = onPause,
                             modifier = Modifier.weight(1f)
                         ) {
                             Icon(Icons.Default.Pause, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text("暂停")
-                        }
-                    }
-
-                    ModelStatus.PAUSED -> {
-                        Button(
-                            onClick = onDownload,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("继续")
                         }
                         OutlinedButton(
                             onClick = onCancel,
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
-                            )
+                            modifier = Modifier.weight(1f)
                         ) {
                             Icon(Icons.Default.Close, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text("取消")
                         }
                     }
 
-                    ModelStatus.DOWNLOADED -> {
+                    DownloadStatus.PAUSED -> {
+                        OutlinedButton(
+                            onClick = onResume,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("继续")
+                        }
+                        OutlinedButton(
+                            onClick = onCancel,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("取消")
+                        }
+                    }
+
+                    DownloadStatus.DOWNLOADED, DownloadStatus.COMPLETED -> {
                         Button(
                             onClick = onSelect,
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.tertiary
-                            )
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("使用此模型")
+                            Icon(Icons.Default.Check, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("使用模型")
                         }
                         OutlinedButton(
                             onClick = onDelete,
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
-                            )
+                            modifier = Modifier.weight(1f)
                         ) {
                             Icon(Icons.Default.Delete, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("删除")
                         }
                     }
 
-                    ModelStatus.FAILED -> {
+                    DownloadStatus.FAILED -> {
                         Button(
                             onClick = onDownload,
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.error
-                            )
+                            modifier = Modifier.weight(1f)
                         ) {
                             Icon(Icons.Default.Refresh, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text("重试")
+                        }
+                        OutlinedButton(
+                            onClick = onDelete,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("删除")
                         }
                     }
 
-                    else -> {}
+                    else -> {
+                        Button(
+                            onClick = onDownload,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("下载")
+                        }
+                    }
                 }
             }
         }
@@ -208,29 +237,24 @@ fun ModelCard(
  * 状态标签组件
  */
 @Composable
-private fun StatusBadge(status: ModelStatus) {
-    val (bgColor, textColor, label) = when (status) {
-        ModelStatus.NOT_DOWNLOADED -> Triple(
-            MaterialTheme.colorScheme.surfaceVariant,
-            MaterialTheme.colorScheme.onSurfaceVariant,
-            "未下载"
-        )
-        ModelStatus.DOWNLOADING -> Triple(
+private fun StatusBadge(status: DownloadStatus) {
+    val (backgroundColor, textColor, label) = when (status) {
+        DownloadStatus.DOWNLOADING -> Triple(
             MaterialTheme.colorScheme.primaryContainer,
             MaterialTheme.colorScheme.onPrimaryContainer,
             "下载中"
         )
-        ModelStatus.PAUSED -> Triple(
-            Color(0xFFFFF3E0),
-            Color(0xFFE65100),
+        DownloadStatus.PAUSED -> Triple(
+            MaterialTheme.colorScheme.secondaryContainer,
+            MaterialTheme.colorScheme.onSecondaryContainer,
             "已暂停"
         )
-        ModelStatus.DOWNLOADED -> Triple(
+        DownloadStatus.DOWNLOADED, DownloadStatus.COMPLETED -> Triple(
             MaterialTheme.colorScheme.tertiaryContainer,
             MaterialTheme.colorScheme.onTertiaryContainer,
-            "已就绪"
+            "已下载"
         )
-        ModelStatus.FAILED -> Triple(
+        DownloadStatus.FAILED -> Triple(
             MaterialTheme.colorScheme.errorContainer,
             MaterialTheme.colorScheme.onErrorContainer,
             "下载失败"
@@ -238,79 +262,45 @@ private fun StatusBadge(status: ModelStatus) {
         else -> Triple(
             MaterialTheme.colorScheme.surfaceVariant,
             MaterialTheme.colorScheme.onSurfaceVariant,
-            status.name
+            "未下载"
         )
     }
 
     Surface(
         shape = CircleShape,
-        color = bgColor
+        color = backgroundColor
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = textColor,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         )
     }
 }
 
 /**
- * 模型信息标签
+ * 模型信息标签组件
  */
 @Composable
 private fun ModelInfoChip(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String
 ) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-/**
- * 下载进度条
- */
-@Composable
-private fun DownloadProgressBar(progress: Float) {
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress,
-        label = "progress"
-    )
-
-    Column {
-        LinearProgressIndicator(
-            progress = { animatedProgress },
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(4.dp)),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = "${(animatedProgress * 100).toInt()}%",
+            text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp)
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
