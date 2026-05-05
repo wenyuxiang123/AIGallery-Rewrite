@@ -1,35 +1,43 @@
 package com.aigallery.rewrite.ui.screens.llmchat
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.aigallery.rewrite.ui.components.ChatBubble
-import com.aigallery.rewrite.ui.components.EmptyState
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatSessionScreen(
-    sessionId: String,
-    onNavigateBack: () -> Unit,
-    viewModel: ChatSessionViewModel = hiltViewModel()
+    viewModel: ChatSessionViewModel = hiltViewModel(),
+    onBack: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
-    var showClearDialog by remember { mutableStateOf(false) }
+    var userInput by remember { mutableStateOf("") }
 
-    // Scroll to bottom when new messages arrive
-    LaunchedEffect(state.messages.size) {
+    // 自动滚动到底部
+    LaunchedEffect(state.messages.size, state.isGenerating) {
         if (state.messages.isNotEmpty()) {
             coroutineScope.launch {
                 listState.animateScrollToItem(state.messages.size - 1)
@@ -40,143 +48,359 @@ fun ChatSessionScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text(state.session?.title ?: "对话")
-                        state.selectedModel?.let { model ->
-                            Text(
-                                text = model.name,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                },
+                title = { Text("AI 对话") },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showClearDialog = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "清空对话")
+                    IconButton(onClick = viewModel::clearChat) {
+                        Icon(Icons.Default.DeleteSweep, contentDescription = "清除对话")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
             )
         },
         bottomBar = {
-            ChatInputBar(
-                inputText = state.inputText,
-                onInputChange = viewModel::updateInputText,
-                onSend = viewModel::sendMessage,
-                isLoading = state.isLoading
+            BottomInputBar(
+                input = userInput,
+                onInputChange = { userInput = it },
+                onSend = {
+                    viewModel.sendMessage(userInput)
+                    userInput = ""
+                },
+                onStop = viewModel::stopGeneration,
+                isGenerating = state.isGenerating
             )
         }
     ) { paddingValues ->
-        if (state.messages.isEmpty()) {
-            EmptyState(
-                title = "开始对话",
-                description = "输入消息与AI对话",
-                modifier = Modifier.padding(paddingValues)
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                state = listState,
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(state.messages, key = { it.id }) { message ->
-                    ChatBubble(message = message)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            if (state.messages.isEmpty()) {
+                // 空状态
+                EmptyChatState()
+            } else {
+                // 消息列表
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(state.messages, key = { it.id }) { message ->
+                        ChatMessageBubble(message = message)
+                    }
+
+                    // 底部留白
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
                 }
             }
         }
     }
+}
 
-    if (showClearDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearDialog = false },
-            title = { Text("清空对话") },
-            text = { Text("确定要清空当前对话吗？") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.clearChat()
-                        showClearDialog = false
-                    }
-                ) {
-                    Text("清空", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearDialog = false }) {
-                    Text("取消")
-                }
+/**
+ * 空聊天状态
+ */
+@Composable
+private fun EmptyChatState() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Card(
+            modifier = Modifier.size(120.dp),
+            shape = CircleShape,
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            )
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                Icon(
+                    imageVector = Icons.Default.ChatBubble,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(60.dp)
+                        .align(Alignment.Center),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
             }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "开始你的对话",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
         )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "输入消息开始与 AI 聊天",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // 快捷提示
+        QuickPromptChips()
     }
 }
 
+/**
+ * 快捷提示标签
+ */
 @Composable
-private fun ChatInputBar(
-    inputText: String,
+private fun QuickPromptChips() {
+    val prompts = listOf(
+        "介绍一下自己",
+        "你有什么功能？",
+        "支持哪些模型？",
+        "什么是记忆系统？"
+    )
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = "试试这些问题：",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalGap = 8.dp
+        ) {
+            prompts.forEach { prompt ->
+                AssistChip(
+                    onClick = { /* 点击后自动填入输入框 */ },
+                    label = { Text(prompt) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 聊天消息气泡
+ */
+@Composable
+private fun ChatMessageBubble(message: ChatMessage) {
+    val isUser = message.role == MessageRole.USER
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+    ) {
+        // AI 头像
+        if (!isUser) {
+            Avatar(isUser = false)
+            Spacer(modifier = Modifier.width(12.dp))
+        }
+
+        // 消息气泡
+        val bubbleShape = if (isUser) {
+            RoundedCornerShape(topStart = 16.dp, topEnd = 4.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
+        } else {
+            RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
+        }
+
+        val bubbleColor = if (isUser) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        }
+
+        val textColor = if (isUser) {
+            MaterialTheme.colorScheme.onPrimary
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        }
+
+        Surface(
+            shape = bubbleShape,
+            color = bubbleColor,
+            modifier = Modifier.widthIn(max = 280.dp)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = message.content,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = textColor
+                )
+
+                // 正在生成指示器
+                if (message.isStreaming) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(textColor.copy(alpha = 0.3f))
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(textColor.copy(alpha = 0.5f))
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(textColor.copy(alpha = 0.7f))
+                        )
+                    }
+                }
+            }
+        }
+
+        // 用户头像
+        if (isUser) {
+            Spacer(modifier = Modifier.width(12.dp))
+            Avatar(isUser = true)
+        }
+    }
+}
+
+/**
+ * 头像组件
+ */
+@Composable
+private fun Avatar(isUser: Boolean) {
+    val backgroundColor = if (isUser) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.tertiaryContainer
+    }
+    val contentColor = if (isUser) {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    } else {
+        MaterialTheme.colorScheme.onTertiaryContainer
+    }
+    val icon = if (isUser) Icons.Default.Person else Icons.Default.SmartToy
+
+    Surface(
+        shape = CircleShape,
+        color = backgroundColor,
+        modifier = Modifier.size(36.dp)
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(20.dp)
+                    .align(Alignment.Center),
+                tint = contentColor
+            )
+        }
+    }
+}
+
+/**
+ * 底部输入栏
+ */
+@Composable
+private fun BottomInputBar(
+    input: String,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
-    isLoading: Boolean
+    onStop: () -> Unit,
+    isGenerating: Boolean
 ) {
     Surface(
-        tonalElevation = 3.dp
+        shadowElevation = 8.dp,
+        tonalElevation = 2.dp
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Image input
-            IconButton(onClick = { /* Add image */ }) {
-                Icon(
-                    Icons.Default.Image,
-                    contentDescription = "添加图片",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            // Voice input
-            IconButton(onClick = { /* Voice input */ }) {
-                Icon(
-                    Icons.Default.Mic,
-                    contentDescription = "语音输入",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            // Text input
-            OutlinedTextField(
-                value = inputText,
-                onValueChange = onInputChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("输入您的问题...") },
-                maxLines = 4,
-                enabled = !isLoading
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            // Send button
-            FilledIconButton(
-                onClick = onSend,
-                enabled = inputText.isNotBlank() && !isLoading
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // 正在生成提示
+            AnimatedVisibility(
+                visible = isGenerating,
+                enter = fadeIn(),
+                exit = fadeOut()
             ) {
-                if (isLoading) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(16.dp),
                         strokeWidth = 2.dp
                     )
-                } else {
-                    Icon(Icons.Default.Send, contentDescription = "发送")
+                    Text(
+                        text = "AI 正在生成...",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    TextButton(onClick = onStop) {
+                        Text("停止")
+                    }
+                }
+            }
+
+            // 输入框
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = onInputChange,
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("输入消息...") },
+                    shape = RoundedCornerShape(24.dp),
+                    maxLines = 4
+                )
+
+                val sendEnabled = input.isNotBlank() && !isGenerating
+                IconButton(
+                    onClick = onSend,
+                    enabled = sendEnabled,
+                    modifier = Modifier.background(
+                        color = if (sendEnabled) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant,
+                        shape = CircleShape
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Send,
+                        contentDescription = "发送",
+                        tint = if (sendEnabled) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }

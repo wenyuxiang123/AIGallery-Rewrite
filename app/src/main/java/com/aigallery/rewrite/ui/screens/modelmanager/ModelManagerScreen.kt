@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -18,7 +19,8 @@ import com.aigallery.rewrite.ui.components.ModelCard
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModelManagerScreen(
-    viewModel: ModelManagerViewModel = hiltViewModel()
+    viewModel: ModelManagerViewModel = hiltViewModel(),
+    onModelSelected: (String) -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -94,7 +96,10 @@ fun ModelManagerScreen(
                             ModelCard(
                                 model = model,
                                 onDownload = { viewModel.downloadModel(model.id) },
-                                onDelete = { viewModel.deleteModel(model.id) }
+                                onPause = { viewModel.pauseDownload(model.id) },
+                                onCancel = { viewModel.cancelDownload(model.id) },
+                                onDelete = { viewModel.deleteModel(model.id) },
+                                onSelect = { onModelSelected(model.id) }
                             )
                         }
                     }

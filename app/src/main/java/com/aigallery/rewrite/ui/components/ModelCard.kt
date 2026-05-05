@@ -1,7 +1,7 @@
 package com.aigallery.rewrite.ui.components
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,23 +13,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.aigallery.rewrite.domain.model.*
-import com.aigallery.rewrite.ui.theme.*
+import com.aigallery.rewrite.domain.model.AIModel
+import com.aigallery.rewrite.domain.model.ModelStatus
 
 /**
- * AI Model card component
+ * 模型卡片组件
+ * 显示模型信息、下载状态和操作按钮
  */
 @Composable
 fun ModelCard(
     model: AIModel,
     onDownload: () -> Unit,
+    onPause: () -> Unit = {},
+    onCancel: () -> Unit = {},
     onDelete: () -> Unit,
-    modifier: Modifier = Modifier
+    onSelect: () -> Unit = {}
 ) {
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
@@ -37,322 +42,276 @@ fun ModelCard(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
+            // 头部：模型名称和状态标签
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text(
                         text = model.name,
-                        style = MaterialTheme.typography.titleMedium
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = model.provider.mirrorName,
+                        text = model.description,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
                     )
                 }
-                ModelStatusChip(status = model.status)
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = model.description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(
-                        shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.padding(4.dp)
-                    ) {
-                        Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                            Icon(
-                                Icons.Default.Memory,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(text = model.parameters, style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                    Surface(
-                        shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.padding(4.dp)
-                    ) {
-                        Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                            Icon(
-                                Icons.Default.Storage,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(text = model.size, style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
+                // 状态标签
+                StatusBadge(model.status)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Progress indicator for downloading
-            if (model.status == ModelStatus.DOWNLOADING) {
-                LinearProgressIndicator(
-                    progress = model.downloadProgress,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            // Action buttons
+            // 模型元数据
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                ModelInfoChip(
+                    icon = Icons.Default.Memory,
+                    label = "${model.sizeInGB} GB"
+                )
+                ModelInfoChip(
+                    icon = Icons.Default.Speed,
+                    label = "${model.params}B 参数"
+                )
+                ModelInfoChip(
+                    icon = Icons.Default.Language,
+                    label = model.provider.name
+                )
+            }
+
+            // 下载进度条（下载中显示）
+            if (model.status == ModelStatus.DOWNLOADING) {
+                Spacer(modifier = Modifier.height(12.dp))
+                DownloadProgressBar(progress = model.downloadProgress)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 操作按钮区域
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 when (model.status) {
-                    ModelStatus.NOT_DOWNLOADED, ModelStatus.DOWNLOAD_FAILED -> {
-                        FilledTonalButton(onClick = onDownload) {
-                            Icon(
-                                Icons.Default.Download,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                    ModelStatus.NOT_DOWNLOADED -> {
+                        Button(
+                            onClick = onDownload,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text("下载")
                         }
                     }
+
                     ModelStatus.DOWNLOADING -> {
-                        OutlinedButton(onClick = { /* Cancel download */ }) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                        OutlinedButton(
+                            onClick = onCancel,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("取消")
+                        }
+                        Button(
+                            onClick = onPause,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Pause, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("暂停")
+                        }
+                    }
+
+                    ModelStatus.PAUSED -> {
+                        Button(
+                            onClick = onDownload,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("继续")
+                        }
+                        OutlinedButton(
+                            onClick = onCancel,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text("取消")
                         }
                     }
-                    ModelStatus.DOWNLOADED, ModelStatus.READY -> {
-                        OutlinedButton(onClick = onDelete) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+
+                    ModelStatus.DOWNLOADED -> {
+                        Button(
+                            onClick = onSelect,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.tertiary
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("删除")
+                        ) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("使用此模型")
+                        }
+                        OutlinedButton(
+                            onClick = onDelete,
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null)
                         }
                     }
-                    ModelStatus.INITIALIZING -> {
-                        FilledTonalButton(onClick = {}, enabled = false) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp
+
+                    ModelStatus.FAILED -> {
+                        Button(
+                            onClick = onDownload,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("初始化中...")
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("重试")
                         }
                     }
+
+                    else -> {}
                 }
             }
         }
     }
 }
 
+/**
+ * 状态标签组件
+ */
 @Composable
-private fun ModelStatusChip(status: ModelStatus) {
-    val (color, text) = when (status) {
-        ModelStatus.NOT_DOWNLOADED -> Pair(MaterialTheme.colorScheme.outline, "未下载")
-        ModelStatus.DOWNLOADING -> Pair(InfoColor, "下载中")
-        ModelStatus.DOWNLOADED -> Pair(SuccessColor, "已下载")
-        ModelStatus.DOWNLOAD_FAILED -> Pair(ErrorColor, "失败")
-        ModelStatus.INITIALIZING -> Pair(WarningColor, "初始化")
-        ModelStatus.READY -> Pair(SuccessColor, "就绪")
+private fun StatusBadge(status: ModelStatus) {
+    val (bgColor, textColor, label) = when (status) {
+        ModelStatus.NOT_DOWNLOADED -> Triple(
+            MaterialTheme.colorScheme.surfaceVariant,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            "未下载"
+        )
+        ModelStatus.DOWNLOADING -> Triple(
+            MaterialTheme.colorScheme.primaryContainer,
+            MaterialTheme.colorScheme.onPrimaryContainer,
+            "下载中"
+        )
+        ModelStatus.PAUSED -> Triple(
+            Color(0xFFFFF3E0),
+            Color(0xFFE65100),
+            "已暂停"
+        )
+        ModelStatus.DOWNLOADED -> Triple(
+            MaterialTheme.colorScheme.tertiaryContainer,
+            MaterialTheme.colorScheme.onTertiaryContainer,
+            "已就绪"
+        )
+        ModelStatus.FAILED -> Triple(
+            MaterialTheme.colorScheme.errorContainer,
+            MaterialTheme.colorScheme.onErrorContainer,
+            "下载失败"
+        )
+        else -> Triple(
+            MaterialTheme.colorScheme.surfaceVariant,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            status.name
+        )
     }
 
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = color.copy(alpha = 0.1f)
+        shape = CircleShape,
+        color = bgColor
     ) {
         Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelMedium,
-            color = color
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = textColor,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
         )
     }
 }
 
 /**
- * Memory item card component
+ * 模型信息标签
  */
 @Composable
-fun MemoryCard(
-    memory: MemoryItem,
-    onClick: () -> Unit,
-    onDelete: () -> Unit,
-    modifier: Modifier = Modifier
+private fun ModelInfoChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String
 ) {
-    val layerColor = when (memory.memoryLayer) {
-        MemoryLayer.WORKING -> MemoryWorkingColor
-        MemoryLayer.SHORT_TERM -> MemoryShortTermColor
-        MemoryLayer.LONG_TERM -> MemoryLongTermColor
-        MemoryLayer.KNOWLEDGE_BASE -> MemoryKnowledgeBaseColor
-        MemoryLayer.PERSONA -> MemoryPersonaColor
-    }
-
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.Top
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Layer indicator
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(layerColor)
-                    .align(Alignment.CenterVertically)
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = memory.memoryLayer.displayName,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = layerColor
-                    )
-                    if (!memory.isEnabled) {
-                        Text(
-                            text = "已禁用",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = memory.summary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                if (memory.tags.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        memory.tags.take(3).forEach { tag ->
-                            SuggestionChip(
-                                onClick = { },
-                                label = { Text(tag, style = MaterialTheme.typography.labelSmall) },
-                                modifier = Modifier.height(24.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            IconButton(onClick = onDelete) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "删除",
-                    tint = MaterialTheme.colorScheme.error
-                )
-            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
 
 /**
- * Chat message bubble
+ * 下载进度条
  */
 @Composable
-fun ChatBubble(
-    message: ChatMessage,
-    modifier: Modifier = Modifier
-) {
-    val isUser = message.role == MessageRole.USER
-    val alignment = if (isUser) Alignment.End else Alignment.Start
-    val bubbleColor = if (isUser) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant
-    }
+private fun DownloadProgressBar(progress: Float) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        label = "progress"
+    )
 
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = alignment
-    ) {
-        Surface(
-            shape = RoundedCornerShape(
-                topStart = 16.dp,
-                topEnd = 16.dp,
-                bottomStart = if (isUser) 16.dp else 4.dp,
-                bottomEnd = if (isUser) 4.dp else 16.dp
-            ),
-            color = bubbleColor,
-            modifier = Modifier.widthIn(max = 280.dp)
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = message.content,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                // Show streaming indicator
-                if (message.isStreaming) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(12.dp),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "生成中...",
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                }
-
-                // Show error if any
-                if (message.error != null) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = message.error,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-        }
+    Column {
+        LinearProgressIndicator(
+            progress = { animatedProgress },
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(4.dp)),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+        Text(
+            text = "${(animatedProgress * 100).toInt()}%",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp)
+        )
     }
 }
