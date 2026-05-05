@@ -1,10 +1,7 @@
 package com.aigallery.rewrite.worker
 
 import android.content.Context
-import androidx.hilt.work.HiltWorker
 import androidx.work.*
-import dagger.assisted.Assisted
-import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -16,12 +13,16 @@ import java.util.concurrent.TimeUnit
 /**
  * WorkManager worker for downloading AI models
  */
-@HiltWorker
-class ModelDownloadWorker @AssistedInject constructor(
-    @Assisted context: Context,
-    @Assisted workerParams: WorkerParameters,
-    private val okHttpClient: OkHttpClient
+class ModelDownloadWorker(
+    context: Context,
+    workerParams: WorkerParameters
 ) : CoroutineWorker(context, workerParams) {
+
+    private val okHttpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .build()
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val modelId = inputData.getString(KEY_MODEL_ID) ?: return@withContext Result.failure()
@@ -48,82 +49,68 @@ class ModelDownloadWorker @AssistedInject constructor(
                 )
 
                 val totalBytes = body.contentLength()
-                var downloadedBytes = 0L
+                var bytesDownloaded = 0L
 
-                FileOutputStream(outputFile).use { fos ->
-                    body.byteStream().use { inputStream ->
+                body.byteStream().use { input ->
+                    FileOutputStream(outputFile).use { output ->
                         val buffer = ByteArray(8192)
                         var bytesRead: Int
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            output.write(buffer, 0, bytesRead)
+                            bytesDownloaded += bytesRead
 
-                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                            fos.write(buffer, 0, bytesRead)
-                            downloadedBytes += bytesRead
-
-                            // Report progress
-                            val progress = if (totalBytes > 0) {
-                                ((downloadedBytes * 100) / totalBytes).toInt()
-                            } else {
-                                0
+                            // Update progress
+                            if (totalBytes > 0) {
+                                val progress = bytesDownloaded.toFloat() / totalBytes
+                                setProgressAsync(
+                                    workDataOf(
+                                        KEY_PROGRESS to progress,
+                                        KEY_BYTES_DOWNLOADED to bytesDownloaded,
+                                        KEY_TOTAL_BYTES to totalBytes
+                                    )
+                                )
                             }
-
-                            setProgress(workDataOf(
-                                KEY_PROGRESS to progress,
-                                KEY_DOWNLOADED_BYTES to downloadedBytes,
-                                KEY_TOTAL_BYTES to totalBytes
-                            ))
                         }
                     }
                 }
-            }
 
-            // Signal completion
-            Result.success(workDataOf(
-                KEY_OUTPUT_PATH to outputFile.absolutePath
-            ))
+                return@withContext Result.success(
+                    workDataOf(
+                        KEY_MODEL_ID to modelId,
+                        KEY_LOCAL_PATH to outputFile.absolutePath
+                    )
+                )
+            }
         } catch (e: Exception) {
-            // Clean up partial file on failure
             outputFile.delete()
-            Result.failure(workDataOf(KEY_ERROR to (e.message ?: "Unknown error")))
+            return@withContext Result.failure(
+                workDataOf(KEY_ERROR to e.message)
+            )
         }
     }
 
     companion object {
         const val KEY_MODEL_ID = "model_id"
         const val KEY_DOWNLOAD_URL = "download_url"
+        const val KEY_LOCAL_PATH = "local_path"
         const val KEY_PROGRESS = "progress"
-        const val KEY_DOWNLOADED_BYTES = "downloaded_bytes"
+        const val KEY_BYTES_DOWNLOADED = "bytes_downloaded"
         const val KEY_TOTAL_BYTES = "total_bytes"
-        const val KEY_OUTPUT_PATH = "output_path"
         const val KEY_ERROR = "error"
 
-        /**
-         * Create a work request for downloading a model
-         */
-        fun createWorkRequest(
-            modelId: String,
-            downloadUrl: String,
-            mirrorUrl: String? = null
-        ): OneTimeWorkRequest {
-            val inputData = workDataOf(
-                KEY_MODEL_ID to modelId,
-                KEY_DOWNLOAD_URL to (mirrorUrl ?: downloadUrl)
-            )
-
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .setRequiresStorageNotLow(true)
-                .build()
-
+        fun startDownload(modelId: String, downloadUrl: String): OneTimeWorkRequest {
             return OneTimeWorkRequestBuilder<ModelDownloadWorker>()
-                .setInputData(inputData)
-                .setConstraints(constraints)
-                .setBackoffCriteria(
-                    BackoffPolicy.EXPONENTIAL,
-                    WorkRequest.MIN_BACKOFF_MILLIS,
-                    TimeUnit.MILLISECONDS
+                .setInputData(
+                    workDataOf(
+                        KEY_MODEL_ID to modelId,
+                        KEY_DOWNLOAD_URL to downloadUrl
+                    )
                 )
-                .addTag("model_download")
-                .addTag(modelId)
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()
+                )
                 .build()
         }
     }
