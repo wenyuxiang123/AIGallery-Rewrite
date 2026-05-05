@@ -75,7 +75,7 @@ fun ModelCard(
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     AssistChip(
-                        onClick = { },
+                        onClick = null,
                         label = { Text(model.parameters) },
                         leadingIcon = {
                             Icon(
@@ -83,10 +83,11 @@ fun ModelCard(
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )
-                        }
+                        },
+                        enabled = false
                     )
                     AssistChip(
-                        onClick = { },
+                        onClick = null,
                         label = { Text(model.size) },
                         leadingIcon = {
                             Icon(
@@ -94,7 +95,8 @@ fun ModelCard(
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )
-                        }
+                        },
+                        enabled = false
                     )
                 }
             }

@@ -13,7 +13,6 @@ import com.aigallery.rewrite.devicecontrol.DeviceControlManager
 import com.aigallery.rewrite.devicecontrol.DeviceControlService
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
-import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -167,7 +166,7 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideDeviceControlService(deviceControlManager: DeviceControlManager): DeviceControlService {
-        return DeviceControlService(deviceControlManager)
+    fun provideDeviceControlService(@ApplicationContext context: Context): DeviceControlService {
+        return DeviceControlService(context)
     }
 }

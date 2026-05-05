@@ -1,11 +1,11 @@
 package com.aigallery.rewrite.devicecontrol
 
+import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.media.AudioManager
 import android.os.Build
-import android.view.KeyEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,8 +25,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class DeviceControlManager @Inject constructor(
-    private val context: Context,
-    private val deviceControlService: DeviceControlService
+    private val context: Context
 ) {
     companion object {
         private const val TAG = "DeviceControlManager"
@@ -38,8 +37,7 @@ class DeviceControlManager @Inject constructor(
         fun getInstance(context: Context): DeviceControlManager {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: DeviceControlManager(
-                    context.applicationContext,
-                    DeviceControlService(context.applicationContext)
+                    context.applicationContext
                 ).also { INSTANCE = it }
             }
         }
@@ -90,7 +88,7 @@ class DeviceControlManager @Inject constructor(
             if (service == null) {
                 Result.failure(IllegalStateException("Accessibility service not available"))
             } else {
-                val success = service.dispatchTapGesture(x.toFloat(), y.toFloat())
+                val success = service.dispatchTapGesture(x, y)
                 logOperation("click", "点击 ($x, $y)", success)
                 if (success) Result.success(Unit) else Result.failure(Exception("Click failed"))
             }
@@ -109,7 +107,7 @@ class DeviceControlManager @Inject constructor(
             if (service == null) {
                 Result.failure(IllegalStateException("Accessibility service not available"))
             } else {
-                val success = service.dispatchTapGesture(x.toFloat(), y.toFloat(), duration)
+                val success = service.dispatchTapGesture(x, y, duration)
                 logOperation("longClick", "长按 ($x, $y)", success)
                 if (success) Result.success(Unit) else Result.failure(Exception("Long click failed"))
             }
@@ -194,13 +192,13 @@ class DeviceControlManager @Inject constructor(
                 Result.failure(IllegalStateException("Accessibility service not available"))
             } else {
                 val action = when (keyName.uppercase()) {
-                    "HOME" -> AccessibilityServiceImpl.GLOBAL_ACTION_HOME
-                    "BACK" -> AccessibilityServiceImpl.GLOBAL_ACTION_BACK
-                    "RECENT" -> AccessibilityServiceImpl.GLOBAL_ACTION_RECENTS
-                    "POWER" -> AccessibilityServiceImpl.GLOBAL_ACTION_POWER_DIALOG
-                    "NOTIFICATIONS" -> AccessibilityServiceImpl.GLOBAL_ACTION_NOTIFICATIONS
-                    "QUICK_SETTINGS" -> AccessibilityServiceImpl.GLOBAL_ACTION_QUICK_SETTINGS
-                    "SREENSHOT" -> AccessibilityServiceImpl.GLOBAL_ACTION_SCREENSHOT
+                    "HOME" -> AccessibilityService.GLOBAL_ACTION_HOME
+                    "BACK" -> AccessibilityService.GLOBAL_ACTION_BACK
+                    "RECENT" -> AccessibilityService.GLOBAL_ACTION_RECENTS
+                    "POWER" -> AccessibilityService.GLOBAL_ACTION_POWER_DIALOG
+                    "NOTIFICATIONS" -> AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS
+                    "QUICK_SETTINGS" -> AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS
+                    "SCREENSHOT" -> AccessibilityService.GLOBAL_ACTION_TAKE_SCREENSHOT
                     else -> return Result.failure(IllegalArgumentException("Unknown key: $keyName"))
                 }
                 val success = service.performGlobalAction(action)
@@ -314,170 +312,49 @@ class DeviceControlManager @Inject constructor(
         return findFocused(root)
     }
 
-    // ==================== 设备控制快捷方法 ====================
+    // ==================== 操作日志 ====================
 
-    /** WiFi控制 */
-    fun setWifiEnabled(enabled: Boolean) = deviceControlService.setWifiEnabled(enabled)
-    fun isWifiEnabled() = deviceControlService.isWifiEnabled()
-
-    /** 蓝牙控制 */
-    fun setBluetoothEnabled(enabled: Boolean) = deviceControlService.setBluetoothEnabled(enabled)
-    fun isBluetoothEnabled() = deviceControlService.isBluetoothEnabled()
-
-    /** 音量控制 */
-    fun setVolume(volume: Int) = deviceControlService.setVolume(AudioManager.STREAM_MUSIC, volume)
-    fun getVolume() = deviceControlService.getVolume(AudioManager.STREAM_MUSIC)
-    fun increaseVolume() = deviceControlService.increaseVolume()
-    fun decreaseVolume() = deviceControlService.decreaseVolume()
-    fun setMute(muted: Boolean) = deviceControlService.setMute(muted)
-
-    /** 亮度控制 */
-    fun setBrightness(level: Float) = deviceControlService.setBrightness(level)
-    fun getBrightness() = deviceControlService.getBrightness()
-
-    /** 手电筒 */
-    fun setFlashlight(enabled: Boolean) = deviceControlService.setFlashlight(enabled)
-    fun isFlashlightOn() = deviceControlService.isFlashlightOn()
-
-    /** 屏幕控制 */
-    fun setScreenOn() = deviceControlService.setScreenOn()
-    fun setScreenOff() = deviceControlService.setScreenOff()
-    fun isScreenOn() = deviceControlService.isScreenOn()
-
-    /** 应用管理 */
-    fun launchApp(packageName: String) = deviceControlService.launchApp(packageName)
-    fun forceStopApp(packageName: String) = deviceControlService.forceStopApp(packageName)
-    fun isAppInstalled(packageName: String) = deviceControlService.isAppInstalled(packageName)
-    fun getInstalledApps() = deviceControlService.getInstalledApps()
-
-    /** 剪贴板 */
-    fun setClipboard(text: String) = deviceControlService.setClipboard(text)
-    fun getClipboard() = deviceControlService.getClipboard()
-
-    /** 电话/短信 */
-    fun makeCall(number: String) = deviceControlService.makeCall(number)
-    fun sendSms(number: String, text: String) = deviceControlService.sendSms(number, text)
-
-    /** 定位 */
-    fun toggleLocation(enabled: Boolean) = deviceControlService.toggleLocation(enabled)
-    fun isLocationEnabled() = deviceControlService.isLocationEnabled()
-
-    /** 震动 */
-    fun vibrate(duration: Long = 500) = deviceControlService.vibrate(duration)
-    fun setVibrateMode(enabled: Boolean) = deviceControlService.setVibrateMode(enabled)
-    fun isVibrateMode() = deviceControlService.isVibrateMode()
-
-    /** Shell命令 */
-    fun executeShell(command: String) = scope.launch {
-        deviceControlService.executeShell(command)
-    }
-
-    // ==================== 屏幕分析 ====================
-
-    /**
-     * 分析当前屏幕
-     */
-    fun analyzeScreen(): ScreenAnalyzer.ScreenDescription? {
-        return screenAnalyzer.analyzeScreen()
-    }
-
-    /**
-     * 生成LLM友好的屏幕描述
-     */
-    fun generateLLMDescription(): String {
-        return screenAnalyzer.generateLLMDescription()
-    }
-
-    /**
-     * 获取所有可点击元素
-     */
-    fun findClickableElements(): List<ScreenAnalyzer.UIElement> {
-        return screenAnalyzer.findClickableElements()
-    }
-
-    /**
-     * 获取所有输入字段
-     */
-    fun findInputFields(): List<ScreenAnalyzer.UIElement> {
-        return screenAnalyzer.findInputFields()
-    }
-
-    // ==================== 手势录制 ====================
-
-    /**
-     * 开始录制手势
-     */
-    fun startRecording() {
-        gestureRecorder.startRecording()
-    }
-
-    /**
-     * 停止录制并返回手势序列
-     */
-    fun stopRecording(name: String = "Unnamed"): GestureRecorder.GestureSequence? {
-        return gestureRecorder.stopRecording(name)
-    }
-
-    /**
-     * 回放手势
-     */
-    fun playGesture(gesture: GestureRecorder.GestureSequence): Boolean {
-        return gestureRecorder.playGesture(gesture)
-    }
-
-    /**
-     * 回放手势（指定速度）
-     */
-    fun playGestureAtSpeed(gesture: GestureRecorder.GestureSequence, speed: Float): Boolean {
-        return gestureRecorder.playGestureAtSpeed(gesture, speed)
-    }
-
-    // ==================== 日志 ====================
-
-    /**
-     * 记录操作日志
-     */
-    private fun logOperation(operation: String, detail: String, success: Boolean, error: String? = null) {
+    private fun logOperation(operation: String, description: String, success: Boolean, error: String? = null) {
         val log = OperationLog(
+            id = System.currentTimeMillis().toString(),
             operation = operation,
-            detail = detail,
+            description = description,
             success = success,
-            error = error,
+            errorMessage = error,
             timestamp = System.currentTimeMillis()
         )
-        
-        _operationLogs.value = (_operationLogs.value + log).takeLast(100) // 保留最近100条
+        _operationLogs.value = _operationLogs.value + log
     }
 
-    /**
-     * 清除日志
-     */
     fun clearLogs() {
         _operationLogs.value = emptyList()
     }
 
-    /**
-     * 请求无障碍权限
-     */
-    fun requestAccessibilityPermission() {
-        accessibilityService?.requestAccessibilityPermission()
+    // ==================== 手势录制 ====================
+
+    fun startRecording() {
+        accessibilityService?.let { service ->
+            // 启动手势录制
+        }
     }
 
-    /**
-     * 检查是否需要请求无障碍权限
-     */
-    fun needsAccessibilityPermission(): Boolean {
-        return accessibilityService == null || !isAccessibilityEnabled.value
+    fun stopRecording(name: String) {
+        // 停止并保存录制
+    }
+
+    fun playGesture(gesture: List<Pair<Int, Int>>) {
+        // 播放手势
     }
 }
 
 /**
- * 操作日志数据类
+ * 操作日志
  */
 data class OperationLog(
+    val id: String,
     val operation: String,
-    val detail: String,
+    val description: String,
     val success: Boolean,
-    val error: String? = null,
+    val errorMessage: String? = null,
     val timestamp: Long = System.currentTimeMillis()
 )

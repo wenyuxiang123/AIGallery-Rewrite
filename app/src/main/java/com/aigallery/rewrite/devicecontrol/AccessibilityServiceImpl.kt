@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
@@ -43,6 +44,15 @@ class AccessibilityServiceImpl : AccessibilityService() {
         /** 当前Activity名称 */
         private val _currentActivity = MutableStateFlow<String?>(null)
         val currentActivity: StateFlow<String?> = _currentActivity.asStateFlow()
+        
+        /** 全局操作常量 */
+        const val GLOBAL_ACTION_HOME = AccessibilityService.GLOBAL_ACTION_HOME
+        const val GLOBAL_ACTION_BACK = AccessibilityService.GLOBAL_ACTION_BACK
+        const val GLOBAL_ACTION_RECENTS = AccessibilityService.GLOBAL_ACTION_RECENTS
+        const val GLOBAL_ACTION_POWER_DIALOG = AccessibilityService.GLOBAL_ACTION_POWER_DIALOG
+        const val GLOBAL_ACTION_NOTIFICATIONS = AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS
+        const val GLOBAL_ACTION_QUICK_SETTINGS = AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS
+        const val GLOBAL_ACTION_SCREENSHOT = AccessibilityService.GLOBAL_ACTION_TAKE_SCREENSHOT
     }
 
     // ==================== 生命周期 ====================
@@ -54,7 +64,7 @@ class AccessibilityServiceImpl : AccessibilityService() {
         
         // 配置服务信息
         val info = AccessibilityServiceInfo().apply {
-            eventTypes = AccessibilityEvent.TYPE_ALL_EVENTS
+            eventTypes = AccessibilityEvent.TYPES_ALL_MASK
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
                     AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
@@ -193,11 +203,7 @@ class AccessibilityServiceImpl : AccessibilityService() {
      * 点击指定坐标
      */
     fun click(x: Int, y: Int): Boolean {
-        return performGlobalAction(AccessibilityService.GLOBAL_ACTION_CLICK)
-            ?: run {
-                // 通过节点查找或使用手势模拟
-                simulateClick(x, y)
-            }
+        return dispatchTapGesture(x, y)
     }
 
     /**
@@ -242,18 +248,7 @@ class AccessibilityServiceImpl : AccessibilityService() {
      * 长按指定坐标
      */
     fun longClick(x: Int, y: Int): Boolean {
-        return simulateLongClick(x, y)
-    }
-
-    private fun simulateLongClick(x: Int, y: Int): Boolean {
-        val root = _rootNode.value ?: return false
-        val nodeAtPoint = findNodeAtPoint(root, x, y)
-        if (nodeAtPoint != null) {
-            val result = longClickNode(nodeAtPoint)
-            nodeAtPoint.recycle()
-            return result
-        }
-        return false
+        return dispatchTapGesture(x, y, 500)
     }
 
     /**
@@ -322,9 +317,9 @@ class AccessibilityServiceImpl : AccessibilityService() {
     /**
      * 执行全局操作
      */
-    fun performGlobalAction(action: Int): Boolean {
+    override fun performGlobalAction(action: Int): Boolean {
         return try {
-            globalAction(action)
+            super.performGlobalAction(action)
         } catch (e: Exception) {
             false
         }
@@ -342,15 +337,17 @@ class AccessibilityServiceImpl : AccessibilityService() {
         }
         
         return try {
-            val path = android.graphics.Path().apply {
+            val path = Path().apply {
                 moveTo(x.toFloat(), y.toFloat())
             }
             
-            val stroke = android.view.accessibility.GestureDescription.StrokeDescription(
-                path, 0, duration
+            val stroke = GestureDescription.StrokeDescription(
+                path,
+                0,
+                duration
             )
             
-            val gesture = android.view.accessibility.GestureDescription.Builder()
+            val gesture = GestureDescription.Builder()
                 .addStroke(stroke)
                 .build()
             
@@ -375,16 +372,18 @@ class AccessibilityServiceImpl : AccessibilityService() {
         }
         
         return try {
-            val path = android.graphics.Path().apply {
+            val path = Path().apply {
                 moveTo(startX.toFloat(), startY.toFloat())
                 lineTo(endX.toFloat(), endY.toFloat())
             }
             
-            val stroke = android.view.accessibility.GestureDescription.StrokeDescription(
-                path, 0, duration
+            val stroke = GestureDescription.StrokeDescription(
+                path,
+                0,
+                duration
             )
             
-            val gesture = android.view.accessibility.GestureDescription.Builder()
+            val gesture = GestureDescription.Builder()
                 .addStroke(stroke)
                 .build()
             
@@ -392,16 +391,5 @@ class AccessibilityServiceImpl : AccessibilityService() {
         } catch (e: Exception) {
             false
         }
-    }
-
-    // ==================== 权限请求 ====================
-
-    /**
-     * 请求无障碍服务权限
-     */
-    fun requestAccessibilityPermission() {
-        val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        startActivity(intent)
     }
 }

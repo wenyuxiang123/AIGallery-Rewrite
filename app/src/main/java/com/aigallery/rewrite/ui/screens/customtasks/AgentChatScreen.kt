@@ -13,4 +13,60 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.aigallery.rewrite.domain.model.SingleTurnTaskType
 
-// Reusing the same file for AgentChatScreen
+/**
+ * Agent Chat Screen placeholder
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AgentChatScreen(
+    skillId: String,
+    onNavigateBack: () -> Unit
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Agent 对话") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SmartToy,
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Agent Chat",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Skill ID: $skillId",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "Agent功能开发中...",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+    }
+}

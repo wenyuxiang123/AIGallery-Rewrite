@@ -88,7 +88,7 @@ fun MobileActionsScreen(
         TabItem("快捷控制", Icons.Default.Dashboard),
         TabItem("自然语言", Icons.Default.TextFields),
         TabItem("屏幕分析", Icons.Default.Analytics),
-        TabEvent("手势录制", Icons.Default.Gesture),
+        TabItem("手势录制", Icons.Default.Gesture),
         TabItem("操作日志", Icons.Default.History)
     )
     

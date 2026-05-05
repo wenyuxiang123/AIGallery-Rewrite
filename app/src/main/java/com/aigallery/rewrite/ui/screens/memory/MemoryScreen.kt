@@ -348,21 +348,16 @@ private fun AddMemoryDialog(
                 Text("选择记忆层级", style = MaterialTheme.typography.labelMedium)
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     MemoryLayer.entries.take(3).forEachIndexed { index, layer ->
-                        SegmentedButton(
+                        FilterChip(
                             selected = selectedLayer == layer,
                             onClick = { selectedLayer = layer },
-                            shape = SegmentedButtonDefaults.itemShape(
-                                index = index,
-                                count = 3
-                            )
-                        ) {
-                            Text(
-                                text = "${index + 1}",
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
+                            label = { Text("${index + 1}") }
+                        )
                     }
                 }
 
