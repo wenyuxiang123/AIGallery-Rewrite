@@ -83,7 +83,7 @@ fun SettingsScreen(
             // AI section
             SettingsSection(title = "AI设置") {
                 SettingsItem(
-                    icon = Icons.Default.Psychology,
+                    icon = Icons.Default.Memory,
                     title = "记忆系统",
                     subtitle = "启用五层记忆功能",
                     trailing = {
@@ -94,13 +94,13 @@ fun SettingsScreen(
                     }
                 )
                 SettingsItem(
-                    icon = Icons.Default.ModelTraining,
+                    icon = Icons.Default.Download,
                     title = "默认模型",
                     subtitle = "Qwen 2 7B",
                     onClick = { /* Select model */ }
                 )
                 SettingsItem(
-                    icon = Icons.Default.Stream,
+                    icon = Icons.Default.AutoAwesome,
                     title = "流式输出",
                     subtitle = "打字机效果",
                     trailing = {
@@ -118,7 +118,7 @@ fun SettingsScreen(
                     onClick = { }
                 )
                 SettingsItem(
-                    icon = Icons.Default.CleaningServices,
+                    icon = Icons.Default.DeleteSweep,
                     title = "清理缓存",
                     subtitle = "清除临时文件",
                     onClick = { }
