@@ -10,6 +10,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.aigallery.rewrite.memory.VectorStore
 
 @HiltViewModel
 class MemoryViewModel @Inject constructor(
