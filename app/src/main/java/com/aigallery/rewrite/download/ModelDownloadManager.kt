@@ -334,8 +334,8 @@ data class DownloadState(
             DownloadStatus.PAUSED -> "已暂停"
             DownloadStatus.CANCELLED -> "已取消"
             DownloadStatus.PENDING -> "等待中..."
-            DownloadStatus.UNKNOWN -> "未知状态",
-            DownloadStatus.NOT_DOWNLOADED -> "",
+            DownloadStatus.UNKNOWN -> "未知状态"
+            DownloadStatus.NOT_DOWNLOADED -> ""
             DownloadStatus.DOWNLOADED -> ""
         }
     }
