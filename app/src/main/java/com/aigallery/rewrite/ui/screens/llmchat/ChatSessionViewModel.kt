@@ -7,7 +7,7 @@ import com.aigallery.rewrite.inference.InferenceConfig
 import com.aigallery.rewrite.inference.MnnInferenceEngine
 import com.aigallery.rewrite.memory.MemoryManager
 import com.aigallery.rewrite.memory.MemoryType
-import com.aigallery.rewrite.memory.VectorStore
+import com.aigallery.rewrite.memory.MessageRole as MemoryMessageRole
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
@@ -23,8 +23,10 @@ class ChatSessionViewModel @Inject constructor(
     private val inferenceEngine = MnnInferenceEngine()
 
     // 记忆管理器（演示用，真实项目应通过注入）
-    private val vectorStore = VectorStore(application)
-    private val memoryManager = MemoryManager(application, vectorStore)
+    private val memoryManager = MemoryManager(
+        application,
+        com.aigallery.rewrite.memory.VectorStore(application)
+    )
 
     // 当前推理任务
     private var inferenceJob: Job? = null
@@ -34,10 +36,6 @@ class ChatSessionViewModel @Inject constructor(
 
     // 当前会话 ID
     private val sessionId = "session_${System.currentTimeMillis()}"
-
-    // 记忆注入开关
-    private val memoryInjectionEnabled = MutableStateFlow(true)
-    val memoryInjection: StateFlow<Boolean> = memoryInjectionEnabled
 
     init {
         // 初始化引擎（使用 fallback 模式）
@@ -54,7 +52,7 @@ class ChatSessionViewModel @Inject constructor(
 
         // 1. 存入记忆系统
         viewModelScope.launch {
-            memoryManager.processMessage(message, MessageRole.USER, sessionId)
+            memoryManager.processMessage(message, MemoryMessageRole.USER, sessionId)
         }
 
         // 2. 添加用户消息到 UI
@@ -87,7 +85,7 @@ class ChatSessionViewModel @Inject constructor(
                     topP = 0.9f
                 )
 
-                // 构建 Prompt - 包含记忆注入
+                // 构建 Prompt
                 val prompt = buildPromptWithContext(message)
 
                 // 流式接收回复
@@ -99,7 +97,7 @@ class ChatSessionViewModel @Inject constructor(
 
                 // 推理完成 - 将 AI 回复也存入记忆
                 if (fullResponse.isNotBlank()) {
-                    memoryManager.processMessage(fullResponse, MessageRole.ASSISTANT, sessionId)
+                    memoryManager.processMessage(fullResponse, MemoryMessageRole.ASSISTANT, sessionId)
                 }
 
                 // 标记流式输出完成
@@ -126,12 +124,10 @@ class ChatSessionViewModel @Inject constructor(
         promptBuilder.append("你是 AIGallery AI 助手，一个有帮助、诚实、无害的 AI。\n")
         promptBuilder.append("请用中文回答用户的问题。\n")
 
-        // 注入相关记忆（如果开启）
-        if (memoryInjectionEnabled.value) {
-            val contextMemories = memoryManager.buildContextPrompt(newMessage)
-            if (contextMemories.isNotBlank()) {
-                promptBuilder.append(contextMemories)
-            }
+        // 注入相关记忆
+        val contextMemories = memoryManager.buildContextPrompt(newMessage)
+        if (contextMemories.isNotBlank()) {
+            promptBuilder.append(contextMemories)
         }
 
         promptBuilder.append("<|end|>\n")
@@ -177,13 +173,6 @@ class ChatSessionViewModel @Inject constructor(
             }
             currentState.copy(messages = updatedMessages, isGenerating = false)
         }
-    }
-
-    /**
-     * 切换记忆注入开关
-     */
-    fun toggleMemoryInjection() {
-        memoryInjectionEnabled.value = !memoryInjectionEnabled.value
     }
 
     /**

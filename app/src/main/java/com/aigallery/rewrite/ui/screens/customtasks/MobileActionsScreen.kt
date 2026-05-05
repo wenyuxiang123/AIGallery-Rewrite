@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.aigallery.rewrite.devicecontrol.AccessibilityServiceImpl
 import com.aigallery.rewrite.devicecontrol.DeviceControlManager
 
 /**
@@ -37,7 +38,7 @@ fun MobileActionsScreen(
 
     // 无障碍服务状态
     var isAccessibilityEnabled by remember {
-        mutableStateOf(DeviceControlManager.isAccessibilityServiceEnabled(context))
+        mutableStateOf(checkAccessibilityEnabled(context))
     }
 
     // 当前录制状态
@@ -126,8 +127,11 @@ fun MobileActionsScreen(
                     containerColor = MaterialTheme.colorScheme.surface
                 ),
                 actions = {
-                    IconButton(onClick = { /* 打开设置 */ }) {
-                        Icon(Icons.Default.Settings, contentDescription = "设置")
+                    IconButton(onClick = {
+                        // 刷新状态
+                        isAccessibilityEnabled = checkAccessibilityEnabled(context)
+                    }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "刷新")
                     }
                 }
             )
@@ -146,9 +150,6 @@ fun MobileActionsScreen(
                     isEnabled = isAccessibilityEnabled,
                     onEnableClick = {
                         openAccessibilitySettings(context)
-                    },
-                    onRefreshClick = {
-                        isAccessibilityEnabled = DeviceControlManager.isAccessibilityServiceEnabled(context)
                     }
                 )
             }
@@ -218,13 +219,32 @@ fun MobileActionsScreen(
 }
 
 /**
+ * 检查无障碍服务是否启用
+ */
+private fun checkAccessibilityEnabled(context: Context): Boolean {
+    try {
+        val service = AccessibilityServiceImpl.getInstance()
+        if (service != null) {
+            return true
+        }
+        val settingsValue = Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        )
+        val packageName = context.packageName
+        return settingsValue?.contains(packageName) == true
+    } catch (e: Exception) {
+        return false
+    }
+}
+
+/**
  * 无障碍服务状态卡片
  */
 @Composable
 private fun AccessibilityStatusCard(
     isEnabled: Boolean,
-    onEnableClick: () -> Unit,
-    onRefreshClick: () -> Unit
+    onEnableClick: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -282,14 +302,9 @@ private fun AccessibilityStatusCard(
                 }
             }
 
-            Row {
-                IconButton(onClick = onRefreshClick) {
-                    Icon(Icons.Default.Refresh, contentDescription = "刷新状态")
-                }
-                if (!isEnabled) {
-                    Button(onClick = onEnableClick) {
-                        Text("去启用")
-                    }
+            if (!isEnabled) {
+                Button(onClick = onEnableClick) {
+                    Text("去启用")
                 }
             }
         }
@@ -583,6 +598,7 @@ private fun openAccessibilitySettings(context: Context) {
     } else {
         Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
     }
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     context.startActivity(intent)
 }
 
@@ -591,7 +607,8 @@ private fun openAccessibilitySettings(context: Context) {
  */
 private fun performQuickAction(context: Context, actionId: String) {
     // TODO: 调用 DeviceControlManager 执行实际操作
-    // DeviceControlManager.performAction(actionId)
+    // val manager = DeviceControlManager.getInstance(context)
+    // manager.performGlobalAction(actionId)
 }
 
 // 数据类

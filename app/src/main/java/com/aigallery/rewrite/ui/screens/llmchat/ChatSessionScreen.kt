@@ -1,11 +1,7 @@
 package com.aigallery.rewrite.ui.screens.llmchat
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -50,7 +46,7 @@ fun ChatSessionScreen(
             TopAppBar(
                 title = { Text("AI 对话") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
                 },
@@ -180,22 +176,37 @@ private fun QuickPromptChips() {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(modifier = Modifier.height(12.dp))
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalGap = 8.dp
-        ) {
-            prompts.forEach { prompt ->
-                AssistChip(
-                    onClick = { /* 点击后自动填入输入框 */ },
-                    label = { Text(prompt) },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                )
+        // 使用 Column + Row 替代 FlowRow 避免实验性 API 问题
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                prompts.take(2).forEach { prompt ->
+                    AssistChip(
+                        onClick = { /* 点击后自动填入输入框 */ },
+                        label = { Text(prompt) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                prompts.drop(2).forEach { prompt ->
+                    AssistChip(
+                        onClick = { /* 点击后自动填入输入框 */ },
+                        label = { Text(prompt) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    )
+                }
             }
         }
     }
@@ -341,8 +352,8 @@ private fun BottomInputBar(
             // 正在生成提示
             AnimatedVisibility(
                 visible = isGenerating,
-                enter = fadeIn(),
-                exit = fadeOut()
+                enter = androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.fadeOut()
             ) {
                 Row(
                     modifier = Modifier

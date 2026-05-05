@@ -10,8 +10,6 @@ import com.aigallery.rewrite.domain.model.AIModel
 import com.aigallery.rewrite.domain.model.ModelCatalog
 import com.aigallery.rewrite.domain.model.ModelStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,7 +25,7 @@ class ModelManagerViewModel @Inject constructor(
     private val downloadManager = ModelDownloadManager(application)
 
     // 进度更新任务
-    private var progressUpdateJob: Job? = null
+    private var progressUpdateJob: kotlinx.coroutines.Job? = null
 
     private val _state = MutableStateFlow(ModelManagerState())
     val state: StateFlow<ModelManagerState> = _state.asStateFlow()
@@ -43,7 +41,7 @@ class ModelManagerViewModel @Inject constructor(
     private fun startProgressUpdater() {
         progressUpdateJob = viewModelScope.launch {
             while (true) {
-                delay(500) // 每 500ms 更新一次进度
+                kotlinx.coroutines.delay(500) // 每 500ms 更新一次进度
                 downloadManager.updateProgress()
                 updateModelStatusFromDownloadManager()
             }
@@ -65,6 +63,10 @@ class ModelManagerViewModel @Inject constructor(
                             status = ModelStatus.DOWNLOADING,
                             downloadProgress = downloadState.progress
                         )
+                        DownloadStatus.PAUSED -> model.copy(
+                            status = ModelStatus.PAUSED,
+                            downloadProgress = downloadState.progress
+                        )
                         DownloadStatus.COMPLETED -> model.copy(
                             status = ModelStatus.DOWNLOADED,
                             downloadProgress = 1f
@@ -72,10 +74,6 @@ class ModelManagerViewModel @Inject constructor(
                         DownloadStatus.FAILED -> model.copy(
                             status = ModelStatus.FAILED,
                             downloadProgress = 0f
-                        )
-                        DownloadStatus.PAUSED -> model.copy(
-                            status = ModelStatus.PAUSED,
-                            downloadProgress = downloadState.progress
                         )
                         else -> model
                     }
@@ -124,7 +122,7 @@ class ModelManagerViewModel @Inject constructor(
             }
 
             // 启动真实下载
-            val downloadSource = if (model.id.contains("qwen", ignoreCase = true)) {
+            val downloadSource = if (modelId.contains("qwen", ignoreCase = true)) {
                 ModelSource.MODEL_SCOPE // Qwen 系列优先使用 ModelScope（国内更快）
             } else {
                 ModelSource.HUGGING_FACE

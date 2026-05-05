@@ -1,6 +1,5 @@
 package com.aigallery.rewrite.ui.screens.memory
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,12 +15,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.aigallery.rewrite.memory.MemoryItem
 import com.aigallery.rewrite.memory.MemoryType
-import com.aigallery.rewrite.ui.components.EmptyState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,10 +98,7 @@ fun MemoryScreen(
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
                 filteredMemories.isEmpty() -> {
-                    EmptyState(
-                        title = "暂无记忆",
-                        description = "开始聊天后，AI 会自动记住重要信息"
-                    )
+                    EmptyState()
                 }
                 else -> {
                     // 记忆列表
@@ -124,7 +118,7 @@ fun MemoryScreen(
                         items(filteredMemories, key = { it.id }) { memory ->
                             MemoryCard(
                                 memory = memory,
-                                onClick = { onMemoryClick(memory.id) },
+                                onClick = { onNavigateToDetail(memory.id) },
                                 onDelete = { viewModel.deleteMemory(memory.id) }
                             )
                         }
@@ -137,6 +131,13 @@ fun MemoryScreen(
             }
         }
     }
+}
+
+/**
+ * 获取各类型记忆的统计
+ */
+private fun MemoryState.getTypeCounts(): Map<MemoryType, Int> {
+    return memories.groupingBy { it.type }.eachCount()
 }
 
 /**
@@ -180,18 +181,36 @@ private fun MemoryStatsCard(
             Spacer(modifier = Modifier.height(12.dp))
 
             // 各类型统计
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalGap = 8.dp
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 MemoryType.values().forEach { type ->
                     val count = stats[type] ?: 0
-                    MemoryTypeChip(
-                        type = type,
-                        count = count,
-                        selected = false,
-                        onClick = {}
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(type.getColor())
+                            )
+                            Text(
+                                text = type.getTypeName(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Text(
+                            text = "$count 条",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
+                    }
                 }
             }
         }
@@ -215,9 +234,9 @@ private fun TypeFilterChips(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 8.dp)
         )
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalGap = 8.dp
+        // 使用 Wrap 替代 FlowRow 避免实验性 API
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // "全部" 标签
             FilterChip(
@@ -228,8 +247,11 @@ private fun TypeFilterChips(
                     { Icon(Icons.Default.AllInclusive, contentDescription = null) }
                 } else null
             )
-
-            MemoryType.values().forEach { type ->
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            MemoryType.values().take(2).forEach { type ->
                 val count = stats[type] ?: 0
                 FilterChip(
                     selected = selectedType == type,
@@ -246,57 +268,25 @@ private fun TypeFilterChips(
                 )
             }
         }
-    }
-}
-
-/**
- * 记忆类型标签
- */
-@Composable
-private fun MemoryTypeChip(
-    type: MemoryType,
-    count: Int,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    val backgroundColor = if (selected) {
-        type.getColor()
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant
-    }
-
-    val contentColor = if (selected) {
-        Color.White
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
-        color = backgroundColor
-    ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(if (selected) Color.White else type.getColor())
-            )
-            Text(
-                text = type.getTypeName(),
-                style = MaterialTheme.typography.labelSmall,
-                color = contentColor
-            )
-            Text(
-                text = count.toString(),
-                style = MaterialTheme.typography.labelSmall,
-                color = contentColor.copy(alpha = 0.7f)
-            )
+            MemoryType.values().drop(2).forEach { type ->
+                val count = stats[type] ?: 0
+                FilterChip(
+                    selected = selectedType == type,
+                    onClick = { onTypeSelected(type) },
+                    label = { Text("${type.getTypeName()} ($count)") },
+                    leadingIcon = {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(type.getColor())
+                        )
+                    }
+                )
+            }
         }
     }
 }
@@ -365,7 +355,7 @@ private fun MemoryCard(
                 text = memory.content,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 3,
-                overflow = TextOverflow.Ellipsis
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -387,6 +377,55 @@ private fun MemoryCard(
                 )
             }
         }
+    }
+}
+
+/**
+ * 空状态组件
+ */
+@Composable
+private fun EmptyState() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Card(
+            modifier = Modifier.size(100.dp),
+            shape = CircleShape,
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            )
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                Icon(
+                    imageVector = Icons.Default.Psychology,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .align(Alignment.Center),
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "暂无记忆",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "开始聊天后，AI 会自动记录重要信息",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

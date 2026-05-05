@@ -12,15 +12,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.aigallery.rewrite.ui.components.EmptyState
-import com.aigallery.rewrite.ui.components.ErrorState
-import com.aigallery.rewrite.ui.components.LoadingIndicator
 import com.aigallery.rewrite.ui.components.ModelCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModelManagerScreen(
     viewModel: ModelManagerViewModel = hiltViewModel(),
-    onModelSelected: (String) -> Unit = {}
+    onModelSelected: (String) -> Unit = {},
+    onNavigateBack: (() -> Unit)? = null
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -55,12 +54,14 @@ fun ModelManagerScreen(
 
             when {
                 state.isLoading -> {
-                    LoadingIndicator(message = "加载模型列表...")
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
                 }
                 state.error != null -> {
-                    ErrorState(
-                        message = state.error!!,
-                        onRetry = viewModel::retry
+                    EmptyState(
+                        title = "加载失败",
+                        description = state.error ?: "未知错误"
                     )
                 }
                 state.models.isEmpty() -> {
@@ -96,7 +97,7 @@ fun ModelManagerScreen(
                             ModelCard(
                                 model = model,
                                 onDownload = { viewModel.downloadModel(model.id) },
-                                onPause = { viewModel.pauseDownload(model.id) },
+                                onPause = { /* TODO: Implement pause */ },
                                 onCancel = { viewModel.cancelDownload(model.id) },
                                 onDelete = { viewModel.deleteModel(model.id) },
                                 onSelect = { onModelSelected(model.id) }
