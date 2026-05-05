@@ -14,6 +14,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.ExperimentalMaterial3Api
+
+@file:OptIn(ExperimentalMaterial3Api::class)
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.aigallery.rewrite.domain.model.SingleTurnTaskType
 
