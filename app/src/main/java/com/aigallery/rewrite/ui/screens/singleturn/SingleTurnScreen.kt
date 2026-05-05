@@ -1,8 +1,9 @@
 package com.aigallery.rewrite.ui.screens.singleturn
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.annotation.OptIn
 
 @file:OptIn(ExperimentalMaterial3Api::class)
+
+import androidx.compose.material3.ExperimentalMaterial3Api
+
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,13 +19,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import androidx.compose.material3.ExperimentalMaterial3Api
 
-@file:OptIn(ExperimentalMaterial3Api::class)
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.aigallery.rewrite.domain.model.SingleTurnTaskType
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SingleTurnScreen(
     viewModel: SingleTurnViewModel = hiltViewModel()

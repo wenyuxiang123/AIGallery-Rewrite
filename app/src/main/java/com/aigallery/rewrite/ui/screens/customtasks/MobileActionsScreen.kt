@@ -1,8 +1,9 @@
 package com.aigallery.rewrite.ui.screens.customtasks
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.annotation.OptIn
 
 @file:OptIn(ExperimentalMaterial3Api::class)
+
+import androidx.compose.material3.ExperimentalMaterial3Api
+
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -33,7 +34,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
-@file:OptIn(ExperimentalMaterial3Api::class)
 import androidx.compose.ui.unit.sp
 import com.aigallery.rewrite.R
 import com.aigallery.rewrite.devicecontrol.DeviceControlFunctions
@@ -54,7 +54,6 @@ import kotlinx.coroutines.launch
  * - 手势录制/回放控制
  * - 操作日志
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MobileActionsScreen(
     onNavigateBack: () -> Unit,

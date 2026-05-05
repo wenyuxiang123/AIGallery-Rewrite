@@ -1,8 +1,9 @@
 package com.aigallery.rewrite.ui.screens.llmchat
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.annotation.OptIn
 
 @file:OptIn(ExperimentalMaterial3Api::class)
+
+import androidx.compose.material3.ExperimentalMaterial3Api
+
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -23,7 +24,6 @@ import com.aigallery.rewrite.ui.components.LoadingIndicator
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LLMChatScreen(
     onNavigateToSession: (String) -> Unit,
