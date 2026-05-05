@@ -82,7 +82,7 @@ fun MobileActionsScreen(
     }
     
     // 屏幕分析结果
-    val screenAnalysis by remember { mutableStateOf(deviceControlManager?.analyzeScreen()) }
+    val screenAnalysis by remember { mutableStateOf(deviceControlManager?.screenAnalyzer?.analyzeScreen()) }
     
     val tabs = listOf(
         TabItem("快捷控制", Icons.Default.Dashboard),
@@ -1067,12 +1067,12 @@ private fun LogItem(log: OperationLog) {
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "${log.operation}: ${log.detail}",
+                    text = "${log.operation}: ${log.description}",
                     style = MaterialTheme.typography.bodyMedium
                 )
-                if (log.error != null) {
+                if (log.errorMessage != null) {
                     Text(
-                        text = log.error,
+                        text = log.errorMessage,
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.Red
                     )

@@ -133,20 +133,20 @@ object AppModule {
     @Provides
     @Singleton
     fun provideMemoryRepository(
-        memoryDao: MemoryDao,
         workingMemoryDao: WorkingMemoryDao,
         shortTermMemoryDao: ShortTermMemoryDao,
         longTermMemoryDao: LongTermMemoryDao,
         knowledgeBaseMemoryDao: KnowledgeBaseMemoryDao,
-        personaMemoryDao: PersonaMemoryDao
+        personaMemoryDao: PersonaMemoryDao,
+        gson: Gson
     ): MemoryRepository {
         return MemoryRepositoryImpl(
-            memoryDao,
             workingMemoryDao,
             shortTermMemoryDao,
             longTermMemoryDao,
             knowledgeBaseMemoryDao,
-            personaMemoryDao
+            personaMemoryDao,
+            gson
         )
     }
 

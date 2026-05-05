@@ -2,10 +2,12 @@ package com.aigallery.rewrite.devicecontrol
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.media.AudioManager
 import android.os.Build
+import android.provider.Settings
 import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -344,6 +346,116 @@ class DeviceControlManager @Inject constructor(
 
     fun playGesture(gesture: List<Pair<Int, Int>>) {
         // 播放手势
+    }
+
+    // ==================== 设备控制服务代理 ====================
+
+    private val deviceControlService: DeviceControlService by lazy {
+        DeviceControlService(context)
+    }
+
+    // ==================== 设备状态查询 ====================
+
+    /**
+     * 获取WiFi状态
+     */
+    fun isWifiEnabled(): Boolean = deviceControlService.isWifiEnabled()
+
+    /**
+     * 获取蓝牙状态
+     */
+    fun isBluetoothEnabled(): Boolean = deviceControlService.isBluetoothEnabled()
+
+    /**
+     * 获取手电筒状态
+     */
+    fun isFlashlightOn(): Boolean = deviceControlService.isFlashlightOn()
+
+    /**
+     * 获取屏幕亮度
+     */
+    fun getBrightness(): Float = deviceControlService.getBrightness()
+
+    /**
+     * 获取音量 (媒体音量)
+     */
+    fun getVolume(): Int = deviceControlService.getVolume(android.media.AudioManager.STREAM_MUSIC)
+
+    // ==================== 设备控制 ====================
+
+    /**
+     * 设置WiFi开关
+     */
+    fun setWifiEnabled(enabled: Boolean): Result<Boolean> {
+        return deviceControlService.setWifiEnabled(enabled)
+    }
+
+    /**
+     * 设置蓝牙开关
+     */
+    fun setBluetoothEnabled(enabled: Boolean): Result<Boolean> {
+        return deviceControlService.setBluetoothEnabled(enabled)
+    }
+
+    /**
+     * 设置手电筒开关
+     */
+    fun setFlashlight(enabled: Boolean): Result<Unit> {
+        return deviceControlService.setFlashlight(enabled)
+    }
+
+    /**
+     * 设置屏幕亮度
+     */
+    fun setBrightness(level: Float): Result<Unit> {
+        return deviceControlService.setBrightness(level)
+    }
+
+    /**
+     * 设置音量 (媒体音量)
+     */
+    fun setVolume(volume: Int): Result<Unit> {
+        return deviceControlService.setVolume(android.media.AudioManager.STREAM_MUSIC, volume)
+    }
+
+    /**
+     * 增加音量
+     */
+    fun increaseVolume(): Result<Unit> {
+        return deviceControlService.increaseVolume()
+    }
+
+    /**
+     * 降低音量
+     */
+    fun decreaseVolume(): Result<Unit> {
+        return deviceControlService.decreaseVolume()
+    }
+
+    /**
+     * 启动应用
+     */
+    fun launchApp(packageName: String): Result<Unit> {
+        return deviceControlService.launchApp(packageName)
+    }
+
+    // ==================== 权限请求 ====================
+
+    /**
+     * 请求无障碍服务权限
+     */
+    fun requestAccessibilityPermission() {
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    }
+
+    /**
+     * 检查是否有写入设置权限
+     */
+    fun canWriteSettings(): Boolean {
+        return Settings.System.canWrite(context)
     }
 }
 

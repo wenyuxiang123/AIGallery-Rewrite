@@ -1,8 +1,8 @@
 package com.aigallery.rewrite.devicecontrol
 
+import android.accessibilityservice.AccessibilityService
 import android.graphics.Path
 import android.os.Build
-import android.view.accessibility.GestureDescription
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
