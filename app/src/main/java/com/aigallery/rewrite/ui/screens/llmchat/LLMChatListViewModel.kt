@@ -30,14 +30,18 @@ class LLMChatListViewModel @Inject constructor(
 
     private fun loadSessions() {
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true) }
-            chatRepository.getAllSessions()
-                .catch { e ->
-                    _state.update { it.copy(error = e.message, isLoading = false) }
-                }
-                .collect { sessions ->
-                    _state.update { it.copy(sessions = sessions, isLoading = false) }
-                }
+            try {
+                _state.update { it.copy(isLoading = true) }
+                chatRepository.getAllSessions()
+                    .catch { e ->
+                        _state.update { it.copy(error = e.message ?: "加载失败", isLoading = false) }
+                    }
+                    .collect { sessions ->
+                        _state.update { it.copy(sessions = sessions, isLoading = false) }
+                    }
+            } catch (e: Exception) {
+                _state.update { it.copy(error = e.message ?: "加载失败", isLoading = false) }
+            }
         }
     }
 
