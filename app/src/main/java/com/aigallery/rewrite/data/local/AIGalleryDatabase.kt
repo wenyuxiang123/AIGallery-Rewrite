@@ -13,8 +13,6 @@ import com.aigallery.rewrite.data.local.entity.*
         // Chat entities
         ChatMessageEntity::class,
         ChatSessionEntity::class,
-        // Model download entities
-        com.aigallery.rewrite.data.local.entity.ModelDownloadEntity::class,
         // Memory entities
         MemoryEntity::class,
         WorkingMemoryEntity::class,

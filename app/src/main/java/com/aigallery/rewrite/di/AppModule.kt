@@ -99,16 +99,25 @@ object AppModule {
         return database.knowledgeBaseMemoryDao()
     }
 
+    @Provides
+    fun providePersonaMemoryDao(database: AIGalleryDatabase): PersonaMemoryDao {
+        return database.personaMemoryDao()
+    }
+
     // Task DAOs
     @Provides
-    fun provideTaskDao(database: AIGalleryDatabase): TaskDao {
-        return database.taskDao()
+    fun provideCustomSkillDao(database: AIGalleryDatabase): CustomSkillDao {
+        return database.customSkillDao()
     }
 
     @Provides
-    @Singleton
-    fun provideSettingsDataStore(@ApplicationContext context: Context): SettingsDataStore {
-        return SettingsDataStore(context)
+    fun provideTaskTemplateDao(database: AIGalleryDatabase): TaskTemplateDao {
+        return database.taskTemplateDao()
+    }
+
+    @Provides
+    fun provideTaskResultDao(database: AIGalleryDatabase): TaskResultDao {
+        return database.taskResultDao()
     }
 
     // Repositories
@@ -130,7 +139,7 @@ object AppModule {
         shortTermMemoryDao: ShortTermMemoryDao,
         longTermMemoryDao: LongTermMemoryDao,
         knowledgeBaseMemoryDao: KnowledgeBaseMemoryDao,
-        gson: Gson
+        personaMemoryDao: PersonaMemoryDao
     ): MemoryRepository {
         return MemoryRepositoryImpl(
             memoryDao,
@@ -138,38 +147,27 @@ object AppModule {
             shortTermMemoryDao,
             longTermMemoryDao,
             knowledgeBaseMemoryDao,
-            gson
+            personaMemoryDao
         )
     }
 
-    // ==================== 设备控制模块 - 爱马仕级全操控 ====================
-    
-    /**
-     * 设备控制服务 - 提供系统服务控制能力
-     * 包括WiFi、蓝牙、音量、亮度、手电筒等设备控制
-     */
+    // Settings
     @Provides
     @Singleton
-    fun provideDeviceControlService(
-        @ApplicationContext context: Context
-    ): DeviceControlService {
-        return DeviceControlService(context)
+    fun provideSettingsDataStore(@ApplicationContext context: Context): SettingsDataStore {
+        return SettingsDataStore(context)
     }
 
-    /**
-     * 设备控制管理器 - 设备控制总入口
-     * 单例模式，管理所有设备控制能力
-     * 提供统一的API接口给UI层和LLM层调用
-     */
+    // Device Control
     @Provides
     @Singleton
-    fun provideDeviceControlManager(
-        @ApplicationContext context: Context,
-        deviceControlService: DeviceControlService
-    ): DeviceControlManager {
-        return DeviceControlManager.getInstance(context).also { manager ->
-            // 初始化设备状态
-            // 注意：这里不能直接调用设备状态获取，因为可能还未启用
-        }
+    fun provideDeviceControlManager(@ApplicationContext context: Context): DeviceControlManager {
+        return DeviceControlManager(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideDeviceControlService(deviceControlManager: DeviceControlManager): DeviceControlService {
+        return DeviceControlService(deviceControlManager)
     }
 }
