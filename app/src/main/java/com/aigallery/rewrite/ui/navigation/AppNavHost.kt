@@ -11,6 +11,7 @@ import com.aigallery.rewrite.ui.screens.customtasks.CustomTasksScreen
 import com.aigallery.rewrite.ui.screens.customtasks.MobileActionsScreen
 import com.aigallery.rewrite.ui.screens.home.HomeScreen
 import com.aigallery.rewrite.ui.screens.llmchat.ChatSessionScreen
+import com.aigallery.rewrite.ui.screens.llmchat.LLMChatScreen
 import com.aigallery.rewrite.ui.screens.memory.MemoryDetailScreen
 import com.aigallery.rewrite.ui.screens.memory.MemoryScreen
 import com.aigallery.rewrite.ui.screens.modelmanager.ModelManagerScreen
@@ -51,8 +52,10 @@ fun AppNavHost(
         }
 
         composable(Screen.LLMChat.route) {
-            ChatSessionScreen(
-                onBack = { navController.popBackStack() }
+            LLMChatScreen(
+                onNavigateToSession = { sessionId ->
+                    navController.navigate(Screen.ChatSession.createRoute(sessionId))
+                }
             )
         }
 
@@ -66,6 +69,7 @@ fun AppNavHost(
 
         composable(Screen.CustomTasks.route) {
             CustomTasksScreen(
+                onNavigateToAgentChat = { skillId -> },
                 onNavigateToMobileActions = {
                     navController.navigate(Screen.MobileActions.route)
                 }
