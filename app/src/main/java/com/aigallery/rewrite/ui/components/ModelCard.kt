@@ -152,7 +152,7 @@ fun ModelCard(
                         }
                     }
                     ModelStatus.INITIALIZING -> {
-                        FilledTonalButton(enabled = false) {
+                        FilledTonalButton(onClick = {}, enabled = false) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(18.dp),
                                 strokeWidth = 2.dp

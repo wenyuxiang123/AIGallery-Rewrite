@@ -62,20 +62,8 @@ fun LLMChatScreen(
             state.sessions.isEmpty() -> {
                 EmptyState(
                     title = "暂无对话",
-                    description = "点击右下角按钮开始新对话",
-                    modifier = Modifier.padding(paddingValues)
-                ) {
-                    Button(
-                        onClick = {
-                            val sessionId = viewModel.createNewSession()
-                            onNavigateToSession(sessionId)
-                        }
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("新建对话")
-                    }
-                }
+                    description = "点击右下角按钮开始新对话"
+                )
             }
             else -> {
                 LazyColumn(

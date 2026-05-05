@@ -219,7 +219,7 @@ fun MobileActionsScreen(
                     onPlayGesture = {
                         // 播放手势
                     },
-                    onQuickSwipe = { direction ->
+                    onQuickSwipe = { }
                         val gesture = deviceControlManager?.gestureRecorder?.createQuickSwipeGesture(direction)
                         gesture?.let { deviceControlManager?.playGesture(it) }
                     }
@@ -1204,7 +1204,7 @@ private suspend fun processNaturalLanguageCommand(
         cmd.contains("分析") || cmd.contains("看看") || cmd.contains("这是什么") -> {
             val analysis = manager.screenAnalyzer.analyzeScreen()
             if (analysis != null) {
-                manager.generateLLMDescription()
+                manager.screenAnalyzer.generateLLMDescription()
             } else {
                 "错误：无法获取屏幕信息，请检查无障碍服务是否启用"
             }

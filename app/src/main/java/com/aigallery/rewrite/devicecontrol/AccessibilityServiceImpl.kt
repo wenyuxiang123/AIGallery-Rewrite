@@ -1,6 +1,7 @@
 package com.aigallery.rewrite.devicecontrol
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.graphics.Bitmap
@@ -341,13 +342,13 @@ class AccessibilityServiceImpl : AccessibilityService() {
                 moveTo(x.toFloat(), y.toFloat())
             }
             
-            val stroke = AccessibilityService.GestureDescription.StrokeDescription(
+            val stroke = GestureDescription.StrokeDescription(
                 path,
                 0,
                 duration
             )
             
-            val gesture = AccessibilityService.GestureDescription.Builder()
+            val gesture = GestureDescription.Builder()
                 .addStroke(stroke)
                 .build()
             
@@ -377,13 +378,13 @@ class AccessibilityServiceImpl : AccessibilityService() {
                 lineTo(endX.toFloat(), endY.toFloat())
             }
             
-            val stroke = AccessibilityService.GestureDescription.StrokeDescription(
+            val stroke = GestureDescription.StrokeDescription(
                 path,
                 0,
                 duration
             )
             
-            val gesture = AccessibilityService.GestureDescription.Builder()
+            val gesture = GestureDescription.Builder()
                 .addStroke(stroke)
                 .build()
             
