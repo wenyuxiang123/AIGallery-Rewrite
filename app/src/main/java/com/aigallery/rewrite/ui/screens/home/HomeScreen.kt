@@ -68,14 +68,14 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     QuickActionCard(
-                        icon = Icons.Default.Chat,
+                        icon = Icons.Default.ChatBubble,
                         title = "AI对话",
                         description = "与AI聊天",
                         onClick = onNavigateToLLMChat,
                         modifier = Modifier.weight(1f)
                     )
                     QuickActionCard(
-                        icon = Icons.Default.ModelTraining,
+                        icon = Icons.Default.Download,
                         title = "模型管理",
                         description = "下载管理模型",
                         onClick = onNavigateToModelManager,
@@ -90,14 +90,14 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     QuickActionCard(
-                        icon = Icons.Default.Psychology,
+                        icon = Icons.Default.Memory,
                         title = "记忆中心",
                         description = "五层记忆系统",
                         onClick = onNavigateToMemory,
                         modifier = Modifier.weight(1f)
                     )
                     QuickActionCard(
-                        icon = Icons.Default.Build,
+                        icon = Icons.Default.Settings,
                         title = "自定义任务",
                         description = "Agent & 工具",
                         onClick = onNavigateToCustomTasks,
@@ -112,7 +112,7 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     QuickActionCard(
-                        icon = Icons.Default.Lightbulb,
+                        icon = Icons.Default.AutoAwesome,
                         title = "单轮任务",
                         description = "写作翻译摘要",
                         onClick = onNavigateToSingleTurn,
@@ -135,7 +135,7 @@ fun HomeScreen(
             items(
                 listOf(
                     FeatureItem(
-                        icon = Icons.Default.CloudSync,
+                        icon = Icons.Default.Refresh,
                         title = "国内镜像加速",
                         description = "ModelScope镜像源，下载速度更快"
                     ),
@@ -145,12 +145,12 @@ fun HomeScreen(
                         description = "支持Llama、Qwen、Gemma等多种开源模型"
                     ),
                     FeatureItem(
-                        icon = Icons.Default.Psychology,
+                        icon = Icons.Default.Memory,
                         title = "五层记忆系统",
                         description = "工作记忆→短期→长期→知识库→角色记忆"
                     ),
                     FeatureItem(
-                        icon = Icons.Default.Dashboard,
+                        icon = Icons.Default.GridView,
                         title = "多模态支持",
                         description = "文本、图像、语音输入输出"
                     )
