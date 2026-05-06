@@ -109,9 +109,7 @@ fun ChatSessionScreen(
  * 空聊天状态
  */
 @Composable
-private fun EmptyChatState(onPromptClick = { prompt ->
-                    viewModel.sendMessage(prompt)
-                }) {
+private fun EmptyChatState(onPromptClick: (String) -> Unit = {}) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -165,7 +163,7 @@ private fun EmptyChatState(onPromptClick = { prompt ->
  * 快捷提示标签
  */
 @Composable
-private fun QuickPromptChips(onPromptClick = onPromptClick) {
+private fun QuickPromptChips(onPromptClick: (String) -> Unit = {}) {
     val prompts = listOf(
         "介绍一下自己",
         "你有什么功能？",
