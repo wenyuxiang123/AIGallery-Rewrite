@@ -3,6 +3,7 @@ package com.aigallery.rewrite.download
 import android.content.Context
 import android.util.Log
 import com.aigallery.rewrite.util.FileLogger
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,7 +31,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class MnnModelDownloader @Inject constructor(
-    private val context: Context
+    @ApplicationContext private val context: Context
 ) {
     
     companion object {
