@@ -90,15 +90,13 @@ class ModelDownloadManager @Inject constructor(
         Log.d(TAG, "Starting download: modelId=$modelId, url=$url, fileName=$fileName")
 
         // 创建下载请求
-        val request = DownloadManager.Request(Uri.parse(url)).apply {
-            title = "下载模型: $modelName"
-            description = "正在下载 $modelName"
-            allowedNetworkTypes = DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE
-            allowedOverRoaming = false
-            notificationVisibility = DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
-            // 直接下载到应用私有目录
-            setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-        }
+        val request = DownloadManager.Request(Uri.parse(url))
+            .setTitle("下载模型: $modelName")
+            .setDescription("正在下载 $modelName")
+            .setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE)
+            .setAllowedOverRoaming(false)
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
 
         // 开始下载
         val downloadId = downloadManager?.enqueue(request) ?: -1L
