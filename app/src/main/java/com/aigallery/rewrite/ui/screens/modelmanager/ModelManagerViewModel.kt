@@ -310,18 +310,22 @@ class ModelManagerViewModel @Inject constructor(
                     FileLogger.d(TAG, "downloadMnnModel progress: $fileName ($current/$total)")
                 },
                 onByteProgress = { progress ->
-                    _state.update { state ->
-                        state.copy(
-                            models = state.models.map { m ->
-                                // 同时更新MNN模型和原始GGUF模型的状态
-                                if (m.id == model.id || m.id == sourceModelId) {
-                                    m.copy(
-                                        status = ModelStatus.DOWNLOADING,
-                                        downloadProgress = progress
-                                    )
-                                } else m
-                            }
-                        )
+                    // 只在进度变化>=1%时更新UI，减少闪烁
+                    val currentProgress = _state.value.models.find { it.id == model.id }?.downloadProgress ?: 0f
+                    if (progress - currentProgress >= 0.01f || progress >= 1f) {
+                        _state.update { state ->
+                            state.copy(
+                                models = state.models.map { m ->
+                                    // 同时更新MNN模型和原始GGUF模型的状态
+                                    if (m.id == model.id || m.id == sourceModelId) {
+                                        m.copy(
+                                            status = ModelStatus.DOWNLOADING,
+                                            downloadProgress = progress
+                                        )
+                                    } else m
+                                }
+                            )
+                        }
                     }
                 }
             )
@@ -340,6 +344,9 @@ class ModelManagerViewModel @Inject constructor(
                             }
                         )
                     }
+                    // 下载完成后自动加载模型
+                    FileLogger.d(TAG, "downloadMnnModel: auto-loading model ${model.id}")
+                    loadModel(model.id)
                 },
                 onFailure = { error ->
                     FileLogger.e(TAG, "downloadMnnModel: ${model.id} failed with error: ${error.message}", error)
@@ -381,14 +388,33 @@ class ModelManagerViewModel @Inject constructor(
             }
 
             try {
-                val modelPath = if (model.isMnnModel) {
-                    mnnDownloader.getModelDir(modelId)
+                // GGUF模型自动重定向到MNN模型路径
+                val actualModelId: String
+                val modelPath: String
+                if (model.isMnnModel) {
+                    actualModelId = modelId
+                    modelPath = mnnDownloader.getModelDir(modelId)
                 } else {
-                    com.aigallery.rewrite.download.ModelDownloadManager(application).getModelFilePath(modelId)
-                        ?: throw IllegalStateException("Model file not found")
+                    // GGUF模型 -> 找对应的MNN版本路径
+                    val mnnId = modelId + "-mnn"
+                    actualModelId = mnnId
+                    modelPath = mnnDownloader.getModelDir(mnnId)
+                    FileLogger.d(TAG, "loadModel: GGUF model $modelId redirected to MNN path $mnnId -> $modelPath")
                 }
 
                 FileLogger.d(TAG, "loadModel: path=$modelPath")
+
+                // 验证模型目录和文件是否存在
+                val modelDir = java.io.File(modelPath)
+                if (!modelDir.exists()) {
+                    throw IllegalStateException("Model directory not found: $modelPath")
+                }
+                val requiredFiles = listOf("config.json", "llm_config.json", "llm.mnn", "llm.mnn.weight", "llm.mnn.json", "tokenizer.txt")
+                val missingFiles = requiredFiles.filter { !java.io.File(modelDir, it).exists() }
+                if (missingFiles.isNotEmpty()) {
+                    throw IllegalStateException("Missing model files: $missingFiles")
+                }
+                FileLogger.d(TAG, "loadModel: all required files present in $modelPath")
 
                 val success = inferenceEngine.initialize(
                     modelPath = modelPath,
@@ -407,7 +433,7 @@ class ModelManagerViewModel @Inject constructor(
                     _state.update { state ->
                         state.copy(
                             models = state.models.map { m ->
-                                if (m.id == modelId) {
+                                if (m.id == modelId || m.id == actualModelId) {
                                     m.copy(status = ModelStatus.READY)
                                 } else m
                             }
