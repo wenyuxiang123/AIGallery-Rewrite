@@ -416,17 +416,17 @@
 214        </receiver>
 215
 216        <activity
-216-->[androidx.compose.ui:ui-tooling-android:1.6.0] /root/.gradle/caches/8.9/transforms/b58b1ec539efc3f9d16d0882f16e8b7b/transformed/jetified-ui-tooling-release/AndroidManifest.xml:23:9-25:39
+216-->[androidx.compose.ui:ui-tooling-android:1.6.1] /root/.gradle/caches/8.9/transforms/ef42058f05e3abbeca8100f723481000/transformed/jetified-ui-tooling-release/AndroidManifest.xml:23:9-25:39
 217            android:name="androidx.compose.ui.tooling.PreviewActivity"
-217-->[androidx.compose.ui:ui-tooling-android:1.6.0] /root/.gradle/caches/8.9/transforms/b58b1ec539efc3f9d16d0882f16e8b7b/transformed/jetified-ui-tooling-release/AndroidManifest.xml:24:13-71
+217-->[androidx.compose.ui:ui-tooling-android:1.6.1] /root/.gradle/caches/8.9/transforms/ef42058f05e3abbeca8100f723481000/transformed/jetified-ui-tooling-release/AndroidManifest.xml:24:13-71
 218            android:exported="true" />
-218-->[androidx.compose.ui:ui-tooling-android:1.6.0] /root/.gradle/caches/8.9/transforms/b58b1ec539efc3f9d16d0882f16e8b7b/transformed/jetified-ui-tooling-release/AndroidManifest.xml:25:13-36
+218-->[androidx.compose.ui:ui-tooling-android:1.6.1] /root/.gradle/caches/8.9/transforms/ef42058f05e3abbeca8100f723481000/transformed/jetified-ui-tooling-release/AndroidManifest.xml:25:13-36
 219        <activity
-219-->[androidx.compose.ui:ui-test-manifest:1.6.0] /root/.gradle/caches/8.9/transforms/212c9be98a25184514638f39e192541c/transformed/jetified-ui-test-manifest-1.6.0/AndroidManifest.xml:23:9-25:39
+219-->[androidx.compose.ui:ui-test-manifest:1.6.1] /root/.gradle/caches/8.9/transforms/59daf452fee050a6fa2f09766ee2a9f4/transformed/jetified-ui-test-manifest-1.6.1/AndroidManifest.xml:23:9-25:39
 220            android:name="androidx.activity.ComponentActivity"
-220-->[androidx.compose.ui:ui-test-manifest:1.6.0] /root/.gradle/caches/8.9/transforms/212c9be98a25184514638f39e192541c/transformed/jetified-ui-test-manifest-1.6.0/AndroidManifest.xml:24:13-63
+220-->[androidx.compose.ui:ui-test-manifest:1.6.1] /root/.gradle/caches/8.9/transforms/59daf452fee050a6fa2f09766ee2a9f4/transformed/jetified-ui-test-manifest-1.6.1/AndroidManifest.xml:24:13-63
 221            android:exported="true" />
-221-->[androidx.compose.ui:ui-test-manifest:1.6.0] /root/.gradle/caches/8.9/transforms/212c9be98a25184514638f39e192541c/transformed/jetified-ui-test-manifest-1.6.0/AndroidManifest.xml:25:13-36
+221-->[androidx.compose.ui:ui-test-manifest:1.6.1] /root/.gradle/caches/8.9/transforms/59daf452fee050a6fa2f09766ee2a9f4/transformed/jetified-ui-test-manifest-1.6.1/AndroidManifest.xml:25:13-36
 222
 223        <service
 223-->[androidx.room:room-runtime:2.6.1] /root/.gradle/caches/8.9/transforms/e4ebeff378c69637ceed8736d05637db/transformed/room-runtime-2.6.1/AndroidManifest.xml:24:9-28:63

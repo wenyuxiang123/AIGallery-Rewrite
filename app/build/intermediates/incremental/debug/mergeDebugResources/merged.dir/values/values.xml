@@ -152,10 +152,6 @@
     <string name="androidx_startup" translatable="false">androidx.startup</string>
     <string name="app_name">AI Gallery</string>
     <string name="bluetooth">蓝牙</string>
-    <string name="bottom_sheet_collapse_description">Collapse bottom sheet</string>
-    <string name="bottom_sheet_dismiss_description">Dismiss bottom sheet</string>
-    <string name="bottom_sheet_drag_handle_description">Drag handle</string>
-    <string name="bottom_sheet_expand_description">Expand bottom sheet</string>
     <string name="brightness">亮度</string>
     <string name="call_notification_answer_action">Answer</string>
     <string name="call_notification_answer_video_action">Video</string>
@@ -173,57 +169,19 @@
     <string name="chat_voice_input">语音输入</string>
     <string name="close_drawer">"Close navigation menu"</string>
     <string name="close_sheet">"Close sheet"</string>
-    <string name="collapsed">Collapsed</string>
     <string name="confirm">确认</string>
     <string name="danger_operation_message">此操作需要您的确认才能执行：%s</string>
     <string name="danger_operation_warning">危险操作警告</string>
-    <string name="date_input_headline">Entered date</string>
-    <string name="date_input_headline_description">Entered date: %1$s</string>
-    <string name="date_input_invalid_for_pattern">Date does not match expected pattern: %1$s</string>
-    <string name="date_input_invalid_not_allowed">Date not allowed: %1$s</string>
-    <string name="date_input_invalid_year_range">
-        Date out of expected year range %1$s - %2$s
-    </string>
-    <string name="date_input_label">Date</string>
-    <string name="date_input_no_input_description">None</string>
-    <string name="date_input_title">Select date</string>
-    <string name="date_picker_headline">"Selected date"</string>
-    <string name="date_picker_headline_description">Current selection: %1$s</string>
-    <string name="date_picker_navigate_to_year_description">Navigate to year %1$s</string>
-    <string name="date_picker_no_selection_description">None</string>
-    <string name="date_picker_scroll_to_earlier_years">Scroll to show earlier years</string>
-    <string name="date_picker_scroll_to_later_years">Scroll to show later years</string>
-    <string name="date_picker_switch_to_calendar_mode">Switch to calendar input mode</string>
-    <string name="date_picker_switch_to_day_selection">
-        "Swipe to select a year, or tap to switch back to selecting a day"
-    </string>
-    <string name="date_picker_switch_to_input_mode">Switch to text input mode</string>
-    <string name="date_picker_switch_to_next_month">"Change to next month"</string>
-    <string name="date_picker_switch_to_previous_month">"Change to previous month"</string>
-    <string name="date_picker_switch_to_year_selection">"Switch to selecting a year"</string>
-    <string name="date_picker_title">"Select date"</string>
-    <string name="date_picker_today_description">Today</string>
-    <string name="date_picker_year_picker_pane_title">Year picker visible</string>
-    <string name="date_range_input_invalid_range_input">Invalid date range input</string>
-    <string name="date_range_input_title">Enter dates</string>
-    <string name="date_range_picker_day_in_range">In range</string>
-    <string name="date_range_picker_end_headline">End date</string>
-    <string name="date_range_picker_scroll_to_next_month">Scroll to show the next month</string>
-    <string name="date_range_picker_scroll_to_previous_month">Scroll to show the previous month</string>
-    <string name="date_range_picker_start_headline">Start date</string>
-    <string name="date_range_picker_title">Select dates</string>
     <string name="default_error_message">"Invalid input"</string>
     <string name="default_popup_window_title" ns1:ignore="ExtraTranslation">"Pop-Up Window"</string>
     <string name="delete">删除</string>
     <string name="device_control_title">爱马仕级全操控</string>
-    <string name="dialog">"Dialog"</string>
     <string name="dropdown_menu">"Dropdown menu"</string>
     <string name="edit">编辑</string>
     <string name="empty">暂无数据</string>
     <string name="enable_accessibility_service">启用无障碍服务</string>
     <string name="enter_command_hint">输入自然语言命令，如\"打开微信\"、\"关闭WiFi\"…</string>
     <string name="error">错误</string>
-    <string name="expanded">Expanded</string>
     <string name="flashlight">手电筒</string>
     <string name="gesture_playback">手势回放</string>
     <string name="gesture_recording">手势录制</string>
@@ -231,7 +189,66 @@
     <string name="indeterminate">Partially checked</string>
     <string name="loading">加载中…</string>
     <string name="location">定位</string>
+    <string name="m3c_bottom_sheet_collapse_description">Collapse bottom sheet</string>
+    <string name="m3c_bottom_sheet_dismiss_description">Dismiss bottom sheet</string>
+    <string name="m3c_bottom_sheet_drag_handle_description">Drag handle</string>
+    <string name="m3c_bottom_sheet_expand_description">Expand bottom sheet</string>
     <string name="m3c_bottom_sheet_pane_title">Bottom Sheet</string>
+    <string name="m3c_date_input_headline">Entered date</string>
+    <string name="m3c_date_input_headline_description">Entered date: %1$s</string>
+    <string name="m3c_date_input_invalid_for_pattern">Date does not match expected pattern: %1$s</string>
+    <string name="m3c_date_input_invalid_not_allowed">Date not allowed: %1$s</string>
+    <string name="m3c_date_input_invalid_year_range">
+        Date out of expected year range %1$s - %2$s
+    </string>
+    <string name="m3c_date_input_label">Date</string>
+    <string name="m3c_date_input_no_input_description">None</string>
+    <string name="m3c_date_input_title">Select date</string>
+    <string name="m3c_date_picker_headline">"Selected date"</string>
+    <string name="m3c_date_picker_headline_description">Current selection: %1$s</string>
+    <string name="m3c_date_picker_navigate_to_year_description">Navigate to year %1$s</string>
+    <string name="m3c_date_picker_no_selection_description">None</string>
+    <string name="m3c_date_picker_scroll_to_earlier_years">Scroll to show earlier years</string>
+    <string name="m3c_date_picker_scroll_to_later_years">Scroll to show later years</string>
+    <string name="m3c_date_picker_switch_to_calendar_mode">Switch to calendar input mode</string>
+    <string name="m3c_date_picker_switch_to_day_selection">
+        "Swipe to select a year, or tap to switch back to selecting a day"
+    </string>
+    <string name="m3c_date_picker_switch_to_input_mode">Switch to text input mode</string>
+    <string name="m3c_date_picker_switch_to_next_month">"Change to next month"</string>
+    <string name="m3c_date_picker_switch_to_previous_month">"Change to previous month"</string>
+    <string name="m3c_date_picker_switch_to_year_selection">"Switch to selecting a year"</string>
+    <string name="m3c_date_picker_title">"Select date"</string>
+    <string name="m3c_date_picker_today_description">Today</string>
+    <string name="m3c_date_picker_year_picker_pane_title">Year picker visible</string>
+    <string name="m3c_date_range_input_invalid_range_input">Invalid date range input</string>
+    <string name="m3c_date_range_input_title">Enter dates</string>
+    <string name="m3c_date_range_picker_day_in_range">In range</string>
+    <string name="m3c_date_range_picker_end_headline">End date</string>
+    <string name="m3c_date_range_picker_scroll_to_next_month">Scroll to show the next month</string>
+    <string name="m3c_date_range_picker_scroll_to_previous_month">Scroll to show the previous month</string>
+    <string name="m3c_date_range_picker_start_headline">Start date</string>
+    <string name="m3c_date_range_picker_title">Select dates</string>
+    <string name="m3c_dialog">"Dialog"</string>
+    <string name="m3c_dropdown_menu_collapsed">Collapsed</string>
+    <string name="m3c_dropdown_menu_expanded">Expanded</string>
+    <string name="m3c_search_bar_search">Search</string>
+    <string name="m3c_snackbar_dismiss">Dismiss</string>
+    <string name="m3c_suggestions_available">Suggestions below</string>
+    <string name="m3c_time_picker_am">AM</string>
+    <string name="m3c_time_picker_hour">Hour</string>
+    <string name="m3c_time_picker_hour_24h_suffix">%1$d hours</string>
+    <string name="m3c_time_picker_hour_selection">Select hour</string>
+    <string name="m3c_time_picker_hour_suffix">%1$d o\'clock</string>
+    <string name="m3c_time_picker_hour_text_field">for hour</string>
+    <string name="m3c_time_picker_minute">Minute</string>
+    <string name="m3c_time_picker_minute_selection">Select minutes</string>
+    <string name="m3c_time_picker_minute_suffix">%1$d minutes</string>
+    <string name="m3c_time_picker_minute_text_field">for minutes</string>
+    <string name="m3c_time_picker_period_toggle_description">Select AM or PM</string>
+    <string name="m3c_time_picker_pm">PM</string>
+    <string name="m3c_tooltip_long_press_label">Show tooltip</string>
+    <string name="m3c_tooltip_pane_description">Tooltip</string>
     <string name="memory_add">添加记忆</string>
     <string name="memory_delete">删除记忆</string>
     <string name="memory_edit">编辑记忆</string>
@@ -273,7 +290,6 @@
     <string name="save">保存</string>
     <string name="screen_analysis">屏幕分析</string>
     <string name="screen_preview">屏幕预览</string>
-    <string name="search_bar_search">Search</string>
     <string name="selected">Selected</string>
     <string name="settings_about">关于</string>
     <string name="settings_clear_cache">清理缓存</string>
@@ -284,10 +300,8 @@
     <string name="single_summary">摘要</string>
     <string name="single_translation">翻译</string>
     <string name="single_writing">写作助手</string>
-    <string name="snackbar_dismiss">Dismiss</string>
     <string name="status_bar_notification_info_overflow">999+</string>
     <string name="success">成功</string>
-    <string name="suggestions_available">Suggestions below</string>
     <string name="switch_role">Switch</string>
     <string name="tab">Tab</string>
     <string name="task_agent_chat">Agent 对话</string>
@@ -295,22 +309,8 @@
     <string name="task_mobile_actions">手机控制</string>
     <string name="task_tiny_garden">Tiny Garden</string>
     <string name="template_percent"><ns2:g id="percentage">%1$d</ns2:g> percent.</string>
-    <string name="time_picker_am">AM</string>
-    <string name="time_picker_hour">Hour</string>
-    <string name="time_picker_hour_24h_suffix">%1$d hours</string>
-    <string name="time_picker_hour_selection">Select hour</string>
-    <string name="time_picker_hour_suffix">%1$d o\'clock</string>
-    <string name="time_picker_hour_text_field">for hour</string>
-    <string name="time_picker_minute">Minute</string>
-    <string name="time_picker_minute_selection">Select minutes</string>
-    <string name="time_picker_minute_suffix">%1$d minutes</string>
-    <string name="time_picker_minute_text_field">for minutes</string>
-    <string name="time_picker_period_toggle_description">Select AM or PM</string>
-    <string name="time_picker_pm">PM</string>
     <string name="tooltip_description">tooltip</string>
     <string name="tooltip_label">show tooltip</string>
-    <string name="tooltip_long_press_label">Show tooltip</string>
-    <string name="tooltip_pane_description">Tooltip</string>
     <string name="vibrate_mode">震动模式</string>
     <string name="volume">音量</string>
     <string name="wifi">WiFi</string>

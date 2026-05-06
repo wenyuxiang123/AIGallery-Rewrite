@@ -62,7 +62,7 @@ class LLMChatListViewModel @Inject constructor(
         FileLogger.d(TAG, "createNewSession: id=$sessionId")
         viewModelScope.launch {
             try {
-                chatRepository.createSession("新对话", "qwen2.5-1.5b")
+                chatRepository.createSession("新对话", "qwen2.5-1.5b-mnn")
             } catch (e: Exception) {
                 // 数据库操作失败也不崩溃
             }

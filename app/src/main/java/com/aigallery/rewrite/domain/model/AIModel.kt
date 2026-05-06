@@ -48,52 +48,7 @@ enum class ModelStatus {
  */
 object ModelCatalog {
     val supportedModels = listOf(
-        // Qwen 2.5 series (small models, ideal for mobile)
-        AIModel(
-            id = "qwen2.5-0.5b",
-            name = "Qwen 2.5 0.5B",
-            description = "阿里通义千问2.5，0.5B参数，极小体积，适合手机运行",
-            provider = ModelProvider.ALI_QWEN,
-            size = "390MB",
-            sizeBytes = 390_000_000,
-            quantization = "Q4_K_M",
-            parameters = "0.5B",
-            downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
-            mirrorUrl = "https://www.modelscope.cn/models/qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/master/qwen2.5-0.5b-instruct-q4_k_m.gguf",
-            hash = null,
-            isMultimodal = false,
-            minMemory = 1_000_000_000
-        ),
-        AIModel(
-            id = "qwen2.5-1.5b",
-            name = "Qwen 2.5 1.5B",
-            description = "阿里通义千问2.5，1.5B参数，轻量高效，中文能力强",
-            provider = ModelProvider.ALI_QWEN,
-            size = "990MB",
-            sizeBytes = 990_000_000,
-            quantization = "Q4_K_M",
-            parameters = "1.5B",
-            downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
-            mirrorUrl = "https://www.modelscope.cn/models/qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/master/qwen2.5-1.5b-instruct-q4_k_m.gguf",
-            hash = null,
-            isMultimodal = false,
-            minMemory = 2_000_000_000
-        ),
-        AIModel(
-            id = "qwen2.5-3b",
-            name = "Qwen 2.5 3B",
-            description = "阿里通义千问2.5，3B参数，性能均衡，适合大多数手机",
-            provider = ModelProvider.ALI_QWEN,
-            size = "1.9GB",
-            sizeBytes = 1_900_000_000,
-            quantization = "Q4_K_M",
-            parameters = "3B",
-            downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf",
-            mirrorUrl = "https://www.modelscope.cn/models/qwen/Qwen2.5-3B-Instruct-GGUF/resolve/master/qwen2.5-3b-instruct-q4_k_m.gguf",
-            hash = null,
-            isMultimodal = false,
-            minMemory = 4_000_000_000
-        ),
+        // Qwen 2.5 series
         AIModel(
             id = "qwen2.5-7b",
             name = "Qwen 2.5 7B",
