@@ -110,8 +110,8 @@ fun ModelManagerScreen(
                                 downloadState = downloadStatus,
                                 downloadProgress = model.downloadProgress,
                                 onDownload = { viewModel.downloadModel(model.id) },
-                                onPause = { viewModel.pauseDownload(model.id) },
-                                onResume = { viewModel.resumeDownload(model.id) },
+                                onPause = { viewModel.cancelDownload(model.id) },
+                                onResume = { viewModel.downloadModel(model.id) },
                                 onCancel = { viewModel.cancelDownload(model.id) },
                                 onDelete = { viewModel.deleteModel(model.id) },
                                 onSelect = { onModelSelected(model.id) }

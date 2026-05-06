@@ -82,7 +82,7 @@ class InferenceManager @Inject constructor(
     suspend fun infer(prompt: String, config: InferenceConfig = InferenceConfig()): InferenceResult {
         val engine = currentEngine ?: run {
             Log.w(TAG, "No active engine, using fallback")
-            val fallback = MnnInferenceEngine()
+            val fallback = MnnInferenceEngine(context)
             fallback.initialize("", InferenceConfig())
             return fallback.infer(prompt, config)
         }
@@ -99,7 +99,7 @@ class InferenceManager @Inject constructor(
     ): Flow<String> {
         val engine = currentEngine ?: run {
             Log.w(TAG, "No active engine, using fallback")
-            val fallback = MnnInferenceEngine()
+            val fallback = MnnInferenceEngine(context)
             fallback.initialize("", InferenceConfig())
             return fallback.inferStream(prompt, config)
         }
@@ -136,7 +136,7 @@ class InferenceManager @Inject constructor(
      * 获取支持的模型类型
      */
     fun getSupportedModelTypes(engineType: EngineType): List<String> {
-        val engine = InferenceEngineFactory.createEngine(engineType)
+        val engine = InferenceEngineFactory.createEngine(engineType, context)
         return engine.getSupportedModelTypes()
     }
 

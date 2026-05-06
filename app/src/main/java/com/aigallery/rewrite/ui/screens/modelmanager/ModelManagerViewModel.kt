@@ -117,9 +117,6 @@ class ModelManagerViewModel @Inject constructor(
                     }
                 } else {
                     // GGUF 模型状态
-                    val downloadState = com.aigallery.rewrite.download.DownloadStatus
-                    val downloaded = com.aigallery.rewrite.download.DownloadStatus.DOWNLOADED
-                    
                     if (mnnDownloader.isModelDownloaded(model.id)) {
                         model.copy(status = ModelStatus.DOWNLOADED, downloadProgress = 1f)
                     } else if (model.status == ModelStatus.DOWNLOADING || model.status == ModelStatus.PAUSED) {
@@ -148,7 +145,7 @@ class ModelManagerViewModel @Inject constructor(
                     val isDownloaded = if (model.isMnnModel) {
                         model.id in downloadedMnnModels
                     } else {
-                        com.aigallery.rewrite.download.DownloadManager(application).isModelDownloaded(model.id)
+                        mnnDownloader.isModelDownloaded(model.id)
                     }
                     
                     model.copy(

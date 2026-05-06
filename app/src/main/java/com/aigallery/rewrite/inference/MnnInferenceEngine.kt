@@ -188,7 +188,7 @@ class MnnInferenceEngine(
                     temperature = config.temperature,
                     topK = config.topK,
                     topP = config.topP
-                ).collect { token ->
+                ).collect { token: String ->
                     emit(token)
                 }
                 
