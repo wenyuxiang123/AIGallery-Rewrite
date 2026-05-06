@@ -162,11 +162,13 @@ class MnnModelDownloader @Inject constructor(
         val totalEstimatedSize = REQUIRED_FILES.sumOf { estimatedSizes[it] ?: 1_000_000L }
         
         try {
-            // 更新状态
+            // 更新状态 - 初始化时传入总字节数
             updateState(modelId, MnnDownloadState(
                 modelId = modelId,
                 status = MnnDownloadStatus.DOWNLOADING,
-                totalFiles = requiredCount  // 只计算必需文件
+                totalFiles = requiredCount,
+                totalBytes = totalEstimatedSize,
+                downloadedBytes = 0
             ))
             
             var completedSize = 0L
@@ -176,21 +178,33 @@ class MnnModelDownloader @Inject constructor(
             for ((fileIndex, fileName) in REQUIRED_FILES.withIndex()) {
                 FileLogger.d(TAG, "downloadModel: downloading required file $fileName")
                 
+                val fileSize = estimatedSizes[fileName] ?: 1_000_000L
+                
                 updateState(modelId, MnnDownloadState(
                     modelId = modelId,
                     status = MnnDownloadStatus.DOWNLOADING,
                     currentFile = fileName,
-                    completedFiles = fileIndex,
-                    totalFiles = requiredCount
+                    completedFiles = completedFileIndex,
+                    totalFiles = requiredCount,
+                    totalBytes = totalEstimatedSize,
+                    downloadedBytes = completedSize
                 ))
                 
-                val fileSize = estimatedSizes[fileName] ?: 1_000_000L
-                
                 val success = downloadRequiredFile(modelPath, fileName, targetDir, onFileProgress = { fileProgress: Float ->
-                    val fileBase = completedSize.toFloat() / totalEstimatedSize
-                    val fileWeight = fileSize.toFloat() / totalEstimatedSize
-                    val overallProgress = fileBase + fileWeight * fileProgress
+                    val currentFileBytes = (fileSize * fileProgress).toLong()
+                    val overallBytes = completedSize + currentFileBytes
+                    val overallProgress = overallBytes.toFloat() / totalEstimatedSize
                     onByteProgress(overallProgress.coerceAtMost(1f))
+                    // 更新状态中的字节进度
+                    updateState(modelId, MnnDownloadState(
+                        modelId = modelId,
+                        status = MnnDownloadStatus.DOWNLOADING,
+                        currentFile = fileName,
+                        completedFiles = completedFileIndex,
+                        totalFiles = requiredCount,
+                        totalBytes = totalEstimatedSize,
+                        downloadedBytes = overallBytes
+                    ))
                 })
                 
                 if (success) {
@@ -203,7 +217,9 @@ class MnnModelDownloader @Inject constructor(
                     updateState(modelId, MnnDownloadState(
                         modelId = modelId,
                         status = MnnDownloadStatus.FAILED,
-                        errorMessage = "Failed to download required file: $fileName"
+                        errorMessage = "Failed to download required file: $fileName",
+                        totalBytes = totalEstimatedSize,
+                        downloadedBytes = completedSize
                     ))
                     return@withContext Result.failure(
                         IllegalStateException("Failed to download required file: $fileName")
@@ -211,16 +227,20 @@ class MnnModelDownloader @Inject constructor(
                 }
             }
             
-            // 可选文件下载（视觉模型需要）
+            // 可选文件下载（视觉模型需要）- 不影响必需文件进度
+            // 可选文件跳过时，保持当前进度不变
             for (fileName in OPTIONAL_FILES) {
                 FileLogger.d(TAG, "downloadModel: downloading optional file $fileName")
                 
+                // 更新状态显示正在尝试下载可选文件（进度不变）
                 updateState(modelId, MnnDownloadState(
                     modelId = modelId,
                     status = MnnDownloadStatus.DOWNLOADING,
                     currentFile = fileName,
                     completedFiles = completedFileIndex,
-                    totalFiles = requiredCount
+                    totalFiles = requiredCount,
+                    totalBytes = totalEstimatedSize,
+                    downloadedBytes = completedSize
                 ))
                 
                 // 可选文件：404 时跳过，不重试
@@ -229,6 +249,7 @@ class MnnModelDownloader @Inject constructor(
                     FileLogger.i(TAG, "downloadModel: optional file $fileName completed")
                 }
                 // 无论成功与否都继续，因为可选文件不是必须的
+                // 可选文件不计入下载进度
             }
             
             // 验证必需文件
@@ -241,18 +262,23 @@ class MnnModelDownloader @Inject constructor(
                 updateState(modelId, MnnDownloadState(
                     modelId = modelId,
                     status = MnnDownloadStatus.FAILED,
-                    errorMessage = "Missing required files: $missingRequired"
+                    errorMessage = "Missing required files: $missingRequired",
+                    totalBytes = totalEstimatedSize,
+                    downloadedBytes = completedSize
                 ))
                 return@withContext Result.failure(
                     IllegalStateException("Missing required files: $missingRequired")
                 )
             }
             
+            // 下载完成
             updateState(modelId, MnnDownloadState(
                 modelId = modelId,
                 status = MnnDownloadStatus.COMPLETED,
                 completedFiles = requiredCount,
-                totalFiles = requiredCount
+                totalFiles = requiredCount,
+                totalBytes = totalEstimatedSize,
+                downloadedBytes = totalEstimatedSize
             ))
             
             FileLogger.i(TAG, "downloadModel: $modelId completed successfully")
@@ -263,7 +289,9 @@ class MnnModelDownloader @Inject constructor(
             updateState(modelId, MnnDownloadState(
                 modelId = modelId,
                 status = MnnDownloadStatus.FAILED,
-                errorMessage = e.message
+                errorMessage = e.message,
+                totalBytes = totalEstimatedSize,
+                downloadedBytes = completedSize
             ))
             Result.failure(e)
         }
@@ -497,6 +525,7 @@ sealed class DownloadResult {
 
 /**
  * MNN 下载状态
+ * 进度基于实际下载字节数计算（downloadedBytes/totalBytes）
  */
 data class MnnDownloadState(
     val modelId: String,
@@ -504,10 +533,20 @@ data class MnnDownloadState(
     val currentFile: String? = null,
     val completedFiles: Int = 0,
     val totalFiles: Int = 0,
+    val downloadedBytes: Long = 0,
+    val totalBytes: Long = 0,
     val errorMessage: String? = null
 ) {
+    /**
+     * 进度百分比 (0.0 - 1.0)
+     * 基于实际下载字节数计算
+     */
     val progress: Float
-        get() = if (totalFiles > 0) completedFiles.toFloat() / totalFiles else 0f
+        get() = if (totalBytes > 0 && downloadedBytes > 0) {
+            (downloadedBytes.toFloat() / totalBytes).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
 }
 
 /**
