@@ -27,6 +27,10 @@ import javax.inject.Singleton
  * - llm.mnn.json
  * - tokenizer.txt
  * 
+ * 可选文件（视觉模型需要）：
+ * - visual.mnn
+ * - visual.mnn.weight
+ * 
  * 需要从 ModelScope 下载完整的目录结构
  */
 @Singleton
@@ -41,7 +45,7 @@ class MnnModelDownloader @Inject constructor(
         private const val MODEL_SCOPE_API = "https://modelscope.cn/api/v1/models"
         private const val MODEL_SCOPE_FILE_API = "https://modelscope.cn/api/v1/models/{model_id}/repo/files"
         
-        // MNN 模型必需文件
+        // MNN 模型必需文件（核心文件）
         private val REQUIRED_FILES = listOf(
             "config.json",
             "llm_config.json", 
@@ -51,7 +55,7 @@ class MnnModelDownloader @Inject constructor(
             "tokenizer.txt"
         )
         
-        // 可选文件
+        // 可选文件（仅视觉模型需要）
         private val OPTIONAL_FILES = listOf(
             "visual.mnn",
             "visual.mnn.weight"
@@ -70,11 +74,25 @@ class MnnModelDownloader @Inject constructor(
     val downloadStates: StateFlow<Map<String, MnnDownloadState>> = _downloadStates.asStateFlow()
     
     // MNN 模型 ID 映射（modelId -> ModelScope 路径）
+    // ModelScope 路径格式: MNN/ModelName
     private val mnnModelPaths = mapOf(
+        // Qwen 2.5 系列
         "qwen2.5-0.5b-mnn" to "MNN/Qwen2.5-0.5B-Instruct-MNN",
         "qwen2.5-1.5b-mnn" to "MNN/Qwen2.5-1.5B-Instruct-MNN",
         "qwen2.5-3b-mnn" to "MNN/Qwen2.5-3B-Instruct-MNN",
-        "qwen3-4b-mnn" to "MNN/Qwen3.5-4B-MNN"
+        "qwen2.5-7b-mnn" to "MNN/Qwen2.5-7B-Instruct-MNN",
+        
+        // Qwen 3.5 系列
+        "qwen3.5-0.8b-mnn" to "MNN/Qwen3.5-0.8B-MNN",
+        "qwen3.5-2b-mnn" to "MNN/Qwen3.5-2B-MNN",
+        "qwen3.5-4b-mnn" to "MNN/Qwen3.5-4B-MNN",
+        "qwen3.5-9b-mnn" to "MNN/Qwen3.5-9B-MNN",
+        
+        // Qwen2-VL 多模态系列
+        "qwen2-vl-2b-mnn" to "MNN/Qwen2-VL-2B-Instruct-MNN",
+        
+        // Qwen2.5-Omni 全模态系列
+        "qwen2.5-omni-3b-mnn" to "MNN/Qwen2.5-Omni-3B-MNN"
     )
     
     /**
@@ -126,9 +144,9 @@ class MnnModelDownloader @Inject constructor(
         val targetDir = File(modelDir, modelId)
         if (!targetDir.exists()) targetDir.mkdirs()
         
-        // 获取文件列表
-        val allFiles = REQUIRED_FILES + OPTIONAL_FILES
-        val totalFiles = allFiles.size
+        // 获取文件列表 - 只下载必需文件，可选文件按需下载
+        val requiredCount = REQUIRED_FILES.size
+        val totalFiles = requiredCount + OPTIONAL_FILES.size  // 进度显示总文件数但只验证必需文件
         
         // 预估各文件大小（基于已知模型的大小比例）
         val estimatedSizes = mapOf(
@@ -141,58 +159,76 @@ class MnnModelDownloader @Inject constructor(
             "visual.mnn" to 1_000_000L,
             "visual.mnn.weight" to 200_000_000L
         )
-        val totalEstimatedSize = allFiles.sumOf { estimatedSizes[it] ?: 1_000_000L }
+        val totalEstimatedSize = REQUIRED_FILES.sumOf { estimatedSizes[it] ?: 1_000_000L }
         
         try {
             // 更新状态
             updateState(modelId, MnnDownloadState(
                 modelId = modelId,
                 status = MnnDownloadStatus.DOWNLOADING,
-                totalFiles = totalFiles
+                totalFiles = requiredCount  // 只计算必需文件
             ))
             
             var completedSize = 0L
+            var completedFileIndex = 0
             
-            for ((fileIndex, fileName) in allFiles.withIndex()) {
-                FileLogger.d(TAG, "downloadModel: downloading $fileName")
+            // 先下载所有必需文件
+            for ((fileIndex, fileName) in REQUIRED_FILES.withIndex()) {
+                FileLogger.d(TAG, "downloadModel: downloading required file $fileName")
                 
                 updateState(modelId, MnnDownloadState(
                     modelId = modelId,
                     status = MnnDownloadStatus.DOWNLOADING,
                     currentFile = fileName,
                     completedFiles = fileIndex,
-                    totalFiles = totalFiles
+                    totalFiles = requiredCount
                 ))
                 
                 val fileSize = estimatedSizes[fileName] ?: 1_000_000L
                 
-                try {
-                    val success = downloadFile(modelPath, fileName, targetDir, onFileProgress = { fileProgress: Float ->
-                        // 基于文件大小的进度计算
-                        val fileBase = completedSize.toFloat() / totalEstimatedSize
-                        val fileWeight = fileSize.toFloat() / totalEstimatedSize
-                        val overallProgress = fileBase + fileWeight * fileProgress
-                        onByteProgress(overallProgress.coerceAtMost(1f))
-                    })
-                    if (success) {
-                        completedSize += fileSize
-                        onByteProgress(completedSize.toFloat() / totalEstimatedSize)
-                        FileLogger.d(TAG, "downloadModel: $fileName completed")
-                    } else {
-                        // 可选文件下载失败可以忽略
-                        if (REQUIRED_FILES.contains(fileName)) {
-                            FileLogger.e(TAG, "downloadModel: required file $fileName failed")
-                        } else {
-                            FileLogger.w(TAG, "downloadModel: optional file $fileName failed, skipping")
-                        }
-                    }
-                } catch (e: Exception) {
-                    if (REQUIRED_FILES.contains(fileName)) {
-                        throw e
-                    } else {
-                        FileLogger.w(TAG, "downloadModel: optional file $fileName failed: ${e.message}")
-                    }
+                val success = downloadRequiredFile(modelPath, fileName, targetDir, onFileProgress = { fileProgress: Float ->
+                    val fileBase = completedSize.toFloat() / totalEstimatedSize
+                    val fileWeight = fileSize.toFloat() / totalEstimatedSize
+                    val overallProgress = fileBase + fileWeight * fileProgress
+                    onByteProgress(overallProgress.coerceAtMost(1f))
+                })
+                
+                if (success) {
+                    completedSize += fileSize
+                    completedFileIndex++
+                    onByteProgress(completedSize.toFloat() / totalEstimatedSize)
+                    FileLogger.d(TAG, "downloadModel: $fileName completed")
+                } else {
+                    FileLogger.e(TAG, "downloadModel: required file $fileName failed")
+                    updateState(modelId, MnnDownloadState(
+                        modelId = modelId,
+                        status = MnnDownloadStatus.FAILED,
+                        errorMessage = "Failed to download required file: $fileName"
+                    ))
+                    return@withContext Result.failure(
+                        IllegalStateException("Failed to download required file: $fileName")
+                    )
                 }
+            }
+            
+            // 可选文件下载（视觉模型需要）
+            for (fileName in OPTIONAL_FILES) {
+                FileLogger.d(TAG, "downloadModel: downloading optional file $fileName")
+                
+                updateState(modelId, MnnDownloadState(
+                    modelId = modelId,
+                    status = MnnDownloadStatus.DOWNLOADING,
+                    currentFile = fileName,
+                    completedFiles = completedFileIndex,
+                    totalFiles = requiredCount
+                ))
+                
+                // 可选文件：404 时跳过，不重试
+                val success = downloadOptionalFile(modelPath, fileName, targetDir)
+                if (success) {
+                    FileLogger.i(TAG, "downloadModel: optional file $fileName completed")
+                }
+                // 无论成功与否都继续，因为可选文件不是必须的
             }
             
             // 验证必需文件
@@ -215,8 +251,8 @@ class MnnModelDownloader @Inject constructor(
             updateState(modelId, MnnDownloadState(
                 modelId = modelId,
                 status = MnnDownloadStatus.COMPLETED,
-                completedFiles = totalFiles,
-                totalFiles = totalFiles
+                completedFiles = requiredCount,
+                totalFiles = requiredCount
             ))
             
             FileLogger.i(TAG, "downloadModel: $modelId completed successfully")
@@ -234,10 +270,10 @@ class MnnModelDownloader @Inject constructor(
     }
     
     /**
-     * 下载单个文件（无限重试直到成功）
-     * 网络中断后持续重试，每次从头重新下载，直到成功
+     * 下载必需文件（无限重试直到成功或明确失败）
+     * 网络中断后持续重试，每次从头重新下载
      */
-    private fun downloadFile(
+    private fun downloadRequiredFile(
         modelPath: String,
         fileName: String,
         targetDir: File,
@@ -250,28 +286,74 @@ class MnnModelDownloader @Inject constructor(
             // 删除可能存在的部分文件，确保从头开始干净下载
             val targetFile = File(targetDir, fileName)
             if (targetFile.exists()) {
-                FileLogger.d(TAG, "downloadFile: [$fileName] attempt $attempt - deleting incomplete file (${targetFile.length()} bytes)")
+                FileLogger.d(TAG, "downloadRequiredFile: [$fileName] attempt $attempt - deleting incomplete file (${targetFile.length()} bytes)")
                 targetFile.delete()
             }
             
-            FileLogger.i(TAG, "downloadFile: [$fileName] starting download attempt $attempt")
+            FileLogger.i(TAG, "downloadRequiredFile: [$fileName] starting download attempt $attempt")
             
-            val success = downloadFileOnce(modelPath, fileName, targetDir, onFileProgress)
+            val result = downloadFileOnce(modelPath, fileName, targetDir, onFileProgress)
             
-            if (success) {
-                FileLogger.i(TAG, "downloadFile: [$fileName] download succeeded on attempt $attempt")
-                return true
+            when (result) {
+                is DownloadResult.Success -> {
+                    FileLogger.i(TAG, "downloadRequiredFile: [$fileName] download succeeded on attempt $attempt")
+                    return true
+                }
+                is DownloadResult.NotFound -> {
+                    // 必需文件不应该返回404，但万一返回则失败
+                    FileLogger.e(TAG, "downloadRequiredFile: [$fileName] file not found (404), this is unexpected for required file")
+                    return false
+                }
+                is DownloadResult.RetryableError -> {
+                    // 网络错误，重试
+                    FileLogger.w(TAG, "downloadRequiredFile: [$fileName] attempt $attempt failed (${result.message}), retrying in 2 seconds...")
+                    try {
+                        Thread.sleep(2000L)
+                    } catch (e: InterruptedException) {
+                        FileLogger.e(TAG, "downloadRequiredFile: [$fileName] retry interrupted", e)
+                        return false
+                    }
+                }
             }
-            
-            // 下载失败，记录原因并继续重试
-            FileLogger.w(TAG, "downloadFile: [$fileName] attempt $attempt failed, retrying in 2 seconds...")
-            
-            // 等待2秒后再重试，避免立即重试导致服务器拒绝
-            try {
-                Thread.sleep(2000L)
-            } catch (e: InterruptedException) {
-                FileLogger.e(TAG, "downloadFile: [$fileName] retry interrupted", e)
-                return false
+        }
+    }
+    
+    /**
+     * 下载可选文件（404时跳过，不重试）
+     * 用于下载视觉模型的 visual.mnn 等可选文件
+     */
+    private fun downloadOptionalFile(
+        modelPath: String,
+        fileName: String,
+        targetDir: File
+    ): Boolean {
+        val targetFile = File(targetDir, fileName)
+        
+        // 如果文件已存在，认为已下载成功
+        if (targetFile.exists()) {
+            FileLogger.i(TAG, "downloadOptionalFile: [$fileName] already exists, skipping download")
+            return true
+        }
+        
+        FileLogger.i(TAG, "downloadOptionalFile: [$fileName] attempting download")
+        
+        val result = downloadFileOnce(modelPath, fileName, targetDir, {})
+        
+        return when (result) {
+            is DownloadResult.Success -> {
+                FileLogger.i(TAG, "downloadOptionalFile: [$fileName] downloaded successfully")
+                true
+            }
+            is DownloadResult.NotFound -> {
+                // 404 表示该模型没有这个可选文件（如纯文本模型没有 visual.mnn）
+                // 记录日志但不重试，直接跳过
+                FileLogger.i(TAG, "downloadOptionalFile: [$fileName] not found (404), skipping (optional file)")
+                true  // 返回 true 表示"允许继续"，因为这是可选文件
+            }
+            is DownloadResult.RetryableError -> {
+                // 网络错误，可选文件也跳过
+                FileLogger.w(TAG, "downloadOptionalFile: [$fileName] download failed (${result.message}), skipping (optional file)")
+                true  // 返回 true 表示"允许继续"
             }
         }
     }
@@ -284,20 +366,20 @@ class MnnModelDownloader @Inject constructor(
         fileName: String,
         targetDir: File,
         onFileProgress: (Float) -> Unit = {}
-    ): Boolean {
+    ): DownloadResult {
         // ModelScope 下载 URL 格式
         // https://modelscope.cn/models/{owner}/{repo}/resolve/{revision}/{file_path}
         val urlStr = "https://modelscope.cn/models/$modelPath/resolve/master/$fileName"
         
-        FileLogger.d(TAG, "downloadFile: URL=$urlStr")
-        FileLogger.d(TAG, "downloadFile: targetDir=${targetDir.absolutePath}")
+        FileLogger.d(TAG, "downloadFileOnce: URL=$urlStr")
+        FileLogger.d(TAG, "downloadFileOnce: targetDir=${targetDir.absolutePath}")
         
         var connection: HttpURLConnection? = null
         var inputStream: java.io.InputStream? = null
         var outputStream: FileOutputStream? = null
         
         try {
-            FileLogger.d(TAG, "downloadFile: connecting to $urlStr")
+            FileLogger.d(TAG, "downloadFileOnce: connecting to $urlStr")
             
             val url = URL(urlStr)
             connection = url.openConnection() as HttpURLConnection
@@ -308,28 +390,36 @@ class MnnModelDownloader @Inject constructor(
             connection.setRequestProperty("Accept", "*/*")
             connection.setRequestProperty("Connection", "keep-alive")
             
-            FileLogger.d(TAG, "downloadFile: waiting for response...")
+            FileLogger.d(TAG, "downloadFileOnce: waiting for response...")
             val responseCode = connection.responseCode
             val responseMessage = connection.responseMessage
             
-            FileLogger.d(TAG, "downloadFile: HTTP $responseCode $responseMessage for $fileName")
+            FileLogger.d(TAG, "downloadFileOnce: HTTP $responseCode $responseMessage for $fileName")
             
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                FileLogger.e(TAG, "downloadFile: HTTP error $responseCode for $fileName, URL=$urlStr")
-                // 尝试打印响应头
-                FileLogger.e(TAG, "downloadFile: responseHeaders=${connection.headerFields}")
-                return false
+            when (responseCode) {
+                HttpURLConnection.HTTP_OK -> {
+                    // 下载成功，继续处理
+                }
+                HttpURLConnection.HTTP_NOT_FOUND -> {
+                    FileLogger.w(TAG, "downloadFileOnce: [$fileName] file not found (404)")
+                    return DownloadResult.NotFound
+                }
+                else -> {
+                    FileLogger.e(TAG, "downloadFileOnce: HTTP error $responseCode for $fileName, URL=$urlStr")
+                    FileLogger.e(TAG, "downloadFileOnce: responseHeaders=${connection.headerFields}")
+                    return DownloadResult.RetryableError("HTTP $responseCode: $responseMessage")
+                }
             }
             
             val contentLength = connection.contentLength
-            FileLogger.d(TAG, "downloadFile: $fileName contentLength=$contentLength bytes")
+            FileLogger.d(TAG, "downloadFileOnce: $fileName contentLength=$contentLength bytes")
             
             if (contentLength <= 0) {
-                FileLogger.w(TAG, "downloadFile: $fileName has invalid contentLength=$contentLength")
+                FileLogger.w(TAG, "downloadFileOnce: $fileName has invalid contentLength=$contentLength")
             }
             
             val targetFile = File(targetDir, fileName)
-            FileLogger.d(TAG, "downloadFile: creating file ${targetFile.absolutePath}")
+            FileLogger.d(TAG, "downloadFileOnce: creating file ${targetFile.absolutePath}")
             
             inputStream = connection.inputStream
             outputStream = FileOutputStream(targetFile)
@@ -347,7 +437,7 @@ class MnnModelDownloader @Inject constructor(
                 val now = System.currentTimeMillis()
                 if (now - lastLogTime >= 1000 && contentLength > 0) {
                     val percent = (totalBytesRead * 100 / contentLength).toInt()
-                    FileLogger.d(TAG, "downloadFile: $fileName ${totalBytesRead}/${contentLength}bytes ($percent%)")
+                    FileLogger.d(TAG, "downloadFileOnce: $fileName ${totalBytesRead}/${contentLength}bytes ($percent%)")
                     onFileProgress(totalBytesRead.toFloat() / contentLength)
                     lastLogTime = now
                 }
@@ -357,19 +447,19 @@ class MnnModelDownloader @Inject constructor(
             outputStream.fd.sync()
             
             val actualSize = targetFile.length()
-            FileLogger.i(TAG, "downloadFile: $fileName completed, expected=$contentLength, actual=$actualSize bytes")
+            FileLogger.i(TAG, "downloadFileOnce: $fileName completed, expected=$contentLength, actual=$actualSize bytes")
             
             // 验证文件大小
             if (contentLength > 0 && actualSize != contentLength.toLong()) {
-                FileLogger.w(TAG, "downloadFile: $fileName size mismatch, expected=$contentLength actual=$actualSize")
+                FileLogger.w(TAG, "downloadFileOnce: $fileName size mismatch, expected=$contentLength actual=$actualSize")
             }
             
-            return true
+            return DownloadResult.Success
             
         } catch (e: Exception) {
-            FileLogger.e(TAG, "downloadFile: $fileName failed with exception", e)
-            FileLogger.e(TAG, "downloadFile: error message=${e.message}, class=${e.javaClass.simpleName}")
-            return false
+            FileLogger.e(TAG, "downloadFileOnce: $fileName failed with exception", e)
+            FileLogger.e(TAG, "downloadFileOnce: error message=${e.message}, class=${e.javaClass.simpleName}")
+            return DownloadResult.RetryableError(e.message ?: "Unknown error")
         } finally {
             try { inputStream?.close() } catch (e: Exception) {}
             try { outputStream?.close() } catch (e: Exception) {}
@@ -394,6 +484,15 @@ class MnnModelDownloader @Inject constructor(
             put(modelId, state)
         }
     }
+}
+
+/**
+ * 下载结果
+ */
+sealed class DownloadResult {
+    data object Success : DownloadResult()
+    data object NotFound : DownloadResult()  // 404 - 文件不存在
+    data class RetryableError(val message: String) : DownloadResult()  // 可重试的错误
 }
 
 /**
