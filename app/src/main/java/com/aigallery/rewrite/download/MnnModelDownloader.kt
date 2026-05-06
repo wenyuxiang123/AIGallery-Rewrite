@@ -114,7 +114,8 @@ class MnnModelDownloader @Inject constructor(
      */
     suspend fun downloadModel(
         modelId: String,
-        onProgress: (current: Int, total: Int, fileName: String) -> Unit
+        onProgress: (current: Int, total: Int, fileName: String) -> Unit,
+        onByteProgress: (Float) -> Unit = {}
     ): Result<Unit> = withContext(Dispatchers.IO) {
         val modelPath = mnnModelPaths[modelId] 
             ?: return@withContext Result.failure(IllegalArgumentException("Unknown MNN model: $modelId"))
@@ -151,7 +152,13 @@ class MnnModelDownloader @Inject constructor(
                 ))
                 
                 try {
-                    val success = downloadFile(modelPath, fileName, targetDir)
+                    val success = downloadFile(modelPath, fileName, targetDir) { fileProgress ->
+                        // fileProgress: 0.0-1.0 当前文件的下载进度
+                        val fileBase = completedFiles.toFloat() / totalFiles
+                        val fileWeight = 1f / totalFiles
+                        val overallProgress = fileBase + fileWeight * fileProgress
+                        onByteProgress(overallProgress)
+                    }
                     if (success) {
                         completedFiles++
                         onProgress(completedFiles, totalFiles, fileName)
@@ -217,7 +224,8 @@ class MnnModelDownloader @Inject constructor(
     private fun downloadFile(
         modelPath: String,
         fileName: String,
-        targetDir: File
+        targetDir: File,
+        onFileProgress: (Float) -> Unit = {}
     ): Boolean {
         // ModelScope 下载 URL 格式
         // https://modelscope.cn/models/{owner}/{repo}/resolve/{revision}/{file_path}
@@ -277,11 +285,12 @@ class MnnModelDownloader @Inject constructor(
                 outputStream.write(buffer, 0, bytesRead)
                 totalBytesRead += bytesRead
                 
-                // 每秒打印一次进度
+                // 每秒打印一次进度并回调
                 val now = System.currentTimeMillis()
                 if (now - lastLogTime >= 1000 && contentLength > 0) {
                     val percent = (totalBytesRead * 100 / contentLength).toInt()
                     FileLogger.d(TAG, "downloadFile: $fileName ${totalBytesRead}/${contentLength}bytes ($percent%)")
+                    onFileProgress(totalBytesRead.toFloat() / contentLength)
                     lastLogTime = now
                 }
             }

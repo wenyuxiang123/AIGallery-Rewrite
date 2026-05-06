@@ -178,6 +178,26 @@ class ModelManagerViewModel @Inject constructor(
             return
         }
 
+        // 防止重复点击：如果已经在下载中，跳过
+        if (model.status == ModelStatus.DOWNLOADING) {
+            FileLogger.d(TAG, "downloadModel: already downloading, skip: $modelId")
+            return
+        }
+        // 检查MNN版本是否也在下载中
+        if (!model.isMnnModel) {
+            val mnnModelId = modelId + "-mnn"
+            val mnnModel = _state.value.models.find { it.id == mnnModelId }
+            if (mnnModel != null && mnnModel.status == ModelStatus.DOWNLOADING) {
+                FileLogger.d(TAG, "downloadModel: MNN version already downloading, skip: $mnnModelId")
+                return
+            }
+        }
+        // 检查是否已有下载Job在运行
+        if (mnnDownloadJobs.containsKey(modelId) || mnnDownloadJobs.containsKey(modelId + "-mnn")) {
+            FileLogger.d(TAG, "downloadModel: download job already running for $modelId")
+            return
+        }
+
         viewModelScope.launch {
             FileLogger.d(TAG, "downloadModel: isMnnModel=${model.isMnnModel}, name=${model.name}")
 
@@ -281,22 +301,26 @@ class ModelManagerViewModel @Inject constructor(
         val job = viewModelScope.launch {
             FileLogger.d(TAG, "downloadMnnModel: calling mnnDownloader.downloadModel")
             
-            val result = mnnDownloader.downloadModel(model.id) { current, total, fileName ->
-                val progress = current.toFloat() / total
-                _state.update { state ->
-                    state.copy(
-                        models = state.models.map { m ->
-                            if (m.id == model.id) {
-                                m.copy(
-                                    status = ModelStatus.DOWNLOADING,
-                                    downloadProgress = progress
-                                )
-                            } else m
-                        }
-                    )
+            val result = mnnDownloader.downloadModel(
+                modelId = model.id,
+                onProgress = { current, total, fileName ->
+                    FileLogger.d(TAG, "downloadMnnModel progress: $fileName ($current/$total)")
+                },
+                onByteProgress = { progress ->
+                    _state.update { state ->
+                        state.copy(
+                            models = state.models.map { m ->
+                                if (m.id == model.id) {
+                                    m.copy(
+                                        status = ModelStatus.DOWNLOADING,
+                                        downloadProgress = progress
+                                    )
+                                } else m
+                            }
+                        )
+                    }
                 }
-                FileLogger.d(TAG, "downloadMnnModel progress: $fileName ($current/$total) ${(progress*100).toInt()}%")
-            }
+            )
 
             FileLogger.d(TAG, "downloadMnnModel: download completed, checking result")
             
