@@ -11,6 +11,7 @@ import com.aigallery.rewrite.data.repository.MemoryRepository
 import com.aigallery.rewrite.data.repository.MemoryRepositoryImpl
 import com.aigallery.rewrite.devicecontrol.DeviceControlManager
 import com.aigallery.rewrite.devicecontrol.DeviceControlService
+import com.aigallery.rewrite.inference.MnnInferenceEngine
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import dagger.Module
@@ -168,5 +169,12 @@ object AppModule {
     @Singleton
     fun provideDeviceControlService(@ApplicationContext context: Context): DeviceControlService {
         return DeviceControlService(context)
+    }
+
+    // MNN Inference Engine
+    @Provides
+    @Singleton
+    fun provideMnnInferenceEngine(@ApplicationContext context: Context): MnnInferenceEngine {
+        return MnnInferenceEngine(context)
     }
 }

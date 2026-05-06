@@ -20,6 +20,18 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // NDK 配置 - 仅支持 arm64-v8a
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+    }
+
+    // 配置 jniLibs 源目录
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDirs("src/main/jniLibs")
+        }
     }
 
     buildTypes {

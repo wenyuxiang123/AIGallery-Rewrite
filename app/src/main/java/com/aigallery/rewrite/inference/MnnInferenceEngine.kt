@@ -1,79 +1,163 @@
 package com.aigallery.rewrite.inference
 
+import android.content.Context
 import android.util.Log
-import kotlinx.coroutines.delay
+import com.aigallery.rewrite.util.FileLogger
+import com.localai.server.engine.InferenceStats
+import com.localai.server.engine.LlamaEngine
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 
 /**
  * MNN 推理引擎实现
  * 
- * 当前为桥接实现模式：
- * 1. 当 native 库可用时使用本地推理
- * 2. 当 native 库不可用时自动回退到网络 API
+ * 基于 Mobile AI Server v4.0-MNN 的 liblocalai-jni.so native 库
+ * 提供本地 LLM 推理能力
  */
-class MnnInferenceEngine : InferenceEngine {
-
-    override val name: String = "MNN Inference Engine"
-    override val version: String = "2.9.0"
+class MnnInferenceEngine(
+    private val context: Context
+) : InferenceEngine {
     
-    private var nativeLibLoaded = false
-    private var modelPath: String? = null
-    private var currentConfig: InferenceConfig? = null
+    companion object {
+        private const val TAG = "MnnInferenceEngine"
+        
+        // 默认配置
+        const val DEFAULT_MAX_TOKENS = 512
+        const val DEFAULT_CONTEXT_LENGTH = 2048
+        const val DEFAULT_THREADS = 4  // 骁龙778G+ 8核，4线程最优
+    }
+    
+    // MNN 引擎实例
+    private var llamaEngine: LlamaEngine? = null
+    
+    // 库加载状态
+    private var librariesLoaded = false
+    private var libraryLoadAttempted = false
+    
+    override val name: String = "MNN Inference Engine"
+    override val version: String = "4.0.0"
     
     override val isInitialized: Boolean
-        get() = nativeLibLoaded && modelPath != null
-
-    init {
-        // 尝试加载 MNN native 库
-        try {
-            System.loadLibrary("MNN")
-            System.loadLibrary("aigallery_mnn")
-            nativeLibLoaded = true
-            Log.d("MnnInferenceEngine", "MNN native libraries loaded successfully")
-        } catch (e: UnsatisfiedLinkError) {
-            Log.w("MnnInferenceEngine", "MNN native libraries not available, using fallback mode")
-            nativeLibLoaded = false
+        get() = librariesLoaded && llamaEngine?.isModelLoaded?.value == true
+    
+    /**
+     * 尝试加载 native 库
+     * @return 是否加载成功
+     */
+    private fun ensureLibrariesLoaded(): Boolean {
+        if (libraryLoadAttempted) {
+            return librariesLoaded
         }
-    }
-
-    override suspend fun initialize(modelPath: String, config: InferenceConfig): Boolean {
-        this.modelPath = modelPath
-        this.currentConfig = config
-
-        return if (nativeLibLoaded) {
-            // Native 模式：调用 JNI 初始化
-            try {
-                nativeInitialize(modelPath, config)
-                true
-            } catch (e: Exception) {
-                Log.e("MnnInferenceEngine", "Native initialization failed", e)
-                false
-            }
+        
+        libraryLoadAttempted = true
+        
+        FileLogger.d(TAG, "ensureLibrariesLoaded: loading MNN libraries...")
+        
+        // 检查 native 库文件是否存在
+        val jniDir = context.getDir("jniLibs", Context.MODE_PRIVATE)
+        val arm64Dir = java.io.File(jniDir, "arm64-v8a")
+        if (!arm64Dir.exists()) {
+            // 使用 APK 内置的库
+            FileLogger.d(TAG, "ensureLibrariesLoaded: using APK bundled libraries")
+        }
+        
+        val success = LlamaEngine.loadLibraries()
+        librariesLoaded = success
+        
+        if (success) {
+            FileLogger.i(TAG, "ensureLibrariesLoaded: success")
         } else {
-            // Fallback 模式：模拟初始化成功
-            Log.d("MnnInferenceEngine", "Using fallback mode - network API will be used")
-            true
+            val error = LlamaEngine.getLibraryLoadError()
+            FileLogger.e(TAG, "ensureLibrariesLoaded: failed - $error")
+        }
+        
+        return success
+    }
+    
+    override suspend fun initialize(modelPath: String, config: InferenceConfig): Boolean {
+        FileLogger.d(TAG, "initialize: modelPath=$modelPath, config=$config")
+        
+        return withContext(Dispatchers.IO) {
+            try {
+                // 1. 加载 native 库
+                if (!ensureLibrariesLoaded()) {
+                    FileLogger.e(TAG, "initialize: failed to load native libraries")
+                    return@withContext false
+                }
+                
+                // 2. 初始化 LlamaEngine
+                llamaEngine = LlamaEngine.getInstance(context)
+                
+                // 3. 计算最优线程数
+                val nThreads = config.numThreads.takeIf { it > 0 } ?: DEFAULT_THREADS
+                val nCtx = config.contextWindow.takeIf { it > 0 } ?: DEFAULT_CONTEXT_LENGTH
+                
+                FileLogger.d(TAG, "initialize: nThreads=$nThreads, nCtx=$nCtx")
+                
+                // 4. 加载模型
+                val success = llamaEngine?.loadModel(
+                    path = modelPath,
+                    nCtx = nCtx,
+                    nThreads = nThreads
+                ) ?: false
+                
+                if (success) {
+                    val modelName = llamaEngine?.loadedModelName?.value ?: "unknown"
+                    val memoryMB = llamaEngine?.getMemoryUsageMB() ?: 0f
+                    FileLogger.i(TAG, "initialize: success, model=$modelName, memory=${memoryMB}MB")
+                } else {
+                    val error = llamaEngine?.lastError?.value ?: "unknown"
+                    FileLogger.e(TAG, "initialize: model load failed, error=$error")
+                }
+                
+                return@withContext success
+                
+            } catch (e: Throwable) {
+                FileLogger.e(TAG, "initialize: exception", e)
+                return@withContext false
+            }
         }
     }
-
+    
     override suspend fun infer(prompt: String, config: InferenceConfig): InferenceResult {
         val startTime = System.currentTimeMillis()
+        FileLogger.d(TAG, "infer: prompt length=${prompt.length}")
         
-        return if (nativeLibLoaded && modelPath != null) {
-            // Native 推理
+        return withContext(Dispatchers.IO) {
             try {
-                val result = nativeInfer(prompt, config)
+                val engine = llamaEngine
+                    ?: throw IllegalStateException("Engine not initialized - call initialize() first")
+                
+                if (!engine.isModelLoaded.value) {
+                    throw IllegalStateException("Model not loaded - call initialize() with valid model path")
+                }
+                
+                val result = engine.generate(
+                    prompt = prompt,
+                    maxTokens = config.maxLength,
+                    temperature = config.temperature,
+                    topK = config.topK,
+                    topP = config.topP
+                )
+                
                 val elapsed = System.currentTimeMillis() - startTime
+                val stats = engine.inferenceStats.value
+                
+                FileLogger.d(TAG, "infer: completed in ${elapsed}ms, output length=${result.length}")
+                
                 InferenceResult(
                     text = result,
                     inferenceTimeMs = elapsed,
-                    tokenCount = result.length / 4, // 估算
-                    tokensPerSecond = (result.length / 4) / (elapsed / 1000f),
+                    tokenCount = stats.tokensGenerated,
+                    tokensPerSecond = stats.tokensPerSecond,
                     success = true
                 )
-            } catch (e: Exception) {
-                Log.e("MnnInferenceEngine", "Native inference failed", e)
+                
+            } catch (e: Throwable) {
+                FileLogger.e(TAG, "infer: failed", e)
                 InferenceResult(
                     text = "",
                     inferenceTimeMs = System.currentTimeMillis() - startTime,
@@ -83,128 +167,112 @@ class MnnInferenceEngine : InferenceEngine {
                     errorMessage = e.message
                 )
             }
-        } else {
-            // Fallback 模式：返回模拟响应（实际项目中这里可以调用网络 API）
-            delay(500)
-            val response = generateMockResponse(prompt)
-            val elapsed = System.currentTimeMillis() - startTime
-            
-            InferenceResult(
-                text = response,
-                inferenceTimeMs = elapsed,
-                tokenCount = response.length / 4,
-                tokensPerSecond = (response.length / 4) / (elapsed / 1000f),
-                success = true
-            )
         }
     }
-
+    
     override suspend fun inferStream(prompt: String, config: InferenceConfig): Flow<String> {
+        FileLogger.d(TAG, "inferStream: prompt length=${prompt.length}")
+        
         return flow {
-            if (nativeLibLoaded && modelPath != null) {
-                // Native 流式推理
-                try {
-                    val flow = nativeInferStream(prompt, config)
-                    flow.collect { emit(it) }
-                } catch (e: Exception) {
-                    Log.e("MnnInferenceEngine", "Native stream inference failed", e)
-                    emit("推理失败: ${e.message}")
-                }
-            } else {
-                // Fallback 模式：模拟流式输出
-                val response = generateMockResponse(prompt)
-                val words = response.split("(?<=\\s)|(?<=。)|(?<=，)|(?<=？)|(?<=！)".toRegex())
+            try {
+                val engine = llamaEngine
+                    ?: throw IllegalStateException("Engine not initialized - call initialize() first")
                 
-                for (word in words) {
-                    if (word.isNotEmpty()) {
-                        emit(word)
-                        delay(30) // 模拟打字效果
-                    }
+                if (!engine.isModelLoaded.value) {
+                    throw IllegalStateException("Model not loaded - call initialize() with valid model path")
                 }
+                
+                engine.generateStream(
+                    prompt = prompt,
+                    maxTokens = config.maxLength,
+                    temperature = config.temperature,
+                    topK = config.topK,
+                    topP = config.topP
+                ).collect { token ->
+                    emit(token)
+                }
+                
+            } catch (e: Throwable) {
+                FileLogger.e(TAG, "inferStream: failed", e)
+                emit("推理失败: ${e.message}")
             }
-        }
+        }.flowOn(Dispatchers.IO)
     }
-
+    
     override suspend fun generateEmbedding(text: String): FloatArray {
-        return if (nativeLibLoaded && modelPath != null) {
-            try {
-                nativeGenerateEmbedding(text)
-            } catch (e: Exception) {
-                Log.e("MnnInferenceEngine", "Native embedding generation failed", e)
-                floatArrayOf()
-            }
-        } else {
-            // Fallback 模式：生成随机向量用于测试
-            FloatArray(768) { (Math.random() * 0.1f - 0.05f).toFloat() }
+        FileLogger.d(TAG, "generateEmbedding: text length=${text.length}")
+        
+        return withContext(Dispatchers.IO) {
+            // MNN 当前版本可能不支持 embedding
+            // 返回零向量或抛出异常
+            FileLogger.w(TAG, "generateEmbedding: not supported by MNN LLM")
+            FloatArray(768) { 0f }
         }
     }
-
+    
     override suspend fun release() {
-        if (nativeLibLoaded) {
+        FileLogger.d(TAG, "release")
+        
+        withContext(Dispatchers.IO) {
             try {
-                nativeRelease()
-            } catch (e: Exception) {
-                Log.e("MnnInferenceEngine", "Native release failed", e)
+                llamaEngine?.release()
+                llamaEngine = null
+                librariesLoaded = false
+                libraryLoadAttempted = false
+                FileLogger.i(TAG, "release: success")
+            } catch (e: Throwable) {
+                FileLogger.e(TAG, "release: failed", e)
             }
         }
-        modelPath = null
-        currentConfig = null
     }
-
+    
     override fun getSupportedModelTypes(): List<String> {
         return listOf(
-            "Qwen", "Qwen2", "Qwen2.5", "Llama", "Llama2", "Llama3",
+            "Qwen", "Qwen2", "Qwen2.5", "Qwen3",
+            "Llama", "Llama2", "Llama3",
             "Mistral", "Gemma", "Phi", "Baichuan", "ChatGLM"
         )
     }
-
+    
     /**
-     * 生成模拟响应（用于开发测试）
+     * 获取当前推理统计
      */
-    private fun generateMockResponse(prompt: String): String {
-        return when {
-            prompt.contains("你好", ignoreCase = true) -> 
-                "你好！我是 AIGallery AI 助手，很高兴为你服务。有什么我可以帮助你的吗？"
-            
-            prompt.contains("介绍", ignoreCase = true) && prompt.contains("自己", ignoreCase = true) ->
-                "我是 AIGallery 的本地 AI 助手，运行在你的 Android 设备上。" +
-                "我具备以下能力：\n\n" +
-                "🧠 5 层记忆系统 - 记住我们的对话历史\n" +
-                "🤖 自定义任务 Agent - 执行复杂任务链\n" +
-                "📱 手机自动化控制 - 智能操作你的设备\n" +
-                "💡 单轮快捷任务 - 快速执行常用指令\n\n" +
-                "我的所有推理都在本地运行，保护你的隐私安全！"
-            
-            prompt.contains("模型", ignoreCase = true) ->
-                "当前可用的模型：\n\n" +
-                "🔹 Qwen3-4B-Instruct - 通义千问3\n" +
-                "🔹 Llama3-8B-Instruct - 开源性能王者\n" +
-                "🔹 Phi-3-mini-4K - 轻量高速\n" +
-                "🔹 Gemma-2B - 谷歌开源\n" +
-                "🔹 Mistral-7B - MistralAI\n\n" +
-                "你可以在「模型管理」页面下载和切换不同的模型。"
-            
-            prompt.contains("记忆", ignoreCase = true) ->
-                "我的 5 层记忆系统：\n\n" +
-                "1️⃣ 瞬时记忆 - 最近的对话上下文\n" +
-                "2️⃣ 短期记忆 - 本次会话的全部内容\n" +
-                "3️⃣ 工作记忆 - 当前任务的执行状态\n" +
-                "4️⃣ 长期记忆 - 历史对话摘要\n" +
-                "5️⃣ 核心记忆 - 用户偏好和关键信息\n\n" +
-                "你可以在「记忆中心」查看和管理所有记忆。"
-            
-            else -> 
-                "我收到了你的消息：「$prompt」\n\n" +
-                "这是一个演示回复，当集成真实的本地推理引擎后，" +
-                "这里会显示 AI 的真实回答。\n\n" +
-                "💡 提示：你可以尝试问我关于功能、模型、记忆等问题。"
-        }
+    fun getInferenceStats(): InferenceStats {
+        return llamaEngine?.inferenceStats?.value ?: InferenceStats()
     }
-
-    // Native 方法声明（需要对应的 JNI 实现）
-    private external fun nativeInitialize(modelPath: String, config: InferenceConfig): Boolean
-    private external fun nativeInfer(prompt: String, config: InferenceConfig): String
-    private external fun nativeInferStream(prompt: String, config: InferenceConfig): Flow<String>
-    private external fun nativeGenerateEmbedding(text: String): FloatArray
-    private external fun nativeRelease()
+    
+    /**
+     * 获取内存使用（MB）
+     */
+    fun getMemoryUsageMB(): Float {
+        return llamaEngine?.getMemoryUsageMB() ?: 0f
+    }
+    
+    /**
+     * 获取已加载模型名称
+     */
+    fun getLoadedModelName(): String? {
+        return llamaEngine?.loadedModelName?.value
+    }
+    
+    /**
+     * 获取上下文大小
+     */
+    fun getContextSize(): Int {
+        return llamaEngine?.getContextSize() ?: 0
+    }
+    
+    /**
+     * 设置系统提示词
+     */
+    fun setSystemPrompt(systemPrompt: String): Boolean {
+        return llamaEngine?.setSystemPrompt(systemPrompt) ?: false
+    }
+    
+    /**
+     * 重置对话上下文
+     */
+    fun resetConversation() {
+        llamaEngine?.resetConversation()
+    }
 }

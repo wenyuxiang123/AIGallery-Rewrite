@@ -18,7 +18,8 @@ data class AIModel(
     val isMultimodal: Boolean,
     val minMemory: Long,
     val status: ModelStatus = ModelStatus.NOT_DOWNLOADED,
-    val downloadProgress: Float = 0f
+    val downloadProgress: Float = 0f,
+    val isMnnModel: Boolean = false  // MNN 模型为目录结构
 )
 
 enum class ModelProvider(val displayName: String, val mirrorName: String) {
@@ -187,6 +188,72 @@ object ModelCatalog {
             hash = null,
             isMultimodal = false,
             minMemory = 6_000_000_000
+        ),
+        // ============ MNN 优化模型 ============
+        // MNN 模型为目录结构，包含 config.json, llm.mnn, tokenizer.txt 等
+        AIModel(
+            id = "qwen2.5-0.5b-mnn",
+            name = "Qwen 2.5 0.5B (MNN)",
+            description = "MNN优化版，骁龙778G+流畅运行，支持本地推理",
+            provider = ModelProvider.MODELSCOPE,
+            size = "800MB",
+            sizeBytes = 800_000_000,
+            quantization = "MNN",
+            parameters = "0.5B",
+            downloadUrl = "MNN://Qwen2.5-0.5B-Instruct-MNN", // 占位，实际下载时处理
+            mirrorUrl = "MNN://Qwen2.5-0.5B-Instruct-MNN",
+            hash = null,
+            isMultimodal = false,
+            minMemory = 1_500_000_000,
+            isMnnModel = true
+        ),
+        AIModel(
+            id = "qwen2.5-1.5b-mnn",
+            name = "Qwen 2.5 1.5B (MNN)",
+            description = "MNN优化版，中文能力强，推荐骁龙778G+",
+            provider = ModelProvider.MODELSCOPE,
+            size = "1.6GB",
+            sizeBytes = 1_600_000_000,
+            quantization = "MNN",
+            parameters = "1.5B",
+            downloadUrl = "MNN://Qwen2.5-1.5B-Instruct-MNN",
+            mirrorUrl = "MNN://Qwen2.5-1.5B-Instruct-MNN",
+            hash = null,
+            isMultimodal = false,
+            minMemory = 2_500_000_000,
+            isMnnModel = true
+        ),
+        AIModel(
+            id = "qwen2.5-3b-mnn",
+            name = "Qwen 2.5 3B (MNN)",
+            description = "MNN优化版，性能均衡，大内存手机推荐",
+            provider = ModelProvider.MODELSCOPE,
+            size = "2.8GB",
+            sizeBytes = 2_800_000_000,
+            quantization = "MNN",
+            parameters = "3B",
+            downloadUrl = "MNN://Qwen2.5-3B-Instruct-MNN",
+            mirrorUrl = "MNN://Qwen2.5-3B-Instruct-MNN",
+            hash = null,
+            isMultimodal = false,
+            minMemory = 4_500_000_000,
+            isMnnModel = true
+        ),
+        AIModel(
+            id = "qwen3-4b-mnn",
+            name = "Qwen3 4B (MNN)",
+            description = "通义千问3代，MNN优化版，最强中文能力",
+            provider = ModelProvider.MODELSCOPE,
+            size = "3.8GB",
+            sizeBytes = 3_800_000_000,
+            quantization = "MNN",
+            parameters = "4B",
+            downloadUrl = "MNN://Qwen3.5-4B-MNN",
+            mirrorUrl = "MNN://Qwen3.5-4B-MNN",
+            hash = null,
+            isMultimodal = false,
+            minMemory = 6_000_000_000,
+            isMnnModel = true
         )
     )
 
