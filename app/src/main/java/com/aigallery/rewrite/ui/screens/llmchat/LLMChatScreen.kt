@@ -41,7 +41,7 @@ fun LLMChatScreen(
                 actions = {
                     if (state.sessions.isNotEmpty()) {
                         IconButton(onClick = { showClearDialog = true }) {
-                            Icon(Icons.Default.DeleteSweep, contentDescription = "清空")
+                            Icon(Icons.Default.Delete, contentDescription = "清空")
                         }
                     }
                 }

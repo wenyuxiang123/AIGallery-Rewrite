@@ -119,7 +119,7 @@ fun SettingsScreen(
                     onClick = { }
                 )
                 SettingsItem(
-                    icon = Icons.Default.DeleteSweep,
+                    icon = Icons.Default.Delete,
                     title = "清理缓存",
                     subtitle = "清除临时文件",
                     onClick = { }

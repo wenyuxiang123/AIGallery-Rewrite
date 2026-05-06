@@ -1,6 +1,8 @@
 package com.aigallery.rewrite.ui.screens.llmchat
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,12 +34,16 @@ fun ChatSessionScreen(
     val coroutineScope = rememberCoroutineScope()
     var userInput by remember { mutableStateOf("") }
 
-    // 自动滚动到底部
+    // 自动滚动到底部（添加异常处理防止崩溃）
     LaunchedEffect(state.messages.size, state.isGenerating) {
-        if (state.messages.isNotEmpty()) {
-            coroutineScope.launch {
-                listState.animateScrollToItem(state.messages.size - 1)
+        try {
+            if (state.messages.isNotEmpty()) {
+                coroutineScope.launch {
+                    listState.animateScrollToItem(state.messages.size - 1)
+                }
             }
+        } catch (e: Exception) {
+            // 忽略滚动异常
         }
     }
 
@@ -52,7 +58,7 @@ fun ChatSessionScreen(
                 },
                 actions = {
                     IconButton(onClick = viewModel::clearChat) {
-                        Icon(Icons.Default.DeleteSweep, contentDescription = "清除对话")
+                        Icon(Icons.Default.Delete, contentDescription = "清除对话")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -354,8 +360,8 @@ private fun BottomInputBar(
             // 正在生成提示
             AnimatedVisibility(
                 visible = isGenerating,
-                enter = androidx.compose.animation.fadeIn(),
-                exit = androidx.compose.animation.fadeOut()
+                enter = fadeIn(),
+                exit = fadeOut()
             ) {
                 Row(
                     modifier = Modifier

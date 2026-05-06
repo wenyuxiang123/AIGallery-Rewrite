@@ -53,14 +53,19 @@ class ChatSessionViewModel @Inject constructor(
             try {
                 FileLogger.d(TAG, "sendMessage: start fallback stream")
                 val fallbackResponse = generateFallbackResponse(message)
+                var charCount = 0
                 for (char in fallbackResponse) {
                     updateStreamingMessage(aiMessageId, char.toString())
+                    charCount++
+                    if (charCount % 10 == 0) {
+                        FileLogger.d(TAG, "sendMessage: streamed $charCount chars")
+                    }
                     delay(30)
                 }
                 markStreamingComplete(aiMessageId)
                 FileLogger.d(TAG, "sendMessage: stream completed, response length=${fallbackResponse.length}")
             } catch (e: Exception) {
-                FileLogger.e(TAG, "sendMessage: stream failed", e)
+                FileLogger.e(TAG, "sendMessage: stream failed at char $charCount", e)
                 updateStreamingMessage(aiMessageId, "回复失败: ${e.message}")
                 markStreamingComplete(aiMessageId)
             }
@@ -90,12 +95,16 @@ class ChatSessionViewModel @Inject constructor(
     }
 
     private fun updateStreamingMessage(messageId: Long, newContent: String) {
+        val currentLen = _state.value.messages.find { it.id == messageId }?.content?.length ?: 0
+        FileLogger.d(TAG, "updateStreaming: id=$messageId, char='$newContent', currentLen=$currentLen")
         _state.update { s ->
             s.copy(messages = s.messages.map { if (it.id == messageId) it.copy(content = it.content + newContent) else it })
         }
     }
 
     private fun markStreamingComplete(messageId: Long) {
+        val finalLen = _state.value.messages.find { it.id == messageId }?.content?.length ?: 0
+        FileLogger.d(TAG, "markStreamingComplete: id=$messageId, finalLen=$finalLen")
         _state.update { s ->
             s.copy(messages = s.messages.map { if (it.id == messageId) it.copy(isStreaming = false) else it }, isGenerating = false)
         }
