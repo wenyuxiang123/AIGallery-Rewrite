@@ -80,7 +80,9 @@ fun ChatSessionScreen(
         ) {
             if (state.messages.isEmpty()) {
                 // 空状态
-                EmptyChatState()
+                EmptyChatState(onPromptClick = { prompt ->
+                    viewModel.sendMessage(prompt)
+                })
             } else {
                 // 消息列表
                 LazyColumn(
@@ -107,7 +109,9 @@ fun ChatSessionScreen(
  * 空聊天状态
  */
 @Composable
-private fun EmptyChatState() {
+private fun EmptyChatState(onPromptClick = { prompt ->
+                    viewModel.sendMessage(prompt)
+                }) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -153,7 +157,7 @@ private fun EmptyChatState() {
         Spacer(modifier = Modifier.height(32.dp))
 
         // 快捷提示
-        QuickPromptChips()
+        QuickPromptChips(onPromptClick = onPromptClick)
     }
 }
 
@@ -161,7 +165,7 @@ private fun EmptyChatState() {
  * 快捷提示标签
  */
 @Composable
-private fun QuickPromptChips() {
+private fun QuickPromptChips(onPromptClick = onPromptClick) {
     val prompts = listOf(
         "介绍一下自己",
         "你有什么功能？",
@@ -181,7 +185,7 @@ private fun QuickPromptChips() {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 prompts.take(2).forEach { prompt ->
                     AssistChip(
-                        onClick = { /* 点击后自动填入输入框 */ },
+                        onClick = { onPromptClick(prompt) },
                         label = { Text(prompt) },
                         leadingIcon = {
                             Icon(
@@ -196,7 +200,7 @@ private fun QuickPromptChips() {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 prompts.drop(2).forEach { prompt ->
                     AssistChip(
-                        onClick = { /* 点击后自动填入输入框 */ },
+                        onClick = { onPromptClick(prompt) },
                         label = { Text(prompt) },
                         leadingIcon = {
                             Icon(
@@ -407,7 +411,7 @@ private fun BottomInputBar(
                     )
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Send,
+                        imageVector = Icons.Default.ArrowForward,
                         contentDescription = "发送",
                         tint = if (sendEnabled) MaterialTheme.colorScheme.onPrimary
                         else MaterialTheme.colorScheme.onSurfaceVariant

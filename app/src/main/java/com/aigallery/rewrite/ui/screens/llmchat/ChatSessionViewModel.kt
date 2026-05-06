@@ -7,6 +7,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 
 @HiltViewModel
@@ -14,18 +15,25 @@ class ChatSessionViewModel @Inject constructor(
 ) : ViewModel() {
 
     private var inferenceJob: Job? = null
+    private val messageIdCounter = AtomicLong(0)
 
     private val _state = MutableStateFlow(ChatSessionState())
     val state: StateFlow<ChatSessionState> = _state.asStateFlow()
 
     private val sessionId = "session_${System.currentTimeMillis()}"
 
+    private fun nextMessageId(): Long {
+        return messageIdCounter.incrementAndGet()
+    }
+
     fun sendMessage(message: String) {
         if (message.isBlank()) return
 
         // 添加用户消息
+        val userMsgId = nextMessageId()
         addMessage(
             ChatMessage(
+                id = userMsgId,
                 content = message,
                 role = MessageRole.USER,
                 timestamp = System.currentTimeMillis()
@@ -33,7 +41,7 @@ class ChatSessionViewModel @Inject constructor(
         )
 
         // 添加 AI 消息占位
-        val aiMessageId = System.currentTimeMillis()
+        val aiMessageId = nextMessageId()
         addMessage(
             ChatMessage(
                 id = aiMessageId,
@@ -44,15 +52,13 @@ class ChatSessionViewModel @Inject constructor(
             )
         )
 
-        // 模拟流式推理（fallback 模式）
+        // Fallback 模式模拟流式推理
         inferenceJob = viewModelScope.launch {
             try {
                 val fallbackResponse = generateFallbackResponse(message)
-                var fullResponse = ""
                 for (char in fallbackResponse) {
-                    fullResponse += char
                     updateStreamingMessage(aiMessageId, char.toString())
-                    delay(30) // 模拟流式输出延迟
+                    delay(30)
                 }
                 markStreamingComplete(aiMessageId)
             } catch (e: Exception) {
@@ -62,10 +68,6 @@ class ChatSessionViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Fallback 模式：生成模拟回复
-     * 当 MNN 引擎不可用时使用
-     */
     private fun generateFallbackResponse(userMessage: String): String {
         return "你好！我是 AIGallery AI 助手。\n\n" +
                 "当前处于演示模式，MNN 推理引擎尚未加载模型。\n" +
@@ -143,7 +145,7 @@ data class ChatSessionState(
 )
 
 data class ChatMessage(
-    val id: Long = System.currentTimeMillis(),
+    val id: Long,
     val content: String,
     val role: MessageRole,
     val timestamp: Long,
