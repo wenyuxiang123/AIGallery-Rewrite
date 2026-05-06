@@ -167,29 +167,74 @@ class ModelManagerViewModel @Inject constructor(
 
     /**
      * 下载模型
+     * 
+     * GGUF 模型会自动重定向到对应的 MNN 版本进行下载，
+     * 因为 GGUF 格式无法使用 MNN 推理引擎
      */
     fun downloadModel(modelId: String) {
         FileLogger.d(TAG, "downloadModel: id=$modelId")
-        val model = _state.value.models.find { it.id == modelId } ?: return
+        val model = _state.value.models.find { it.id == modelId } ?: run {
+            FileLogger.w(TAG, "downloadModel: model not found: $modelId")
+            return
+        }
 
         viewModelScope.launch {
-            // 更新状态为下载中
-            _state.update { state ->
-                state.copy(
-                    models = state.models.map { m ->
-                        if (m.id == modelId) {
-                            m.copy(status = ModelStatus.DOWNLOADING, downloadProgress = 0f)
-                        } else m
-                    }
-                )
-            }
+            FileLogger.d(TAG, "downloadModel: isMnnModel=${model.isMnnModel}, name=${model.name}")
 
             if (model.isMnnModel) {
-                // MNN 模型下载
+                // MNN 模型直接下载
+                FileLogger.d(TAG, "downloadModel: downloading MNN model directly")
+                _state.update { state ->
+                    state.copy(
+                        models = state.models.map { m ->
+                            if (m.id == modelId) {
+                                m.copy(status = ModelStatus.DOWNLOADING, downloadProgress = 0f)
+                            } else m
+                        }
+                    )
+                }
                 downloadMnnModel(model)
             } else {
-                // GGUF 模型下载
-                downloadGgufModel(model)
+                // GGUF 模型 -> 自动重定向到对应的 MNN 版本
+                FileLogger.d(TAG, "downloadModel: GGUF model detected, looking for MNN version")
+                
+                val mnnModelId = modelId + "-mnn"
+                val mnnModel = _state.value.models.find { it.id == mnnModelId }
+                
+                if (mnnModel != null) {
+                    FileLogger.i(TAG, "downloadModel: redirecting GGUF model $modelId to MNN model $mnnModelId")
+                    
+                    // 更新 GGUF 模型状态为 "正在跳转到 MNN 版本"
+                    _state.update { state ->
+                        state.copy(
+                            models = state.models.map { m ->
+                                if (m.id == modelId) {
+                                    m.copy(status = ModelStatus.DOWNLOADING, downloadProgress = 0f, 
+                                          name = "${model.name} (正在使用MNN版本)")
+                                } else m
+                            }
+                        )
+                    }
+                    
+                    // 延迟一点让状态更新被看到
+                    delay(300)
+                    
+                    // 下载 MNN 模型
+                    downloadMnnModel(mnnModel)
+                } else {
+                    FileLogger.w(TAG, "downloadModel: no MNN version found for $modelId")
+                    
+                    // 更新状态为下载失败，并显示提示
+                    _state.update { state ->
+                        state.copy(
+                            models = state.models.map { m ->
+                                if (m.id == modelId) {
+                                    m.copy(status = ModelStatus.DOWNLOAD_FAILED, downloadProgress = 0f)
+                                } else m
+                            }
+                        )
+                    }
+                }
             }
         }
     }
@@ -231,7 +276,11 @@ class ModelManagerViewModel @Inject constructor(
      * 下载 MNN 模型
      */
     private fun downloadMnnModel(model: AIModel) {
+        FileLogger.d(TAG, "downloadMnnModel: starting for model=${model.id}, name=${model.name}")
+        
         val job = viewModelScope.launch {
+            FileLogger.d(TAG, "downloadMnnModel: calling mnnDownloader.downloadModel")
+            
             val result = mnnDownloader.downloadModel(model.id) { current, total, fileName ->
                 val progress = current.toFloat() / total
                 _state.update { state ->
@@ -246,12 +295,14 @@ class ModelManagerViewModel @Inject constructor(
                         }
                     )
                 }
-                FileLogger.d(TAG, "downloadMnnModel: $fileName ($current/$total)")
+                FileLogger.d(TAG, "downloadMnnModel progress: $fileName ($current/$total) ${(progress*100).toInt()}%")
             }
 
+            FileLogger.d(TAG, "downloadMnnModel: download completed, checking result")
+            
             result.fold(
                 onSuccess = {
-                    FileLogger.i(TAG, "downloadMnnModel: ${model.id} completed")
+                    FileLogger.i(TAG, "downloadMnnModel: ${model.id} completed successfully")
                     _state.update { state ->
                         state.copy(
                             models = state.models.map { m ->
@@ -263,7 +314,7 @@ class ModelManagerViewModel @Inject constructor(
                     }
                 },
                 onFailure = { error ->
-                    FileLogger.e(TAG, "downloadMnnModel: ${model.id} failed", error)
+                    FileLogger.e(TAG, "downloadMnnModel: ${model.id} failed with error: ${error.message}", error)
                     _state.update { state ->
                         state.copy(
                             models = state.models.map { m ->
@@ -276,6 +327,7 @@ class ModelManagerViewModel @Inject constructor(
                 }
             )
             
+            FileLogger.d(TAG, "downloadMnnModel: job finished for ${model.id}")
             mnnDownloadJobs.remove(model.id)
         }
         

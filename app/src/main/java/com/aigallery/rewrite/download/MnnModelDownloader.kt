@@ -223,50 +223,85 @@ class MnnModelDownloader @Inject constructor(
         // https://modelscope.cn/models/{owner}/{repo}/resolve/{revision}/{file_path}
         val urlStr = "https://modelscope.cn/models/$modelPath/resolve/master/$fileName"
         
-        FileLogger.d(TAG, "downloadFile: $urlStr")
+        FileLogger.d(TAG, "downloadFile: URL=$urlStr")
+        FileLogger.d(TAG, "downloadFile: targetDir=${targetDir.absolutePath}")
         
         var connection: HttpURLConnection? = null
         var inputStream: java.io.InputStream? = null
         var outputStream: FileOutputStream? = null
         
         try {
+            FileLogger.d(TAG, "downloadFile: connecting to $urlStr")
+            
             val url = URL(urlStr)
             connection = url.openConnection() as HttpURLConnection
             connection.connectTimeout = 30000
             connection.readTimeout = 300000  // 5 分钟，大文件需要更长
             connection.requestMethod = "GET"
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0")
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Android)")
             connection.setRequestProperty("Accept", "*/*")
+            connection.setRequestProperty("Connection", "keep-alive")
             
+            FileLogger.d(TAG, "downloadFile: waiting for response...")
             val responseCode = connection.responseCode
+            val responseMessage = connection.responseMessage
+            
+            FileLogger.d(TAG, "downloadFile: HTTP $responseCode $responseMessage for $fileName")
+            
             if (responseCode != HttpURLConnection.HTTP_OK) {
-                FileLogger.e(TAG, "downloadFile: HTTP $responseCode for $fileName")
+                FileLogger.e(TAG, "downloadFile: HTTP error $responseCode for $fileName, URL=$urlStr")
+                // 尝试打印响应头
+                FileLogger.e(TAG, "downloadFile: responseHeaders=${connection.headerFields}")
                 return false
             }
             
             val contentLength = connection.contentLength
-            FileLogger.d(TAG, "downloadFile: $fileName size=$contentLength")
+            FileLogger.d(TAG, "downloadFile: $fileName contentLength=$contentLength bytes")
+            
+            if (contentLength <= 0) {
+                FileLogger.w(TAG, "downloadFile: $fileName has invalid contentLength=$contentLength")
+            }
             
             val targetFile = File(targetDir, fileName)
+            FileLogger.d(TAG, "downloadFile: creating file ${targetFile.absolutePath}")
+            
             inputStream = connection.inputStream
             outputStream = FileOutputStream(targetFile)
             
             val buffer = ByteArray(8192)
             var bytesRead: Int
             var totalBytesRead = 0L
+            var lastLogTime = System.currentTimeMillis()
             
             while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                 outputStream.write(buffer, 0, bytesRead)
                 totalBytesRead += bytesRead
+                
+                // 每秒打印一次进度
+                val now = System.currentTimeMillis()
+                if (now - lastLogTime >= 1000 && contentLength > 0) {
+                    val percent = (totalBytesRead * 100 / contentLength).toInt()
+                    FileLogger.d(TAG, "downloadFile: $fileName ${totalBytesRead}/${contentLength}bytes ($percent%)")
+                    lastLogTime = now
+                }
             }
             
             outputStream.flush()
-            FileLogger.d(TAG, "downloadFile: $fileName done, ${totalBytesRead}bytes")
+            outputStream.fsync()
+            
+            val actualSize = targetFile.length()
+            FileLogger.i(TAG, "downloadFile: $fileName completed, expected=$contentLength, actual=$actualSize bytes")
+            
+            // 验证文件大小
+            if (contentLength > 0 && actualSize != contentLength.toLong()) {
+                FileLogger.w(TAG, "downloadFile: $fileName size mismatch, expected=$contentLength actual=$actualSize")
+            }
             
             return true
             
         } catch (e: Exception) {
-            FileLogger.e(TAG, "downloadFile: $fileName failed", e)
+            FileLogger.e(TAG, "downloadFile: $fileName failed with exception", e)
+            FileLogger.e(TAG, "downloadFile: error message=${e.message}, class=${e.javaClass.simpleName}")
             return false
         } finally {
             try { inputStream?.close() } catch (e: Exception) {}
