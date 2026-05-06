@@ -50,10 +50,10 @@ class ChatSessionViewModel @Inject constructor(
         FileLogger.d(TAG, "sendMessage: AI placeholder added, id=$aiMessageId, total messages=${_state.value.messages.size}")
 
         inferenceJob = viewModelScope.launch {
+            var charCount = 0
             try {
                 FileLogger.d(TAG, "sendMessage: start fallback stream")
                 val fallbackResponse = generateFallbackResponse(message)
-                var charCount = 0
                 for (char in fallbackResponse) {
                     updateStreamingMessage(aiMessageId, char.toString())
                     charCount++
