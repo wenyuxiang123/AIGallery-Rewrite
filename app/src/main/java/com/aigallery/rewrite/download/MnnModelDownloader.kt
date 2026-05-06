@@ -287,7 +287,7 @@ class MnnModelDownloader @Inject constructor(
             }
             
             outputStream.flush()
-            outputStream.fsync()
+            outputStream.fd.sync()
             
             val actualSize = targetFile.length()
             FileLogger.i(TAG, "downloadFile: $fileName completed, expected=$contentLength, actual=$actualSize bytes")
