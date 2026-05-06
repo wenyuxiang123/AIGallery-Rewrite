@@ -87,7 +87,9 @@ data class InferenceConfig(
     /** 上下文窗口大小 */
     val contextWindow: Int = 4096,
     /** 停止词列表 */
-    val stopWords: List<String> = emptyList()
+    val stopWords: List<String> = emptyList(),
+    /** 启用 Thinking 模式（Chain-of-Thought） */
+    val enableThinking: Boolean = false
 )
 
 /**
@@ -112,7 +114,8 @@ data class InferenceResult(
  * 推理引擎类型枚举
  */
 enum class EngineType {
-    MNN,
+    MNN,        // 旧版 MNN (< 3.5)
+    MNN35,     // MNN 3.5.0+
     ONNX,
     TFLITE,
     GGML
@@ -131,6 +134,7 @@ object InferenceEngineFactory {
     fun createEngine(type: EngineType, context: Context): InferenceEngine {
         return when (type) {
             EngineType.MNN -> MnnInferenceEngine(context)
+            EngineType.MNN35 -> MnnInferenceEngineV35(context)
             EngineType.ONNX -> OnnxInferenceEngine()
             EngineType.TFLITE -> TFLiteInferenceEngine()
             EngineType.GGML -> GgmlInferenceEngine()
