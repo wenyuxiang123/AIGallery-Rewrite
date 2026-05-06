@@ -167,13 +167,13 @@ class MnnModelDownloader @Inject constructor(
                 val fileSize = estimatedSizes[fileName] ?: 1_000_000L
                 
                 try {
-                    val success = downloadFile(modelPath, fileName, targetDir) { fileProgress ->
+                    val success = downloadFile(modelPath, fileName, targetDir, onFileProgress = { fileProgress: Float ->
                         // 基于文件大小的进度计算
                         val fileBase = completedSize.toFloat() / totalEstimatedSize
                         val fileWeight = fileSize.toFloat() / totalEstimatedSize
                         val overallProgress = fileBase + fileWeight * fileProgress
                         onByteProgress(overallProgress.coerceAtMost(1f))
-                    }
+                    })
                     if (success) {
                         completedSize += fileSize
                         onByteProgress(completedSize.toFloat() / totalEstimatedSize)
