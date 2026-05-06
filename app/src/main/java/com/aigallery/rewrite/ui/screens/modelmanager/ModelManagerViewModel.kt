@@ -1,3 +1,4 @@
+import com.aigallery.rewrite.util.FileLogger
 package com.aigallery.rewrite.ui.screens.modelmanager
 
 import android.app.Application
@@ -117,6 +118,7 @@ class ModelManagerViewModel @Inject constructor(
      * 加载模型列表
      */
     private fun loadModels() {
+        FileLogger.d(TAG, "loadModels: start")
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true) }
             try {
@@ -132,8 +134,10 @@ class ModelManagerViewModel @Inject constructor(
                         }
                     )
                 }
+                FileLogger.d(TAG, "loadModels: got ${models.size} models")
                 _state.update { it.copy(models = models, isLoading = false) }
             } catch (e: Exception) {
+                FileLogger.e(TAG, "loadModels: failed", e)
                 _state.update { it.copy(error = e.message, isLoading = false) }
             }
         }
@@ -143,6 +147,7 @@ class ModelManagerViewModel @Inject constructor(
      * 下载模型
      */
     fun downloadModel(modelId: String) {
+        FileLogger.d(TAG, "downloadModel: id=$modelId")
         val model = _state.value.models.find { it.id == modelId } ?: return
 
         viewModelScope.launch {
