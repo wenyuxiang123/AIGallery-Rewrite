@@ -1,8 +1,5 @@
 package com.aigallery.rewrite.ui.screens.llmchat
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -357,12 +354,8 @@ private fun BottomInputBar(
         tonalElevation = 2.dp
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // 正在生成提示
-            AnimatedVisibility(
-                visible = isGenerating,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
+            // 正在生成提示（使用简单条件渲染，避免 AnimatedVisibility 版本兼容问题）
+            if (isGenerating) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -371,16 +364,17 @@ private fun BottomInputBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(2.dp),
+                        color = MaterialTheme.colorScheme.primary,
                     )
                     Text(
                         text = "AI 正在生成...",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
-                    Spacer(modifier = Modifier.weight(1f))
                     TextButton(onClick = onStop) {
                         Text("停止")
                     }
