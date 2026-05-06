@@ -1,6 +1,7 @@
 package com.aigallery.rewrite.ui.screens.llmchat
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +19,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.aigallery.rewrite.domain.model.AIModel
+import com.aigallery.rewrite.domain.model.ModelCatalog
+import com.aigallery.rewrite.domain.model.ModelStatus
+import com.aigallery.rewrite.domain.model.MessageRole
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -27,9 +32,11 @@ fun ChatSessionScreen(
     onBack: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
+    val engineState by viewModel.engineState.collectAsState()
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var userInput by remember { mutableStateOf("") }
+    var showModelSelector by remember { mutableStateOf(false) }
 
     // 自动滚动到底部（添加异常处理防止崩溃）
     LaunchedEffect(state.messages.size, state.isGenerating) {
@@ -47,7 +54,12 @@ fun ChatSessionScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("AI 对话") },
+                title = { 
+                    Text(
+                        text = state.selectedModel?.name ?: "选择模型",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
@@ -56,6 +68,9 @@ fun ChatSessionScreen(
                 actions = {
                     IconButton(onClick = viewModel::clearChat) {
                         Icon(Icons.Default.Delete, contentDescription = "清除对话")
+                    }
+                    IconButton(onClick = { showModelSelector = true }) {
+                        Icon(Icons.Default.ModelTraining, contentDescription = "选择模型")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -105,6 +120,18 @@ fun ChatSessionScreen(
                 }
             }
         }
+    }
+
+    // 模型选择对话框
+    if (showModelSelector) {
+        ModelSelectionDialog(
+            selectedModel = state.selectedModel,
+            onModelSelected = { model ->
+                viewModel.selectModel(model)
+                showModelSelector = false
+            },
+            onDismiss = { showModelSelector = false }
+        )
     }
 }
 
@@ -418,4 +445,86 @@ private fun BottomInputBar(
             }
         }
     }
+}
+
+
+/**
+ * 模型选择对话框
+ */
+@Composable
+private fun ModelSelectionDialog(
+    selectedModel: AIModel?,
+    onModelSelected: (AIModel) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("选择模型") },
+        text = {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // 获取已下载的模型
+                val downloadedModels = ModelCatalog.supportedModels.filter { 
+                    it.status == ModelStatus.DOWNLOADED 
+                }
+                
+                if (downloadedModels.isEmpty()) {
+                    item {
+                        Text(
+                            text = "暂无可用模型，请先在模型管理页面下载模型",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    items(downloadedModels) { model ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onModelSelected(model) },
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (selectedModel?.id == model.id)
+                                    MaterialTheme.colorScheme.primaryContainer
+                                else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = model.name,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "${model.size} | ${model.parameters}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (selectedModel?.id == model.id) {
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = "已选择",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
 }

@@ -2,6 +2,8 @@ package com.aigallery.rewrite.ui.screens.llmchat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.aigallery.rewrite.domain.model.AIModel
+import com.aigallery.rewrite.domain.model.MessageRole
 import com.aigallery.rewrite.inference.InferenceConfig
 import com.aigallery.rewrite.inference.MnnInferenceEngine
 import com.aigallery.rewrite.util.FileLogger
@@ -204,6 +206,27 @@ class ChatSessionViewModel @Inject constructor(
         updateEngineState()
     }
 
+    /**
+     * 选择模型
+     */
+    fun selectModel(model: AIModel) {
+        FileLogger.d(TAG, "selectModel: modelId=${model.id}, name=${model.name}")
+        _state.update { it.copy(selectedModel = model) }
+        
+        // 加载模型到推理引擎
+        viewModelScope.launch {
+            try {
+                _engineState.update { it.copy(isInitializing = true) }
+                updateEngineState()
+                FileLogger.i(TAG, "selectModel: model selected successfully")
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "selectModel: failed", e)
+            } finally {
+                _engineState.update { it.copy(isInitializing = false) }
+            }
+        }
+    }
+
     private fun addMessage(message: ChatMessage) {
         _state.update { s -> s.copy(messages = s.messages + message, isGenerating = message.role == MessageRole.ASSISTANT) }
     }
@@ -237,6 +260,7 @@ class ChatSessionViewModel @Inject constructor(
 data class EngineState(
     val isInitialized: Boolean = false,
     val isGenerating: Boolean = false,
+    val isInitializing: Boolean = false,
     val loadedModelName: String? = null,
     val memoryUsageMB: Float = 0f,
     val lastInferenceMs: Long = 0,
@@ -249,7 +273,8 @@ data class EngineState(
 data class ChatSessionState(
     val messages: List<ChatMessage> = emptyList(),
     val isGenerating: Boolean = false,
-    val sessionId: String = ""
+    val sessionId: String = "",
+    val selectedModel: AIModel? = null
 )
 
 /**
@@ -262,12 +287,3 @@ data class ChatMessage(
     val timestamp: Long,
     val isStreaming: Boolean = false
 )
-
-/**
- * 消息角色
- */
-enum class MessageRole {
-    SYSTEM,
-    USER,
-    ASSISTANT
-}
