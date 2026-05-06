@@ -45,7 +45,7 @@ fun AgentChatScreen(
                 verticalArrangement = Arrangement.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.SmartToy,
+                    imageVector = Icons.Default.Extension,
                     contentDescription = null,
                     modifier = Modifier.size(64.dp),
                     tint = MaterialTheme.colorScheme.primary

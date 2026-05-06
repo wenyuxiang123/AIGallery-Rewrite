@@ -222,7 +222,7 @@ fun SingleTurnScreen(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
-                            Icons.Default.Lightbulb,
+                            Icons.Default.WbIncandescent,
                             contentDescription = null,
                             modifier = Modifier.size(64.dp),
                             tint = MaterialTheme.colorScheme.primary
@@ -252,12 +252,12 @@ private fun TaskTypeChip(
     modifier: Modifier = Modifier
 ) {
     val icon: ImageVector = when (taskType) {
-        SingleTurnTaskType.WRITING -> Icons.Default.EditNote
-        SingleTurnTaskType.TRANSLATION -> Icons.Default.Translate
-        SingleTurnTaskType.SUMMARY -> Icons.Default.Summarize
+        SingleTurnTaskType.WRITING -> Icons.Default.Edit
+        SingleTurnTaskType.TRANSLATION -> Icons.Default.Language
+        SingleTurnTaskType.SUMMARY -> Icons.Default.Description
         SingleTurnTaskType.REWRITE -> Icons.Default.Refresh
-        SingleTurnTaskType.ANALYSIS -> Icons.Default.Analytics
-        SingleTurnTaskType.BRAINSTORM -> Icons.Default.Lightbulb
+        SingleTurnTaskType.ANALYSIS -> Icons.Default.BarChart
+        SingleTurnTaskType.BRAINSTORM -> Icons.Default.WbIncandescent
     }
 
     FilterChip(

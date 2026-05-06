@@ -68,7 +68,7 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     QuickActionCard(
-                        icon = Icons.Default.ChatBubble,
+                        icon = Icons.Default.Email,
                         title = "AI对话",
                         description = "与AI聊天",
                         onClick = onNavigateToLLMChat,
@@ -90,7 +90,7 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     QuickActionCard(
-                        icon = Icons.Default.Memory,
+                        icon = Icons.Default.Storage,
                         title = "记忆中心",
                         description = "五层记忆系统",
                         onClick = onNavigateToMemory,
@@ -112,7 +112,7 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     QuickActionCard(
-                        icon = Icons.Default.AutoAwesome,
+                        icon = Icons.Default.Star,
                         title = "单轮任务",
                         description = "写作翻译摘要",
                         onClick = onNavigateToSingleTurn,
@@ -140,17 +140,17 @@ fun HomeScreen(
                         description = "ModelScope镜像源，下载速度更快"
                     ),
                     FeatureItem(
-                        icon = Icons.Default.Memory,
+                        icon = Icons.Default.Storage,
                         title = "本地模型运行",
                         description = "支持Llama、Qwen、Gemma等多种开源模型"
                     ),
                     FeatureItem(
-                        icon = Icons.Default.Memory,
+                        icon = Icons.Default.Storage,
                         title = "五层记忆系统",
                         description = "工作记忆→短期→长期→知识库→角色记忆"
                     ),
                     FeatureItem(
-                        icon = Icons.Default.GridView,
+                        icon = Icons.Default.Apps,
                         title = "多模态支持",
                         description = "文本、图像、语音输入输出"
                     )

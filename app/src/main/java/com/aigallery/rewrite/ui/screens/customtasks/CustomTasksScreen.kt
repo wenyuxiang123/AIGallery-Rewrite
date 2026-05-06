@@ -44,7 +44,7 @@ fun CustomTasksScreen(
             // Agent Chat
             item {
                 TaskCard(
-                    icon = Icons.Default.SmartToy,
+                    icon = Icons.Default.Extension,
                     title = CustomTaskType.AGENT_CHAT.displayName,
                     description = CustomTaskType.AGENT_CHAT.description,
                     onClick = { onNavigateToAgentChat("default") }
@@ -54,7 +54,7 @@ fun CustomTasksScreen(
             // Mobile Actions
             item {
                 TaskCard(
-                    icon = Icons.Default.PhoneAndroid,
+                    icon = Icons.Default.Phone,
                     title = CustomTaskType.MOBILE_ACTIONS.displayName,
                     description = CustomTaskType.MOBILE_ACTIONS.description,
                     onClick = onNavigateToMobileActions
@@ -74,7 +74,7 @@ fun CustomTasksScreen(
             // Tiny Garden
             item {
                 TaskCard(
-                    icon = Icons.Default.Yard,
+                    icon = Icons.Default.Nature,
                     title = CustomTaskType.TINY_GARDEN.displayName,
                     description = CustomTaskType.TINY_GARDEN.description,
                     onClick = { /* Navigate */ }
@@ -102,7 +102,7 @@ fun CustomTasksScreen(
                         modifier = Modifier.weight(1f)
                     )
                     ToolChip(
-                        icon = Icons.Default.FlashlightOn,
+                        icon = Icons.Default.Highlight,
                         label = "手电筒",
                         modifier = Modifier.weight(1f)
                     )
@@ -133,7 +133,7 @@ fun CustomTasksScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     ToolChip(
-                        icon = Icons.Default.Brightness6,
+                        icon = Icons.Default.BrightnessHigh,
                         label = "屏幕亮度",
                         modifier = Modifier.weight(1f)
                     )

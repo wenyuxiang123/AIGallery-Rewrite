@@ -71,7 +71,7 @@ fun MobileActionsScreen(
             QuickAction(
                 id = "screenshot",
                 name = "截屏",
-                icon = Icons.Default.Screenshot,
+                icon = Icons.Default.Image,
                 description = "截取当前屏幕"
             ),
             QuickAction(
@@ -102,7 +102,7 @@ fun MobileActionsScreen(
                 id = "auto_swipe",
                 name = "自动滑动",
                 description = "录制并回放滑动手势",
-                icon = Icons.Default.Swipe
+                icon = Icons.Default.TouchApp
             ),
             AutomationTask(
                 id = "open_app",
@@ -114,7 +114,7 @@ fun MobileActionsScreen(
                 id = "text_input",
                 name = "文本输入",
                 description = "自动输入预设文本",
-                icon = Icons.Default.TextFields
+                icon = Icons.Default.TextFormat
             )
         )
     }
@@ -366,7 +366,7 @@ private fun GestureRecordingCard(
                         )
                     ) {
                         Icon(
-                            if (isRecording) Icons.Default.Stop else Icons.Default.FiberManualRecord,
+                            if (isRecording) Icons.Default.Stop else Icons.Default.Circle,
                             contentDescription = null,
                             modifier = Modifier.size(16.dp)
                         )

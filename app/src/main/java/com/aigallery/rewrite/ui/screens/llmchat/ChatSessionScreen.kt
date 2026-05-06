@@ -124,7 +124,7 @@ private fun EmptyChatState() {
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 Icon(
-                    imageVector = Icons.Default.ChatBubble,
+                    imageVector = Icons.Default.Email,
                     contentDescription = null,
                     modifier = Modifier
                         .size(60.dp)
@@ -185,7 +185,7 @@ private fun QuickPromptChips() {
                         label = { Text(prompt) },
                         leadingIcon = {
                             Icon(
-                                Icons.Default.AutoAwesome,
+                                Icons.Default.Star,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -200,7 +200,7 @@ private fun QuickPromptChips() {
                         label = { Text(prompt) },
                         leadingIcon = {
                             Icon(
-                                Icons.Default.AutoAwesome,
+                                Icons.Default.Star,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -313,7 +313,7 @@ private fun Avatar(isUser: Boolean) {
     } else {
         MaterialTheme.colorScheme.onTertiaryContainer
     }
-    val icon = if (isUser) Icons.Default.Person else Icons.Default.SmartToy
+    val icon = if (isUser) Icons.Default.Person else Icons.Default.Extension
 
     Surface(
         shape = CircleShape,

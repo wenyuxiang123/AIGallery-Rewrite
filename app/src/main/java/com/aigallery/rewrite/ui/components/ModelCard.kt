@@ -78,7 +78,7 @@ fun ModelCard(
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 ModelInfoChip(
-                    icon = Icons.Default.Memory,
+                    icon = Icons.Default.Storage,
                     label = model.size
                 )
                 ModelInfoChip(

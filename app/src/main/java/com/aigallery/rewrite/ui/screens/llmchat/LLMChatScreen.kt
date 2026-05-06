@@ -136,7 +136,7 @@ private fun SessionCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = Icons.Default.ChatBubble,
+                imageVector = Icons.Default.Email,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(40.dp)

@@ -244,7 +244,7 @@ private fun TypeFilterChips(
                 onClick = { onTypeSelected(null) },
                 label = { Text("全部") },
                 leadingIcon = if (selectedType == null) {
-                    { Icon(Icons.Default.AllInclusive, contentDescription = null) }
+                    { Icon(Icons.Default.Loop, contentDescription = null) }
                 } else null
             )
         }
@@ -401,7 +401,7 @@ private fun EmptyState() {
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 Icon(
-                    imageVector = Icons.Default.Psychology,
+                    imageVector = Icons.Default.Storage,
                     contentDescription = null,
                     modifier = Modifier
                         .size(48.dp)

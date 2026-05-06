@@ -83,7 +83,7 @@ fun SettingsScreen(
             // AI section
             SettingsSection(title = "AI设置") {
                 SettingsItem(
-                    icon = Icons.Default.Memory,
+                    icon = Icons.Default.Storage,
                     title = "记忆系统",
                     subtitle = "启用五层记忆功能",
                     trailing = {
@@ -100,7 +100,7 @@ fun SettingsScreen(
                     onClick = { /* Select model */ }
                 )
                 SettingsItem(
-                    icon = Icons.Default.AutoAwesome,
+                    icon = Icons.Default.Star,
                     title = "流式输出",
                     subtitle = "打字机效果",
                     trailing = {
