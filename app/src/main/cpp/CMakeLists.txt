@@ -25,8 +25,11 @@ include_directories(
     ${MNN_INCLUDE_DIR}
 )
 
-# MNN 3.5.0 库文件目录
-set(MNN_LIB_DIR "${CMAKE_SOURCE_DIR}/../jniLibs_mnn35/${ANDROID_ABI}")
+# MNN 3.5.0 库文件目录 - 使用项目自带的jniLibs
+set(MNN_LIB_DIR "${CMAKE_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}")
+
+# 指定库搜索路径
+link_directories(${MNN_LIB_DIR})
 
 # 源文件
 set(SOURCES
@@ -36,12 +39,14 @@ set(SOURCES
 # 创建库
 add_library(localai-jni-v35 SHARED ${SOURCES})
 
-# 链接 MNN 3.5.0 库
+# 链接 MNN 3.5.0 库 (使用实际的库文件名)
 target_link_libraries(localai-jni-v35
     mnncore
     MNN
     MNN_Express
     llm
+    android
+    log
     ${ANDROID_NDK}/sources/cxx-stl/llvm-libc++/libs/${ANDROID_ABI}/libc++_shared.so
 )
 
