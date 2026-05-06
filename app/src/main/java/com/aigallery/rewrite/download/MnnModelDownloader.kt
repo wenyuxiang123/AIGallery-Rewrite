@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -32,6 +33,11 @@ import javax.inject.Singleton
  * - visual.mnn.weight
  * 
  * 需要从 ModelScope 下载完整的目录结构
+ * 
+ * 设计原则：
+ * 1. 必需文件全部下载成功后，立即标记模型为READY
+ * 2. 可选文件在后台异步继续下载，不阻塞模型可用性
+ * 3. 进度基于实际下载字节数计算
  */
 @Singleton
 class MnnModelDownloader @Inject constructor(
@@ -60,6 +66,28 @@ class MnnModelDownloader @Inject constructor(
             "visual.mnn",
             "visual.mnn.weight"
         )
+        
+        // 必需文件预估大小（用于初始进度计算）
+        private val REQUIRED_FILE_SIZES = mapOf(
+            "config.json" to 1_000L,
+            "llm_config.json" to 10_000L,
+            "llm.mnn" to 1_000_000L,
+            "llm.mnn.weight" to 278_000_000L,
+            "llm.mnn.json" to 10_000_000L,
+            "tokenizer.txt" to 5_000_000L
+        )
+        
+        // 可选文件预估大小
+        private val OPTIONAL_FILE_SIZES = mapOf(
+            "visual.mnn" to 1_000_000L,
+            "visual.mnn.weight" to 63_000_000L
+        )
+        
+        // 必需文件总大小（预估）
+        private val REQUIRED_TOTAL_SIZE = REQUIRED_FILE_SIZES.values.sum()
+        
+        // 预估可选文件总大小
+        private val OPTIONAL_TOTAL_SIZE = OPTIONAL_FILE_SIZES.values.sum()
     }
     
     // 模型目录
@@ -109,6 +137,15 @@ class MnnModelDownloader @Inject constructor(
     }
     
     /**
+     * 检查可选文件是否已下载
+     */
+    fun isOptionalFilesDownloaded(modelId: String): Boolean {
+        val modelDir = File(this.modelDir, modelId)
+        if (!modelDir.exists()) return false
+        return OPTIONAL_FILES.any { File(modelDir, it).exists() }
+    }
+    
+    /**
      * 获取模型目录路径
      */
     fun getModelDir(modelId: String): String {
@@ -144,82 +181,86 @@ class MnnModelDownloader @Inject constructor(
         val targetDir = File(modelDir, modelId)
         if (!targetDir.exists()) targetDir.mkdirs()
         
-        // 获取文件列表 - 只下载必需文件，可选文件按需下载
+        // 只下载必需文件，可选文件按需下载
         val requiredCount = REQUIRED_FILES.size
-        val totalFiles = requiredCount + OPTIONAL_FILES.size  // 进度显示总文件数但只验证必需文件
-        
-        // 预估各文件大小（基于已知模型的大小比例）
-        val estimatedSizes = mapOf(
-            "config.json" to 1_000L,
-            "llm_config.json" to 10_000L,
-            "llm.mnn" to 1_000_000L,
-            "llm.mnn.weight" to 278_000_000L,  // 占99%以上
-            "llm.mnn.json" to 10_000_000L,
-            "tokenizer.txt" to 5_000_000L,
-            "visual.mnn" to 1_000_000L,
-            "visual.mnn.weight" to 200_000_000L
-        )
-        val totalEstimatedSize = REQUIRED_FILES.sumOf { estimatedSizes[it] ?: 1_000_000L }
         
         try {
-            // 更新状态 - 初始化时传入总字节数
+            // 更新状态 - 开始下载必需文件
             updateState(modelId, MnnDownloadState(
                 modelId = modelId,
-                status = MnnDownloadStatus.DOWNLOADING,
+                status = MnnDownloadStatus.DOWNLOADING_REQUIRED,
                 totalFiles = requiredCount,
-                totalBytes = totalEstimatedSize,
+                totalBytes = REQUIRED_TOTAL_SIZE,
                 downloadedBytes = 0
             ))
             
-            var completedSize = 0L
+            var completedRequiredBytes = 0L
             var completedFileIndex = 0
+            val actualFileSizes = mutableMapOf<String, Long>()
             
-            // 先下载所有必需文件
+            // 第一阶段：下载所有必需文件
             for ((fileIndex, fileName) in REQUIRED_FILES.withIndex()) {
                 FileLogger.d(TAG, "downloadModel: downloading required file $fileName")
                 
-                val fileSize = estimatedSizes[fileName] ?: 1_000_000L
+                val estimatedSize = REQUIRED_FILE_SIZES[fileName] ?: 1_000_000L
                 
                 updateState(modelId, MnnDownloadState(
                     modelId = modelId,
-                    status = MnnDownloadStatus.DOWNLOADING,
+                    status = MnnDownloadStatus.DOWNLOADING_REQUIRED,
                     currentFile = fileName,
                     completedFiles = completedFileIndex,
                     totalFiles = requiredCount,
-                    totalBytes = totalEstimatedSize,
-                    downloadedBytes = completedSize
+                    totalBytes = REQUIRED_TOTAL_SIZE,
+                    downloadedBytes = completedRequiredBytes
                 ))
                 
-                val success = downloadRequiredFile(modelPath, fileName, targetDir, onFileProgress = { fileProgress: Float ->
-                    val currentFileBytes = (fileSize * fileProgress).toLong()
-                    val overallBytes = completedSize + currentFileBytes
-                    val overallProgress = overallBytes.toFloat() / totalEstimatedSize
-                    onByteProgress(overallProgress.coerceAtMost(1f))
-                    // 更新状态中的字节进度
+                val result = downloadRequiredFile(modelPath, fileName, targetDir, 
+                    onFileProgress = { fileProgress: Float ->
+                        val currentFileBytes = (estimatedSize * fileProgress).toLong()
+                        val overallBytes = completedRequiredBytes + currentFileBytes
+                        val overallProgress = overallBytes.toFloat() / REQUIRED_TOTAL_SIZE
+                        onByteProgress(overallProgress.coerceAtMost(1f))
+                        updateState(modelId, MnnDownloadState(
+                            modelId = modelId,
+                            status = MnnDownloadStatus.DOWNLOADING_REQUIRED,
+                            currentFile = fileName,
+                            completedFiles = completedFileIndex,
+                            totalFiles = requiredCount,
+                            totalBytes = REQUIRED_TOTAL_SIZE,
+                            downloadedBytes = overallBytes
+                        ))
+                    },
+                    onActualSizeRetrieved = { actualSize ->
+                        actualFileSizes[fileName] = actualSize
+                    }
+                )
+                
+                if (result is DownloadResult.Success) {
+                    val fileSize = actualFileSizes[fileName] ?: estimatedSize
+                    completedRequiredBytes += fileSize
+                    completedFileIndex++
+                    onByteProgress(completedRequiredBytes.toFloat() / REQUIRED_TOTAL_SIZE)
+                    FileLogger.d(TAG, "downloadModel: $fileName completed (${fileSize} bytes)")
+                } else if (result is DownloadResult.NotFound) {
+                    FileLogger.e(TAG, "downloadModel: required file $fileName not found (404)")
                     updateState(modelId, MnnDownloadState(
                         modelId = modelId,
-                        status = MnnDownloadStatus.DOWNLOADING,
-                        currentFile = fileName,
-                        completedFiles = completedFileIndex,
-                        totalFiles = requiredCount,
-                        totalBytes = totalEstimatedSize,
-                        downloadedBytes = overallBytes
+                        status = MnnDownloadStatus.FAILED,
+                        errorMessage = "Required file not found: $fileName",
+                        totalBytes = REQUIRED_TOTAL_SIZE,
+                        downloadedBytes = completedRequiredBytes
                     ))
-                })
-                
-                if (success) {
-                    completedSize += fileSize
-                    completedFileIndex++
-                    onByteProgress(completedSize.toFloat() / totalEstimatedSize)
-                    FileLogger.d(TAG, "downloadModel: $fileName completed")
+                    return@withContext Result.failure(
+                        IllegalStateException("Required file not found: $fileName")
+                    )
                 } else {
                     FileLogger.e(TAG, "downloadModel: required file $fileName failed")
                     updateState(modelId, MnnDownloadState(
                         modelId = modelId,
                         status = MnnDownloadStatus.FAILED,
                         errorMessage = "Failed to download required file: $fileName",
-                        totalBytes = totalEstimatedSize,
-                        downloadedBytes = completedSize
+                        totalBytes = REQUIRED_TOTAL_SIZE,
+                        downloadedBytes = completedRequiredBytes
                     ))
                     return@withContext Result.failure(
                         IllegalStateException("Failed to download required file: $fileName")
@@ -227,32 +268,7 @@ class MnnModelDownloader @Inject constructor(
                 }
             }
             
-            // 可选文件下载（视觉模型需要）- 不影响必需文件进度
-            // 可选文件跳过时，保持当前进度不变
-            for (fileName in OPTIONAL_FILES) {
-                FileLogger.d(TAG, "downloadModel: downloading optional file $fileName")
-                
-                // 更新状态显示正在尝试下载可选文件（进度不变）
-                updateState(modelId, MnnDownloadState(
-                    modelId = modelId,
-                    status = MnnDownloadStatus.DOWNLOADING,
-                    currentFile = fileName,
-                    completedFiles = completedFileIndex,
-                    totalFiles = requiredCount,
-                    totalBytes = totalEstimatedSize,
-                    downloadedBytes = completedSize
-                ))
-                
-                // 可选文件：404 时跳过，不重试
-                val success = downloadOptionalFile(modelPath, fileName, targetDir)
-                if (success) {
-                    FileLogger.i(TAG, "downloadModel: optional file $fileName completed")
-                }
-                // 无论成功与否都继续，因为可选文件不是必须的
-                // 可选文件不计入下载进度
-            }
-            
-            // 验证必需文件
+            // 必需文件全部下载完成，验证
             val missingRequired = REQUIRED_FILES.filter { 
                 !File(targetDir, it).exists() 
             }
@@ -263,25 +279,33 @@ class MnnModelDownloader @Inject constructor(
                     modelId = modelId,
                     status = MnnDownloadStatus.FAILED,
                     errorMessage = "Missing required files: $missingRequired",
-                    totalBytes = totalEstimatedSize,
-                    downloadedBytes = completedSize
+                    totalBytes = REQUIRED_TOTAL_SIZE,
+                    downloadedBytes = completedRequiredBytes
                 ))
                 return@withContext Result.failure(
                     IllegalStateException("Missing required files: $missingRequired")
                 )
             }
             
-            // 下载完成
+            // 必需文件完成，标记模型为READY状态
+            // 关键修改：不再等待可选文件下载完成才标记READY
             updateState(modelId, MnnDownloadState(
                 modelId = modelId,
-                status = MnnDownloadStatus.COMPLETED,
+                status = MnnDownloadStatus.READY,
                 completedFiles = requiredCount,
                 totalFiles = requiredCount,
-                totalBytes = totalEstimatedSize,
-                downloadedBytes = totalEstimatedSize
+                totalBytes = REQUIRED_TOTAL_SIZE,
+                downloadedBytes = completedRequiredBytes
             ))
             
-            FileLogger.i(TAG, "downloadModel: $modelId completed successfully")
+            FileLogger.i(TAG, "downloadModel: $modelId REQUIRED FILES COMPLETED - Model is now READY")
+            
+            // 第二阶段：后台异步下载可选文件（不阻塞）
+            launch(Dispatchers.IO) {
+                downloadOptionalFilesInBackground(modelId, modelPath, targetDir)
+            }
+            
+            // 立即返回成功，因为必需文件已经下载完成
             Result.success(Unit)
             
         } catch (e: Exception) {
@@ -290,11 +314,95 @@ class MnnModelDownloader @Inject constructor(
                 modelId = modelId,
                 status = MnnDownloadStatus.FAILED,
                 errorMessage = e.message,
-                totalBytes = totalEstimatedSize,
-                downloadedBytes = completedSize
+                totalBytes = REQUIRED_TOTAL_SIZE,
+                downloadedBytes = 0
             ))
             Result.failure(e)
         }
+    }
+    
+    /**
+     * 后台下载可选文件（不阻塞模型READY状态）
+     */
+    private suspend fun downloadOptionalFilesInBackground(
+        modelId: String,
+        modelPath: String,
+        targetDir: File
+    ) {
+        FileLogger.d(TAG, "downloadOptionalFilesInBackground: starting for $modelId")
+        
+        updateState(modelId, MnnDownloadState(
+            modelId = modelId,
+            status = MnnDownloadStatus.DOWNLOADING_OPTIONAL,
+            totalBytes = REQUIRED_TOTAL_SIZE,
+            downloadedBytes = REQUIRED_TOTAL_SIZE,
+            totalOptionalBytes = OPTIONAL_TOTAL_SIZE,
+            downloadedOptionalBytes = 0
+        ))
+        
+        var completedOptionalBytes = 0L
+        
+        for (fileName in OPTIONAL_FILES) {
+            FileLogger.d(TAG, "downloadOptionalFilesInBackground: downloading optional file $fileName")
+            
+            updateState(modelId, MnnDownloadState(
+                modelId = modelId,
+                status = MnnDownloadStatus.DOWNLOADING_OPTIONAL,
+                currentFile = fileName,
+                totalBytes = REQUIRED_TOTAL_SIZE,
+                downloadedBytes = REQUIRED_TOTAL_SIZE,
+                totalOptionalBytes = OPTIONAL_TOTAL_SIZE,
+                downloadedOptionalBytes = completedOptionalBytes
+            ))
+            
+            val result = downloadOptionalFileWithProgress(modelPath, fileName, targetDir,
+                onProgress = { progress ->
+                    val estimatedSize = OPTIONAL_FILE_SIZES[fileName] ?: 1_000_000L
+                    val currentFileBytes = (estimatedSize * progress).toLong()
+                    val overallOptionalBytes = completedOptionalBytes + currentFileBytes
+                    
+                    val requiredWeight = REQUIRED_TOTAL_SIZE.toFloat() / (REQUIRED_TOTAL_SIZE + OPTIONAL_TOTAL_SIZE)
+                    val overallProgress = requiredWeight + (1 - requiredWeight) * (overallOptionalBytes.toFloat() / OPTIONAL_TOTAL_SIZE)
+                    
+                    updateState(modelId, MnnDownloadState(
+                        modelId = modelId,
+                        status = MnnDownloadStatus.DOWNLOADING_OPTIONAL,
+                        currentFile = fileName,
+                        totalBytes = REQUIRED_TOTAL_SIZE,
+                        downloadedBytes = REQUIRED_TOTAL_SIZE,
+                        totalOptionalBytes = OPTIONAL_TOTAL_SIZE,
+                        downloadedOptionalBytes = overallOptionalBytes
+                    ))
+                }
+            )
+            
+            when (result) {
+                is DownloadResult.Success -> {
+                    val estimatedSize = OPTIONAL_FILE_SIZES[fileName] ?: 1_000_000L
+                    completedOptionalBytes += estimatedSize
+                    FileLogger.i(TAG, "downloadOptionalFilesInBackground: optional file $fileName completed")
+                }
+                is DownloadResult.NotFound -> {
+                    FileLogger.i(TAG, "downloadOptionalFilesInBackground: optional file $fileName not found (404), skipping")
+                }
+                is DownloadResult.RetryableError -> {
+                    FileLogger.w(TAG, "downloadOptionalFilesInBackground: optional file $fileName failed, skipping")
+                }
+            }
+        }
+        
+        updateState(modelId, MnnDownloadState(
+            modelId = modelId,
+            status = MnnDownloadStatus.COMPLETED,
+            completedFiles = REQUIRED_FILES.size,
+            totalFiles = REQUIRED_FILES.size,
+            totalBytes = REQUIRED_TOTAL_SIZE,
+            downloadedBytes = REQUIRED_TOTAL_SIZE,
+            totalOptionalBytes = OPTIONAL_TOTAL_SIZE,
+            downloadedOptionalBytes = completedOptionalBytes
+        ))
+        
+        FileLogger.i(TAG, "downloadOptionalFilesInBackground: all optional files for $modelId completed")
     }
     
     /**
@@ -305,8 +413,9 @@ class MnnModelDownloader @Inject constructor(
         modelPath: String,
         fileName: String,
         targetDir: File,
-        onFileProgress: (Float) -> Unit = {}
-    ): Boolean {
+        onFileProgress: (Float) -> Unit = {},
+        onActualSizeRetrieved: (Long) -> Unit = {}
+    ): DownloadResult {
         var attempt = 0
         while (true) {
             attempt++
@@ -320,17 +429,17 @@ class MnnModelDownloader @Inject constructor(
             
             FileLogger.i(TAG, "downloadRequiredFile: [$fileName] starting download attempt $attempt")
             
-            val result = downloadFileOnce(modelPath, fileName, targetDir, onFileProgress)
+            val result = downloadFileOnce(modelPath, fileName, targetDir, onFileProgress, onActualSizeRetrieved)
             
             when (result) {
                 is DownloadResult.Success -> {
                     FileLogger.i(TAG, "downloadRequiredFile: [$fileName] download succeeded on attempt $attempt")
-                    return true
+                    return DownloadResult.Success
                 }
                 is DownloadResult.NotFound -> {
                     // 必需文件不应该返回404，但万一返回则失败
-                    FileLogger.e(TAG, "downloadRequiredFile: [$fileName] file not found (404), this is unexpected for required file")
-                    return false
+                    FileLogger.e(TAG, "downloadRequiredFile: [$fileName] file not found (404)")
+                    return DownloadResult.NotFound
                 }
                 is DownloadResult.RetryableError -> {
                     // 网络错误，重试
@@ -339,7 +448,7 @@ class MnnModelDownloader @Inject constructor(
                         Thread.sleep(2000L)
                     } catch (e: InterruptedException) {
                         FileLogger.e(TAG, "downloadRequiredFile: [$fileName] retry interrupted", e)
-                        return false
+                        return DownloadResult.RetryableError("Interrupted")
                     }
                 }
             }
@@ -354,34 +463,67 @@ class MnnModelDownloader @Inject constructor(
         modelPath: String,
         fileName: String,
         targetDir: File
-    ): Boolean {
+    ): DownloadResult {
         val targetFile = File(targetDir, fileName)
         
         // 如果文件已存在，认为已下载成功
         if (targetFile.exists()) {
             FileLogger.i(TAG, "downloadOptionalFile: [$fileName] already exists, skipping download")
-            return true
+            return DownloadResult.Success
         }
         
         FileLogger.i(TAG, "downloadOptionalFile: [$fileName] attempting download")
         
-        val result = downloadFileOnce(modelPath, fileName, targetDir, {})
+        val result = downloadFileOnce(modelPath, fileName, targetDir, {}, {})
         
         return when (result) {
             is DownloadResult.Success -> {
                 FileLogger.i(TAG, "downloadOptionalFile: [$fileName] downloaded successfully")
-                true
+                DownloadResult.Success
             }
             is DownloadResult.NotFound -> {
-                // 404 表示该模型没有这个可选文件（如纯文本模型没有 visual.mnn）
-                // 记录日志但不重试，直接跳过
                 FileLogger.i(TAG, "downloadOptionalFile: [$fileName] not found (404), skipping (optional file)")
-                true  // 返回 true 表示"允许继续"，因为这是可选文件
+                DownloadResult.NotFound
             }
             is DownloadResult.RetryableError -> {
-                // 网络错误，可选文件也跳过
                 FileLogger.w(TAG, "downloadOptionalFile: [$fileName] download failed (${result.message}), skipping (optional file)")
-                true  // 返回 true 表示"允许继续"
+                DownloadResult.RetryableError(result.message)
+            }
+        }
+    }
+    
+    /**
+     * 下载可选文件（带进度回调）
+     */
+    private fun downloadOptionalFileWithProgress(
+        modelPath: String,
+        fileName: String,
+        targetDir: File,
+        onProgress: (Float) -> Unit = {}
+    ): DownloadResult {
+        val targetFile = File(targetDir, fileName)
+        
+        if (targetFile.exists()) {
+            FileLogger.i(TAG, "downloadOptionalFileWithProgress: [$fileName] already exists, skipping")
+            return DownloadResult.Success
+        }
+        
+        FileLogger.i(TAG, "downloadOptionalFileWithProgress: [$fileName] attempting download")
+        
+        val result = downloadFileOnce(modelPath, fileName, targetDir, onProgress, {})
+        
+        return when (result) {
+            is DownloadResult.Success -> {
+                FileLogger.i(TAG, "downloadOptionalFileWithProgress: [$fileName] downloaded successfully")
+                DownloadResult.Success
+            }
+            is DownloadResult.NotFound -> {
+                FileLogger.i(TAG, "downloadOptionalFileWithProgress: [$fileName] not found (404), skipping")
+                DownloadResult.NotFound
+            }
+            is DownloadResult.RetryableError -> {
+                FileLogger.w(TAG, "downloadOptionalFileWithProgress: [$fileName] failed, skipping")
+                DownloadResult.RetryableError(result.message)
             }
         }
     }
@@ -393,10 +535,9 @@ class MnnModelDownloader @Inject constructor(
         modelPath: String,
         fileName: String,
         targetDir: File,
-        onFileProgress: (Float) -> Unit = {}
+        onFileProgress: (Float) -> Unit = {},
+        onActualSizeRetrieved: (Long) -> Unit = {}
     ): DownloadResult {
-        // ModelScope 下载 URL 格式
-        // https://modelscope.cn/models/{owner}/{repo}/resolve/{revision}/{file_path}
         val urlStr = "https://modelscope.cn/models/$modelPath/resolve/master/$fileName"
         
         FileLogger.d(TAG, "downloadFileOnce: URL=$urlStr")
@@ -442,7 +583,9 @@ class MnnModelDownloader @Inject constructor(
             val contentLength = connection.contentLength
             FileLogger.d(TAG, "downloadFileOnce: $fileName contentLength=$contentLength bytes")
             
-            if (contentLength <= 0) {
+            if (contentLength > 0) {
+                onActualSizeRetrieved(contentLength.toLong())
+            } else {
                 FileLogger.w(TAG, "downloadFileOnce: $fileName has invalid contentLength=$contentLength")
             }
             
@@ -525,7 +668,12 @@ sealed class DownloadResult {
 
 /**
  * MNN 下载状态
- * 进度基于实际下载字节数计算（downloadedBytes/totalBytes）
+ * 
+ * 进度计算：
+ * - DOWNLOADING_REQUIRED: 基于必需文件下载字节数 (downloadedBytes/totalBytes)
+ * - READY: 必需文件已下载完成，模型可用，可选文件继续下载中
+ * - DOWNLOADING_OPTIONAL: 可选文件下载中
+ * - COMPLETED: 所有文件下载完成
  */
 data class MnnDownloadState(
     val modelId: String,
@@ -535,27 +683,49 @@ data class MnnDownloadState(
     val totalFiles: Int = 0,
     val downloadedBytes: Long = 0,
     val totalBytes: Long = 0,
+    val downloadedOptionalBytes: Long = 0,
+    val totalOptionalBytes: Long = 0,
     val errorMessage: String? = null
 ) {
     /**
      * 进度百分比 (0.0 - 1.0)
-     * 基于实际下载字节数计算
+     * 
+     * 对于 READY 状态，返回基于必需文件的进度（100%）
+     * 对于 DOWNLOADING_OPTIONAL 状态，返回整体进度（必需100% + 可选进度）
      */
     val progress: Float
-        get() = if (totalBytes > 0 && downloadedBytes > 0) {
-            (downloadedBytes.toFloat() / totalBytes).coerceIn(0f, 1f)
-        } else {
-            0f
+        get() = when (status) {
+            MnnDownloadStatus.READY -> 1f
+            MnnDownloadStatus.DOWNLOADING_OPTIONAL -> {
+                val requiredWeight = totalBytes.toFloat() / (totalBytes + totalOptionalBytes)
+                val optionalProgress = if (totalOptionalBytes > 0) {
+                    downloadedOptionalBytes.toFloat() / totalOptionalBytes
+                } else 0f
+                requiredWeight + (1 - requiredWeight) * optionalProgress
+            }
+            else -> {
+                if (totalBytes > 0 && downloadedBytes > 0) {
+                    (downloadedBytes.toFloat() / totalBytes).coerceIn(0f, 1f)
+                } else 0f
+            }
         }
+    
+    /**
+     * 是否为最终完成状态
+     */
+    val isCompleted: Boolean
+        get() = status == MnnDownloadStatus.COMPLETED
 }
 
 /**
  * MNN 下载状态枚举
  */
 enum class MnnDownloadStatus {
-    IDLE,
-    DOWNLOADING,
-    COMPLETED,
-    FAILED,
-    CANCELLED
+    IDLE,                       // 空闲
+    DOWNLOADING_REQUIRED,       // 正在下载必需文件
+    READY,                      // 必需文件已下载完成，模型可用（可选文件继续后台下载）
+    DOWNLOADING_OPTIONAL,       // 可选文件下载中（模型已就绪）
+    COMPLETED,                  // 所有文件下载完成
+    FAILED,                     // 下载失败
+    CANCELLED                   // 已取消
 }
