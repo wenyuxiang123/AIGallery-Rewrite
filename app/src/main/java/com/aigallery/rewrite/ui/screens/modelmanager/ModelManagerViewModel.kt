@@ -100,7 +100,7 @@ class ModelManagerViewModel @Inject constructor(
                     } else {
                         val mnnState = mnnDownloader.downloadStates.value[model.id]
                         when (mnnState?.status) {
-                            MnnDownloadStatus.DOWNLOADING -> model.copy(
+                            MnnDownloadStatus.DOWNLOADING_REQUIRED -> model.copy(
                                 status = ModelStatus.DOWNLOADING,
                                 downloadProgress = mnnState.progress
                             )
