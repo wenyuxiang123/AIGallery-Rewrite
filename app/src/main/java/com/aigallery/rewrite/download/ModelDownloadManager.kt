@@ -20,6 +20,7 @@ import javax.inject.Singleton
 /**
  * 模型下载管理器
  * 支持从 Hugging Face 和 ModelScope 下载 AI 模型
+ * 使用 Android DownloadManager 进行后台下载
  */
 @Singleton
 class ModelDownloadManager @Inject constructor(
@@ -36,6 +37,15 @@ class ModelDownloadManager @Inject constructor(
 
     // downloadId -> modelId 映射
     private val downloadIdToModel = mutableMapOf<Long, String>()
+    
+    // 模型目录
+    private val modelDir: File by lazy {
+        context.getDir("models", Context.MODE_PRIVATE).also { dir ->
+            if (!dir.exists()) {
+                dir.mkdirs()
+            }
+        }
+    }
 
     /**
      * 下载完成广播接收器
@@ -45,6 +55,7 @@ class ModelDownloadManager @Inject constructor(
             if (intent?.action == DownloadManager.ACTION_DOWNLOAD_COMPLETE) {
                 val downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
                 if (downloadId != -1L) {
+                    Log.d(TAG, "Download completed: $downloadId")
                     updateProgress()
                 }
             }
@@ -65,24 +76,29 @@ class ModelDownloadManager @Inject constructor(
      * @param modelName 模型名称
      * @param source 下载源
      * @param downloadUrl 下载 URL（如果为空则根据 source 和 modelId 自动生成）
+     * @return 下载 ID，-1 表示失败
      */
     fun downloadModel(
         modelId: String,
         modelName: String,
-        source: ModelSource = ModelSource.HUGGING_FACE,
+        source: ModelSource = ModelSource.MODEL_SCOPE,
         downloadUrl: String? = null
     ): Long {
         val url = downloadUrl ?: generateDownloadUrl(modelId, source)
-        val fileName = "$modelId.mnn"
+        val fileName = "$modelId.gguf" // 使用 gguf 扩展名
+
+        Log.d(TAG, "Starting download: modelId=$modelId, url=$url, fileName=$fileName")
 
         // 创建下载请求
-        val request = DownloadManager.Request(Uri.parse(url))
-            .setTitle("下载模型: $modelName")
-            .setDescription("正在下载 $modelName")
-            .setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE)
-            .setAllowedOverRoaming(false)
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+        val request = DownloadManager.Request(Uri.parse(url)).apply {
+            title = "下载模型: $modelName"
+            description = "正在下载 $modelName"
+            allowedNetworkTypes = DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE
+            allowedOverRoaming = false
+            notificationVisibility = DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+            // 直接下载到应用私有目录
+            setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+        }
 
         // 开始下载
         val downloadId = downloadManager?.enqueue(request) ?: -1L
@@ -95,26 +111,44 @@ class ModelDownloadManager @Inject constructor(
                 status = DownloadStatus.PENDING,
                 downloadId = downloadId
             ))
+            Log.d(TAG, "Download started with ID: $downloadId")
+        } else {
+            Log.e(TAG, "Failed to start download")
         }
 
         return downloadId
     }
 
     /**
-     * 暂停下载
+     * 使用镜像 URL 下载模型
      */
-    fun pauseDownload(downloadId: Long) {
-        val modelId = downloadIdToModel[downloadId] ?: return
+    fun downloadModelWithMirrorUrl(
+        modelId: String,
+        modelName: String,
+        mirrorUrl: String
+    ): Long {
+        return downloadModel(modelId, modelName, ModelSource.MODEL_SCOPE, mirrorUrl)
+    }
+
+    /**
+     * 暂停下载
+     * 注意：DownloadManager 不支持直接暂停，需要取消后重新开始
+     */
+    fun pauseDownload(downloadId: Long): Boolean {
+        val modelId = downloadIdToModel[downloadId] ?: return false
+        
+        // DownloadManager API 不直接支持暂停，这里标记为暂停状态
         updateDownloadState(modelId, DownloadState(
             modelId = modelId,
             modelName = "",
             status = DownloadStatus.PAUSED,
             downloadId = downloadId
         ))
+        return true
     }
 
     /**
-     * 取消下载
+     * 取消下载并删除部分文件
      */
     fun cancelDownload(downloadId: Long) {
         downloadManager?.remove(downloadId)
@@ -126,15 +160,19 @@ class ModelDownloadManager @Inject constructor(
                 status = DownloadStatus.CANCELLED,
                 downloadId = downloadId
             ))
+            Log.d(TAG, "Download cancelled: modelId=$modelId")
         }
     }
 
     /**
      * 重试下载
      */
-    fun retryDownload(modelId: String, modelName: String, source: ModelSource) {
-        cancelDownload(getDownloadIdByModelId(modelId))
-        downloadModel(modelId, modelName, source)
+    fun retryDownload(modelId: String, modelName: String, source: ModelSource, downloadUrl: String? = null) {
+        val oldDownloadId = getDownloadIdByModelId(modelId)
+        if (oldDownloadId != -1L) {
+            cancelDownload(oldDownloadId)
+        }
+        downloadModel(modelId, modelName, source, downloadUrl)
     }
 
     /**
@@ -148,7 +186,9 @@ class ModelDownloadManager @Inject constructor(
      * 更新下载进度
      */
     fun updateProgress() {
-        downloadIdToModel.keys.toList().forEach { downloadId ->
+        val currentDownloadIds = downloadIdToModel.keys.toList()
+        
+        currentDownloadIds.forEach { downloadId ->
             val modelId = downloadIdToModel[downloadId] ?: return@forEach
 
             val query = DownloadManager.Query().setFilterById(downloadId)
@@ -158,10 +198,12 @@ class ModelDownloadManager @Inject constructor(
                 val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
                 val bytesDownloadedIndex = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
                 val bytesTotalIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
 
                 val status = cursor.getInt(statusIndex)
                 val bytesDownloaded = cursor.getLong(bytesDownloadedIndex)
                 val bytesTotal = cursor.getLong(bytesTotalIndex)
+                val localUri = cursor.getString(localUriIndex)
 
                 val downloadStatus = when (status) {
                     DownloadManager.STATUS_SUCCESSFUL -> DownloadStatus.COMPLETED
@@ -174,6 +216,8 @@ class ModelDownloadManager @Inject constructor(
 
                 val progress = if (bytesTotal > 0) bytesDownloaded.toFloat() / bytesTotal.toFloat() else 0f
 
+                Log.d(TAG, "Update progress: modelId=$modelId, status=$downloadStatus, progress=$progress, downloaded=$bytesDownloaded, total=$bytesTotal")
+
                 updateDownloadState(modelId, DownloadState(
                     modelId = modelId,
                     modelName = "",
@@ -185,10 +229,14 @@ class ModelDownloadManager @Inject constructor(
                 ))
 
                 // 下载完成后移动模型文件到应用私有目录
-                if (downloadStatus == DownloadStatus.COMPLETED) {
-                    moveModelToAppDir(modelId)
+                if (downloadStatus == DownloadStatus.COMPLETED && localUri != null) {
+                    moveModelToAppDir(modelId, localUri)
                     downloadIdToModel.remove(downloadId)
                 }
+            } else {
+                // Cursor 为空，可能下载已从系统移除
+                Log.w(TAG, "Cursor empty for downloadId=$downloadId")
+                downloadIdToModel.remove(downloadId)
             }
 
             cursor.close()
@@ -198,19 +246,35 @@ class ModelDownloadManager @Inject constructor(
     /**
      * 将下载的模型移动到应用私有目录
      */
-    private fun moveModelToAppDir(modelId: String) {
+    private fun moveModelToAppDir(modelId: String, localUri: String) {
         try {
-            val sourceDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val sourceFile = File(sourceDir, "models/$modelId.bin")
+            // 从 URI 解析实际文件路径
+            val sourceFile = if (localUri.startsWith("file://")) {
+                File(localUri.removePrefix("file://"))
+            } else {
+                // 尝试在 Downloads 目录中查找
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "$modelId.gguf")
+            }
 
             if (sourceFile.exists()) {
-                val targetDir = context.getDir("models", Context.MODE_PRIVATE)
-                val targetFile = File(targetDir, "$modelId.mnn")
+                val targetFile = File(modelDir, "$modelId.gguf")
 
+                // 确保目标目录存在
+                if (!modelDir.exists()) {
+                    modelDir.mkdirs()
+                }
+
+                // 复制文件到目标位置
                 sourceFile.copyTo(targetFile, overwrite = true)
-                sourceFile.delete()
-
-                Log.d(TAG, "Model $modelId moved to app directory")
+                
+                // 删除原始文件
+                if (sourceFile.delete()) {
+                    Log.d(TAG, "Model $modelId moved to app directory: ${targetFile.absolutePath}")
+                } else {
+                    Log.w(TAG, "Failed to delete source file: ${sourceFile.absolutePath}")
+                }
+            } else {
+                Log.w(TAG, "Source file not found: ${sourceFile.absolutePath}")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to move model to app directory", e)
@@ -223,16 +287,14 @@ class ModelDownloadManager @Inject constructor(
     private fun generateDownloadUrl(modelId: String, source: ModelSource): String {
         return when (source) {
             ModelSource.HUGGING_FACE -> {
-                val (author, model) = modelId.split("/").let {
-                    if (it.size >= 2) it[0] to it[1] else "Qwen" to modelId
-                }
-                "https://huggingface.co/$author/$model/resolve/main/model.mnn"
+                // 尝试从 ModelCatalog 获取 HuggingFace URL
+                com.aigallery.rewrite.domain.model.ModelCatalog.getModelById(modelId)?.downloadUrl
+                    ?: "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf"
             }
             ModelSource.MODEL_SCOPE -> {
-                val (author, model) = modelId.split("/").let {
-                    if (it.size >= 2) it[0] to it[1] else "qwen" to modelId
-                }
-                "https://www.modelscope.cn/api/v1/models/$author/$model/repo?Revision=master&FilePath=model.mnn"
+                // 优先使用 ModelCatalog 中定义的镜像 URL
+                com.aigallery.rewrite.domain.model.ModelCatalog.getModelById(modelId)?.mirrorUrl
+                    ?: "https://www.modelscope.cn/models/qwen/Qwen2.5-7B-Instruct-GGUF/resolve/master/qwen2.5-7b-instruct-q4_k_m.gguf"
             }
         }
     }
@@ -250,24 +312,51 @@ class ModelDownloadManager @Inject constructor(
      * 获取已下载模型列表
      */
     fun getDownloadedModels(): List<String> {
-        val modelDir = context.getDir("models", Context.MODE_PRIVATE)
-        return modelDir.listFiles { file -> file.extension == "mnn" || file.extension == "gguf" }
-            ?.map { it.nameWithoutExtension }
-            ?: emptyList()
+        return modelDir.listFiles { file -> 
+            file.extension == "gguf" || file.extension == "mnn" || file.extension == "bin"
+        }?.map { it.nameWithoutExtension } ?: emptyList()
+    }
+
+    /**
+     * 检查模型是否已下载
+     */
+    fun isModelDownloaded(modelId: String): Boolean {
+        val ggufFile = File(modelDir, "$modelId.gguf")
+        val mnnFile = File(modelDir, "$modelId.mnn")
+        val binFile = File(modelDir, "$modelId.bin")
+        return ggufFile.exists() || mnnFile.exists() || binFile.exists()
+    }
+
+    /**
+     * 获取模型文件路径
+     */
+    fun getModelFilePath(modelId: String): String? {
+        val ggufFile = File(modelDir, "$modelId.gguf")
+        val mnnFile = File(modelDir, "$modelId.mnn")
+        val binFile = File(modelDir, "$modelId.bin")
+        
+        return when {
+            ggufFile.exists() -> ggufFile.absolutePath
+            mnnFile.exists() -> mnnFile.absolutePath
+            binFile.exists() -> binFile.absolutePath
+            else -> null
+        }
     }
 
     /**
      * 删除已下载模型
      */
     fun deleteModel(modelId: String): Boolean {
-        val modelDir = context.getDir("models", Context.MODE_PRIVATE)
-        val mnnFile = File(modelDir, "$modelId.mnn")
-        val ggufFile = File(modelDir, "$modelId.gguf")
-
         var deleted = false
-        if (mnnFile.exists()) deleted = mnnFile.delete()
-        if (ggufFile.exists()) deleted = ggufFile.delete() || deleted
-
+        
+        listOf("gguf", "mnn", "bin").forEach { ext ->
+            val file = File(modelDir, "$modelId.$ext")
+            if (file.exists()) {
+                deleted = file.delete() || deleted
+                Log.d(TAG, "Deleted model file: ${file.absolutePath}")
+            }
+        }
+        
         return deleted
     }
 

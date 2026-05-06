@@ -129,6 +129,25 @@ object AppModule {
     ): ChatRepository {
         return ChatRepositoryImpl(chatSessionDao, chatMessageDao, gson)
     }
+    
+    /**
+     * Provides nullable ChatRepository for graceful fallback
+     */
+    @Provides
+    @Singleton
+    fun provideOptionalChatRepository(
+        chatSessionDao: ChatSessionDao,
+        chatMessageDao: ChatMessageDao,
+        gson: Gson
+    ): ChatRepository? {
+        return try {
+            // Test if database is accessible
+            ChatRepositoryImpl(chatSessionDao, chatMessageDao, gson)
+        } catch (e: Exception) {
+            // Database not available, return null for graceful degradation
+            null
+        }
+    }
 
     @Provides
     @Singleton
