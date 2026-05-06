@@ -210,7 +210,7 @@ class ChatSessionViewModel @Inject constructor(
 
     private fun updateStreamingMessage(messageId: Long, newContent: String) {
         val currentLen = _state.value.messages.find { it.id == messageId }?.content?.length ?: 0
-        FileLogger.v(TAG, "updateStreaming: id=$messageId, char='$newContent', currentLen=$currentLen")
+        FileLogger.d(TAG, "updateStreaming: id=$messageId, char='$newContent', currentLen=$currentLen")
         _state.update { s ->
             s.copy(messages = s.messages.map { if (it.id == messageId) it.copy(content = it.content + newContent) else it })
         }
@@ -242,3 +242,32 @@ data class EngineState(
     val lastInferenceMs: Long = 0,
     val tokensPerSecond: Float = 0f
 )
+
+/**
+ * 聊天会话状态
+ */
+data class ChatSessionState(
+    val messages: List<ChatMessage> = emptyList(),
+    val isGenerating: Boolean = false,
+    val sessionId: String = ""
+)
+
+/**
+ * 聊天消息
+ */
+data class ChatMessage(
+    val id: Long,
+    val content: String,
+    val role: MessageRole,
+    val timestamp: Long,
+    val isStreaming: Boolean = false
+)
+
+/**
+ * 消息角色
+ */
+enum class MessageRole {
+    SYSTEM,
+    USER,
+    ASSISTANT
+}

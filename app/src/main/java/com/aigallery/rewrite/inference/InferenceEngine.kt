@@ -127,9 +127,9 @@ object InferenceEngineFactory {
     /**
      * 创建指定类型的推理引擎
      */
-    fun createEngine(type: EngineType): InferenceEngine {
+    fun createEngine(type: EngineType, context: Context): InferenceEngine {
         return when (type) {
-            EngineType.MNN -> MnnInferenceEngine()
+            EngineType.MNN -> MnnInferenceEngine(context)
             EngineType.ONNX -> OnnxInferenceEngine()
             EngineType.TFLITE -> TFLiteInferenceEngine()
             EngineType.GGML -> GgmlInferenceEngine()

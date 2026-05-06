@@ -61,7 +61,7 @@ class InferenceManager @Inject constructor(
         }
 
         // 创建并初始化引擎
-        val engine = InferenceEngineFactory.createEngine(engineType)
+        val engine = InferenceEngineFactory.createEngine(engineType, context)
         val success = engine.initialize(modelPath, config)
 
         if (success) {
