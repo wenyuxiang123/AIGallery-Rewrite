@@ -130,6 +130,19 @@ class MnnModelDownloader @Inject constructor(
         val allFiles = REQUIRED_FILES + OPTIONAL_FILES
         val totalFiles = allFiles.size
         
+        // 预估各文件大小（基于已知模型的大小比例）
+        val estimatedSizes = mapOf(
+            "config.json" to 1_000L,
+            "llm_config.json" to 10_000L,
+            "llm.mnn" to 1_000_000L,
+            "llm.mnn.weight" to 278_000_000L,  // 占99%以上
+            "llm.mnn.json" to 10_000_000L,
+            "tokenizer.txt" to 5_000_000L,
+            "visual.mnn" to 1_000_000L,
+            "visual.mnn.weight" to 200_000_000L
+        )
+        val totalEstimatedSize = allFiles.sumOf { estimatedSizes[it] ?: 1_000_000L }
+        
         try {
             // 更新状态
             updateState(modelId, MnnDownloadState(
@@ -138,30 +151,32 @@ class MnnModelDownloader @Inject constructor(
                 totalFiles = totalFiles
             ))
             
-            var completedFiles = 0
+            var completedSize = 0L
             
-            for (fileName in allFiles) {
+            for ((fileIndex, fileName) in allFiles.withIndex()) {
                 FileLogger.d(TAG, "downloadModel: downloading $fileName")
                 
                 updateState(modelId, MnnDownloadState(
                     modelId = modelId,
                     status = MnnDownloadStatus.DOWNLOADING,
                     currentFile = fileName,
-                    completedFiles = completedFiles,
+                    completedFiles = fileIndex,
                     totalFiles = totalFiles
                 ))
                 
+                val fileSize = estimatedSizes[fileName] ?: 1_000_000L
+                
                 try {
                     val success = downloadFile(modelPath, fileName, targetDir) { fileProgress ->
-                        // fileProgress: 0.0-1.0 当前文件的下载进度
-                        val fileBase = completedFiles.toFloat() / totalFiles
-                        val fileWeight = 1f / totalFiles
+                        // 基于文件大小的进度计算
+                        val fileBase = completedSize.toFloat() / totalEstimatedSize
+                        val fileWeight = fileSize.toFloat() / totalEstimatedSize
                         val overallProgress = fileBase + fileWeight * fileProgress
-                        onByteProgress(overallProgress)
+                        onByteProgress(overallProgress.coerceAtMost(1f))
                     }
                     if (success) {
-                        completedFiles++
-                        onProgress(completedFiles, totalFiles, fileName)
+                        completedSize += fileSize
+                        onByteProgress(completedSize.toFloat() / totalEstimatedSize)
                         FileLogger.d(TAG, "downloadModel: $fileName completed")
                     } else {
                         // 可选文件下载失败可以忽略
@@ -219,9 +234,31 @@ class MnnModelDownloader @Inject constructor(
     }
     
     /**
-     * 下载单个文件
+     * 下载单个文件（带重试）
      */
     private fun downloadFile(
+        modelPath: String,
+        fileName: String,
+        targetDir: File,
+        onFileProgress: (Float) -> Unit = {},
+        maxRetries: Int = 3
+    ): Boolean {
+        repeat(maxRetries) { attempt ->
+            val success = downloadFileOnce(modelPath, fileName, targetDir, onFileProgress)
+            if (success) return true
+            if (attempt < maxRetries - 1) {
+                FileLogger.w(TAG, "downloadFile: $fileName attempt ${attempt + 1} failed, retrying...")
+                Thread.sleep(2000L * (attempt + 1)) // 递增延迟
+            }
+        }
+        FileLogger.e(TAG, "downloadFile: $fileName failed after $maxRetries attempts")
+        return false
+    }
+
+    /**
+     * 下载单个文件（单次尝试）
+     */
+    private fun downloadFileOnce(
         modelPath: String,
         fileName: String,
         targetDir: File,

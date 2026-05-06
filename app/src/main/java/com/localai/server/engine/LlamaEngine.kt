@@ -268,8 +268,27 @@ class LlamaEngine private constructor(
                 }
             }
             
+            // WORKAROUND: native层的路径解析逻辑会把目录名中含"."的截掉
+            // (如 qwen2.5-0.5b-mnn 会被当成文件名)
+            // 解决方案：传入config.json文件路径，让native层正确截取到模型目录
+            val nativePath = File(modelDir, "config.json").absolutePath
+            FileLogger.d(TAG, "loadModel: nativePath=$nativePath (config.json workaround)")
+            
+            // 创建缓存目录（native层硬编码了路径，需要确保存在）
+            val cacheDir = File("/data/data/com.localai.server/cache/llm_cache")
+            if (!cacheDir.exists()) {
+                cacheDir.mkdirs()
+                FileLogger.d(TAG, "loadModel: created cache dir ${cacheDir.absolutePath}")
+            }
+            // 也创建本应用包名的缓存目录
+            val appCacheDir = File(context.cacheDir, "llm_cache")
+            if (!appCacheDir.exists()) {
+                appCacheDir.mkdirs()
+                FileLogger.d(TAG, "loadModel: created app cache dir ${appCacheDir.absolutePath}")
+            }
+            
             // 调用 native 加载
-            val success = nativeLoadModel(path, nCtx, nThreads)
+            val success = nativeLoadModel(nativePath, nCtx, nThreads)
             
             if (success) {
                 _isModelLoaded.value = true
