@@ -234,25 +234,46 @@ class MnnModelDownloader @Inject constructor(
     }
     
     /**
-     * 下载单个文件（带重试）
+     * 下载单个文件（无限重试直到成功）
+     * 网络中断后持续重试，每次从头重新下载，直到成功
      */
     private fun downloadFile(
         modelPath: String,
         fileName: String,
         targetDir: File,
-        onFileProgress: (Float) -> Unit = {},
-        maxRetries: Int = 3
+        onFileProgress: (Float) -> Unit = {}
     ): Boolean {
-        repeat(maxRetries) { attempt ->
+        var attempt = 0
+        while (true) {
+            attempt++
+            
+            // 删除可能存在的部分文件，确保从头开始干净下载
+            val targetFile = File(targetDir, fileName)
+            if (targetFile.exists()) {
+                FileLogger.d(TAG, "downloadFile: [$fileName] attempt $attempt - deleting incomplete file (${targetFile.length()} bytes)")
+                targetFile.delete()
+            }
+            
+            FileLogger.i(TAG, "downloadFile: [$fileName] starting download attempt $attempt")
+            
             val success = downloadFileOnce(modelPath, fileName, targetDir, onFileProgress)
-            if (success) return true
-            if (attempt < maxRetries - 1) {
-                FileLogger.w(TAG, "downloadFile: $fileName attempt ${attempt + 1} failed, retrying...")
-                Thread.sleep(2000L * (attempt + 1)) // 递增延迟
+            
+            if (success) {
+                FileLogger.i(TAG, "downloadFile: [$fileName] download succeeded on attempt $attempt")
+                return true
+            }
+            
+            // 下载失败，记录原因并继续重试
+            FileLogger.w(TAG, "downloadFile: [$fileName] attempt $attempt failed, retrying in 2 seconds...")
+            
+            // 等待2秒后再重试，避免立即重试导致服务器拒绝
+            try {
+                Thread.sleep(2000L)
+            } catch (e: InterruptedException) {
+                FileLogger.e(TAG, "downloadFile: [$fileName] retry interrupted", e)
+                return false
             }
         }
-        FileLogger.e(TAG, "downloadFile: $fileName failed after $maxRetries attempts")
-        return false
     }
 
     /**
