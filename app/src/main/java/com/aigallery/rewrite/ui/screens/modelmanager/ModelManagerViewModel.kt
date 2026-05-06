@@ -240,7 +240,7 @@ class ModelManagerViewModel @Inject constructor(
                     delay(300)
                     
                     // 下载 MNN 模型
-                    downloadMnnModel(mnnModel)
+                    downloadMnnModel(mnnModel, originatingModelId = modelId)
                 } else {
                     FileLogger.w(TAG, "downloadModel: no MNN version found for $modelId")
                     
@@ -295,8 +295,11 @@ class ModelManagerViewModel @Inject constructor(
     /**
      * 下载 MNN 模型
      */
-    private fun downloadMnnModel(model: AIModel) {
-        FileLogger.d(TAG, "downloadMnnModel: starting for model=${model.id}, name=${model.name}")
+    private fun downloadMnnModel(model: AIModel, originatingModelId: String? = null) {
+        FileLogger.d(TAG, "downloadMnnModel: starting for model=${model.id}, name=${model.name}, originatingModelId=$originatingModelId")
+        
+        // 同时需要更新状态的原模型ID（GGUF模型的ID）
+        val sourceModelId = originatingModelId ?: model.id
         
         val job = viewModelScope.launch {
             FileLogger.d(TAG, "downloadMnnModel: calling mnnDownloader.downloadModel")
@@ -310,7 +313,8 @@ class ModelManagerViewModel @Inject constructor(
                     _state.update { state ->
                         state.copy(
                             models = state.models.map { m ->
-                                if (m.id == model.id) {
+                                // 同时更新MNN模型和原始GGUF模型的状态
+                                if (m.id == model.id || m.id == sourceModelId) {
                                     m.copy(
                                         status = ModelStatus.DOWNLOADING,
                                         downloadProgress = progress
@@ -330,7 +334,7 @@ class ModelManagerViewModel @Inject constructor(
                     _state.update { state ->
                         state.copy(
                             models = state.models.map { m ->
-                                if (m.id == model.id) {
+                                if (m.id == model.id || m.id == sourceModelId) {
                                     m.copy(status = ModelStatus.DOWNLOADED, downloadProgress = 1f)
                                 } else m
                             }
@@ -342,7 +346,7 @@ class ModelManagerViewModel @Inject constructor(
                     _state.update { state ->
                         state.copy(
                             models = state.models.map { m ->
-                                if (m.id == model.id) {
+                                if (m.id == model.id || m.id == sourceModelId) {
                                     m.copy(status = ModelStatus.DOWNLOAD_FAILED, downloadProgress = 0f)
                                 } else m
                             }
