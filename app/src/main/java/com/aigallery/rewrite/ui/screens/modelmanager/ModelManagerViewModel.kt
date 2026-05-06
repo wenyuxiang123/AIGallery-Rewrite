@@ -34,6 +34,10 @@ class ModelManagerViewModel @Inject constructor(
     private val application: Application
 ) : AndroidViewModel(application) {
 
+    companion object {
+        private const val TAG = "ModelManager"
+    }
+
     private val downloadManager = ModelDownloadManager(application)
 
     // 进度更新任务

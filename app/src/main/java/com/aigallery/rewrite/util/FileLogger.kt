@@ -35,7 +35,7 @@ object FileLogger {
             // 写入启动标记
             writeLog("SYSTEM", "=== App Started ===")
             writeLog("SYSTEM", "Log file: ${logFile?.absolutePath}")
-            writeLog("SYSTEM", "Device: ${android.os.Build.MANUFACTERER} ${android.os.Build.MODEL}")
+            writeLog("SYSTEM", "Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
             writeLog("SYSTEM", "Android: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Failed to init FileLogger", e)
