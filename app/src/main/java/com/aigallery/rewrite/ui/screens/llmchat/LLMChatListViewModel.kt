@@ -2,8 +2,13 @@ package com.aigallery.rewrite.ui.screens.llmchat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.aigallery.rewrite.data.local.AIGalleryDatabase
+import com.aigallery.rewrite.data.local.dao.ChatMessageDao
+import com.aigallery.rewrite.data.local.dao.ChatSessionDao
 import com.aigallery.rewrite.data.repository.ChatRepository
+import com.aigallery.rewrite.data.repository.ChatRepositoryImpl
 import com.aigallery.rewrite.domain.model.ChatSession
+import com.google.gson.Gson
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -22,17 +27,26 @@ data class LLMChatListState(
  */
 @HiltViewModel
 class LLMChatListViewModel @Inject constructor(
-    private val chatRepository: ChatRepository?
+    private val database: AIGalleryDatabase?
 ) : ViewModel() {
 
     // 容错标志：数据库是否可用
-    private var useInMemory = chatRepository == null
+    private var useInMemory = database == null
+    
+    // ChatRepository 实例
+    private val chatRepository: ChatRepository? = if (!useInMemory && database != null) {
+        try {
+            ChatRepositoryImpl(database.chatSessionDao(), database.chatMessageDao(), Gson())
+        } catch (e: Exception) {
+            useInMemory = true
+            null
+        }
+    } else {
+        null
+    }
     
     // 内存存储（数据库不可用时的降级方案）
     private val _memorySessions = MutableStateFlow<List<ChatSession>>(emptyList())
-    
-    // 内存会话是否已初始化
-    private var memoryInitialized = false
 
     private val _state = MutableStateFlow(LLMChatListState())
     val state: StateFlow<LLMChatListState> = _state.asStateFlow()
@@ -121,7 +135,7 @@ class LLMChatListViewModel @Inject constructor(
             // 数据库模式
             viewModelScope.launch {
                 try {
-                    val createdSession = chatRepository.createSession("新对话", "qwen2.5-1.5b")
+                    chatRepository.createSession("新对话", "qwen2.5-1.5b")
                     // 数据库创建会自动更新 Flow，这里不需要手动更新
                 } catch (e: Exception) {
                     // 数据库操作失败，降级到内存
