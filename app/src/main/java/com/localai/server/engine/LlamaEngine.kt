@@ -389,8 +389,6 @@ class LlamaEngine private constructor(
                 override fun onToken(token: String) {
                     trySend(token)
                     totalTokens++
-                    // 同时调用外部回调
-                    this@LlamaEngine.tokenCallback?.onToken(token)
                 }
             }
             

@@ -80,7 +80,7 @@ JavaVM* gJavaVM = nullptr;
 
 // ==================== LlmStreamBuffer ====================
 // Stream buffer that calls a lambda for each chunk of output.
-// This is the same approach as MNN's official MnnLlmChat app.
+// Same approach as MNN's official MnnLlmChat app.
 class LlmStreamBuffer : public std::streambuf {
 public:
     using CallBack = std::function<void(const char* str, size_t len)>;
@@ -104,6 +104,73 @@ private:
     CallBack callback_ = nullptr;
 };
 
+// ==================== Utf8StreamProcessor ====================
+// Ensures complete UTF-8 characters are delivered to the callback.
+// Without this, multi-byte chars (e.g. Chinese) can be split across
+// stream buffer callbacks, causing garbled output.
+// Same as MNN's official MnnLlmChat implementation.
+class Utf8StreamProcessor {
+public:
+    explicit Utf8StreamProcessor(std::function<void(const std::string&)> callback)
+            : callback_(std::move(callback)) {}
+
+    void processStream(const char* str, size_t len) {
+        utf8Buffer_.append(str, len);
+
+        size_t i = 0;
+        std::string completeChars;
+        while (i < utf8Buffer_.size()) {
+            int length = utf8CharLength(static_cast<unsigned char>(utf8Buffer_[i]));
+            if (length == 0 || i + length > utf8Buffer_.size()) {
+                break;
+            }
+            completeChars.append(utf8Buffer_, i, length);
+            i += length;
+        }
+        utf8Buffer_ = utf8Buffer_.substr(i);
+        if (!completeChars.empty()) {
+            callback_(completeChars);
+        }
+    }
+
+    // Flush any remaining incomplete bytes
+    void flush() {
+        if (!utf8Buffer_.empty()) {
+            callback_(utf8Buffer_);
+            utf8Buffer_.clear();
+        }
+    }
+
+    static int utf8CharLength(unsigned char byte) {
+        if ((byte & 0x80) == 0) return 1;
+        if ((byte & 0xE0) == 0xC0) return 2;
+        if ((byte & 0xF0) == 0xE0) return 3;
+        if ((byte & 0xF8) == 0xF0) return 4;
+        return 0;
+    }
+
+private:
+    std::string utf8Buffer_;
+    std::function<void(const std::string&)> callback_;
+};
+
+// ==================== Android Stepping Status Restore ====================
+// After response() with max_tokens=0 (prefill only), the context status
+// might be set to MAX_TOKENS_FINISHED. We need to reset it to RUNNING
+// so that subsequent generate(1) calls work correctly.
+// Same workaround as MNN's official MnnLlmChat for Android prebuilt runtime.
+static void restoreAndroidSteppingStatusIfNeeded(MNN::Transformer::Llm* llm) {
+    if (llm == nullptr) return;
+    auto* context = llm->getContext();
+    if (context == nullptr) return;
+    if (context->status == MNN::Transformer::LlmStatus::MAX_TOKENS_FINISHED ||
+        context->status == MNN::Transformer::LlmStatus::NORMAL_FINISHED) {
+        auto* mutable_context = const_cast<MNN::Transformer::LlmContext*>(context);
+        mutable_context->status = MNN::Transformer::LlmStatus::RUNNING;
+        LOGI("restoreAndroidSteppingStatus: reset status to RUNNING");
+    }
+}
+
 // ==================== JNI Implementation ====================
 extern "C" {
 
@@ -124,7 +191,6 @@ Java_com_localai_server_engine_LlamaEngine_nativeStop(JNIEnv*, jclass) {
     }
 }
 
-
 // Load model
 JNIEXPORT jboolean JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
@@ -142,20 +208,17 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
 
     LOGI("nativeLoadModel: %s, nCtx=%d, nThreads=%d", configPath.c_str(), nCtx, nThreads);
 
-    // Create LLM instance - direct call via DT_NEEDED
     MNN::Transformer::Llm* llm = MNN::Transformer::Llm::createLLM(configPath);
     if (!llm) {
         LOGE("nativeLoadModel: createLLM returned null");
         return JNI_FALSE;
     }
 
-    // Set config: mmap for faster loading, threads and context
     std::string configJson = "{\"num_ctx\":" + std::to_string(nCtx)
         + ",\"num_threads\":" + std::to_string(nThreads)
         + ",\"mmap\":true}";
     llm->set_config(configJson);
 
-    // Load the model
     auto t0 = std::chrono::steady_clock::now();
     bool ok = llm->load();
     auto t1 = std::chrono::steady_clock::now();
@@ -169,7 +232,6 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
         gSession.store(session, std::memory_order_relaxed);
         gModelLoaded.store(true, std::memory_order_relaxed);
 
-        // Extract model name from path
         size_t lastSlash = configPath.find_last_of("/\\");
         std::string modelName = (lastSlash != std::string::npos) ?
             configPath.substr(lastSlash + 1) : configPath;
@@ -213,7 +275,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeIsModelLoaded(JNIEnv*, jclass) 
     return gModelLoaded.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
 }
 
-// Helper: call Java onToken callback from any thread
+// Helper: call Java onToken callback
 static void callJavaTokenCallbackWithEnv(JNIEnv* env, LlmSession* s, const std::string& token) {
     if (!env || !s->javaCallback || !s->onTokenMethod) return;
     jstring js = env->NewStringUTF(token.c_str());
@@ -223,7 +285,7 @@ static void callJavaTokenCallbackWithEnv(JNIEnv* env, LlmSession* s, const std::
     }
 }
 
-// Generate text (sync) - uses ChatMessages format for proper chat template
+// Generate text (sync) - uses ChatMessages format
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
                                                           jstring jPrompt,
@@ -245,7 +307,6 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
     std::string prompt(promptCStr);
     env->ReleaseStringUTFChars(jPrompt, promptCStr);
 
-    // Set sampling config with lower repetition_penalty
     std::string configJson = "{"
         "\"temperature\":" + std::to_string(temperature) + ","
         "\"top_k\":" + std::to_string(topK) + ","
@@ -256,17 +317,24 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
 
     LOGI("nativeGenerate: prompt len=%zu, maxTokens=%d", prompt.length(), maxTokens);
 
-    // Use ChatMessages format so MNN applies chat template correctly
     std::vector<std::pair<std::string, std::string>> history;
     history.emplace_back("user", prompt);
 
     std::ostringstream oss;
     auto t0 = std::chrono::steady_clock::now();
-    s->llm->response(history, &oss, "<|im_end|>", static_cast<int>(maxTokens));
+    // Use "饼干" as end_with - MNN's internal end-of-generation marker
+    s->llm->response(history, &oss, "\xe9\xa5\xbc\xe5\xb9\xb2", static_cast<int>(maxTokens));
     auto t1 = std::chrono::steady_clock::now();
 
     int64_t total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
     std::string result = oss.str();
+
+    // Filter out the "饼干" end marker from result
+    const std::string eopMarker = "\xe9\xa5\xbc\xe5\xb9\xb2";
+    size_t eopPos = result.find(eopMarker);
+    if (eopPos != std::string::npos) {
+        result = result.substr(0, eopPos);
+    }
 
     s->generated_tokens = result.length() / 4;
     s->prefill_ms = total_ms * 30 / 100;
@@ -278,7 +346,10 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
 }
 
 // Generate text (streaming) - uses ChatMessages + LlmStreamBuffer + generate(1) loop
-// Same pattern as MNN's official MnnLlmChat app
+// Same pattern as MNN's official MnnLlmChat app, with:
+// - Utf8StreamProcessor for clean multi-byte char handling
+// - "饼干" (eop) detection for proper generation termination
+// - restoreAndroidSteppingStatusIfNeeded for prefill status reset
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jclass,
                                                                   jstring jPrompt,
@@ -300,7 +371,6 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
     std::string prompt(promptCStr);
     env->ReleaseStringUTFChars(jPrompt, promptCStr);
 
-    // Set sampling config
     std::string configJson = "{"
         "\"temperature\":" + std::to_string(temperature) + ","
         "\"top_k\":" + std::to_string(topK) + ","
@@ -334,48 +404,142 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
 
     // Accumulated result string
     std::string accumulated;
+    // End-of-generation flag (set when "饼干" detected in output)
+    bool generate_end = false;
+    // The "饼干" end marker (UTF-8 encoding)
+    const std::string eopMarker = "\xe9\xa5\xbc\xe5\xb9\xb2";
+    // Buffer for holding back the last char in case it's the start of "饼干"
+    std::string pendingChars;
 
-    // Create LlmStreamBuffer - each token chunk triggers JNI callback to Kotlin
+    // Utf8StreamProcessor ensures complete UTF-8 characters
+    // and detects "饼干" (MNN's end-of-generation marker)
     JNIEnv* cbEnv = callbackEnv;
+    Utf8StreamProcessor utf8Processor([&](const std::string& chars) {
+        if (generate_end) return;
+
+        // Prepend any pending chars from previous callback
+        std::string toProcess = pendingChars + chars;
+        pendingChars.clear();
+
+        // Check if the text contains "饼干" (end marker)
+        size_t eopPos = toProcess.find(eopMarker);
+        if (eopPos != std::string::npos) {
+            // Found end marker - send everything before it, then stop
+            std::string before = toProcess.substr(0, eopPos);
+            if (!before.empty()) {
+                callJavaTokenCallbackWithEnv(cbEnv, s, before);
+                accumulated.append(before);
+            }
+            generate_end = true;
+            LOGI("nativeGenerateStream: detected eop marker, stopping");
+            return;
+        }
+
+        // Check if the end could be a partial "饼干" start
+        // "饼" is 3 bytes (E9 A5 BC), hold it back if it's the last char
+        if (toProcess.size() >= 3) {
+            std::string lastChar;
+            unsigned char b = static_cast<unsigned char>(toProcess[toProcess.size() - 3]);
+            int charLen = Utf8StreamProcessor::utf8CharLength(b);
+            if (charLen == 3 && toProcess.size() >= static_cast<size_t>(charLen)) {
+                lastChar = toProcess.substr(toProcess.size() - 3, 3);
+            } else if (charLen == 2 && toProcess.size() >= static_cast<size_t>(charLen)) {
+                lastChar = toProcess.substr(toProcess.size() - 2, 2);
+            } else if (charLen == 1) {
+                lastChar = toProcess.substr(toProcess.size() - 1, 1);
+            }
+
+            // If last char is "饼" (first char of "饼干"), hold it back
+            if (lastChar == "\xe9\xa5\xbc") {
+                std::string toSend = toProcess.substr(0, toProcess.size() - 3);
+                if (!toSend.empty()) {
+                    callJavaTokenCallbackWithEnv(cbEnv, s, toSend);
+                    accumulated.append(toSend);
+                }
+                pendingChars = lastChar;
+                return;
+            }
+        }
+
+        // No "饼干" - send everything
+        if (!toProcess.empty()) {
+            callJavaTokenCallbackWithEnv(cbEnv, s, toProcess);
+            accumulated.append(toProcess);
+        }
+    });
+
+    // LlmStreamBuffer feeds raw bytes to Utf8StreamProcessor
     LlmStreamBuffer stream_buffer([&](const char* str, size_t len) {
-        std::string token(str, len);
-        accumulated.append(token);
-        callJavaTokenCallbackWithEnv(cbEnv, s, token);
+        utf8Processor.processStream(str, len);
     });
     std::ostream output_ostream(&stream_buffer);
 
     auto t0 = std::chrono::steady_clock::now();
 
-    // Step 1: Prefill (max_tokens=0) - processes the prompt and writes initial tokens to ostream
-    s->llm->response(history, &output_ostream, "<|im_end|>", 0);
+    // Step 1: Prefill (max_tokens=0) - processes the prompt
+    // Use "饼干" as end_with - MNN's internal end-of-generation marker
+    s->llm->response(history, &output_ostream, "\xe9\xa5\xbc\xe5\xb9\xb2", 0);
+
+    // Restore context status - after prefill with max_tokens=0, the status
+    // might be MAX_TOKENS_FINISHED, which would prevent generate(1) from working
+    restoreAndroidSteppingStatusIfNeeded(s->llm);
 
     // Step 2: Decode loop - generate one token at a time
     int generated = 0;
-    while (!s->stop_flag.load(std::memory_order_relaxed) && generated < maxTokens) {
+    while (!s->stop_flag.load(std::memory_order_relaxed) &&
+           !generate_end &&
+           generated < maxTokens) {
         s->llm->generate(1);
         generated++;
 
         // Check if model has stopped (hit EOS)
         if (s->llm->stoped()) {
-            LOGI("nativeGenerateStream: model stopped at token %d", generated);
-            break;
+            auto* context = s->llm->getContext();
+            if (context) {
+                LOGI("nativeGenerateStream: model stopped at token %d, status=%d",
+                     generated, static_cast<int>(context->status));
+            }
+
+            // If we haven't reached max_tokens and no eop detected yet,
+            // this might be an intermediate stop - try to continue
+            if (generated < maxTokens && !generate_end) {
+                // Check if we already have meaningful output
+                if (!accumulated.empty()) {
+                    // Model truly stopped - exit loop
+                    break;
+                }
+                // No output yet - try restoring status and continuing
+                restoreAndroidSteppingStatusIfNeeded(s->llm);
+            } else {
+                break;
+            }
         }
     }
 
-    auto t1 = std::chrono::steady_clock::now();
+    // Flush any remaining UTF-8 bytes
+    utf8Processor.flush();
+
+    // Send any pending chars (held back for "饼干" detection)
+    if (!pendingChars.empty()) {
+        callJavaTokenCallbackWithEnv(callbackEnv, s, pendingChars);
+        accumulated.append(pendingChars);
+        pendingChars.clear();
+    }
 
     // Detach native thread from JVM after all callbacks done
     if (threadAttached && s->javaVM) {
         s->javaVM->DetachCurrentThread();
     }
+
+    auto t1 = std::chrono::steady_clock::now();
     int64_t total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
 
     s->generated_tokens = generated;
     s->prefill_ms = total_ms * 30 / 100;
     s->decode_ms = total_ms * 70 / 100;
 
-    LOGI("nativeGenerateStream: completed in %lld ms, generated=%d tokens, result len=%zu",
-         (long long)total_ms, generated, accumulated.length());
+    LOGI("nativeGenerateStream: completed in %lld ms, generated=%d tokens, result len=%zu, eop=%s",
+         (long long)total_ms, generated, accumulated.length(), generate_end ? "yes" : "no");
 
     return env->NewStringUTF(accumulated.c_str());
 }
@@ -453,7 +617,6 @@ Java_com_localai_server_engine_LlamaEngine_initNativeCallback(JNIEnv* env, jobje
         return;
     }
 
-    // Delete old global ref if exists
     if (s->javaCallback) {
         env->DeleteGlobalRef(s->javaCallback);
         s->javaCallback = nullptr;
