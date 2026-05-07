@@ -9,7 +9,8 @@
 #include <fstream>
 #include <vector>
 #include <algorithm>
-#include <dlfcn.h>
+
+#include "llm/llm.hpp"
 
 #define TAG "MNNLlm"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -47,104 +48,11 @@ static void setCpuAffinity() {
     LOGI("setCpuAffinity: bound to %zu big cores", bigCores.size());
 }
 
-// ==================== Dynamic Symbol Loading ====================
-// We use dlopen/dlsym to resolve MNN symbols at runtime because
-// Android's System.loadLibrary uses RTLD_LOCAL, making symbols
-// from libllm.so invisible to liblocalai-jni.so.
-
-// Opaque pointer type for Llm*
-typedef void* LlmPtr;
-
-// Function pointer types
-typedef LlmPtr (*CreateLLMFunc)(const std::string&);
-typedef void (*DestroyLLMFunc)(LlmPtr);
-typedef void (*SetConfigFunc)(LlmPtr, const std::string&);
-typedef bool (*LoadFunc)(LlmPtr);
-typedef void (*ResponseFunc)(LlmPtr, const std::string&, std::ostream*, const char*, int);
-typedef void (*ResetFunc)(LlmPtr);
-
-// Global function pointers
-static struct {
-    CreateLLMFunc createLLM = nullptr;
-    DestroyLLMFunc destroy = nullptr;
-    SetConfigFunc set_config = nullptr;
-    LoadFunc load = nullptr;
-    ResponseFunc response = nullptr;
-    ResetFunc reset = nullptr;
-    bool loaded = false;
-} gMnnFuncs;
-
-// 通过 /proc/self/maps 查找已加载库的绝对路径
-static std::string findLoadedLibraryPath(const char* libName) {
-    std::ifstream maps("/proc/self/maps");
-    std::string line;
-    while (std::getline(maps, line)) {
-        if (line.find(libName) != std::string::npos) {
-            // 格式: address perms offset dev inode path
-            size_t pos = line.find('/');
-            if (pos != std::string::npos) {
-                return line.substr(pos);
-            }
-        }
-    }
-    return "";
-}
-
-static bool loadMnnSymbols() {
-    if (gMnnFuncs.loaded) return true;
-    
-    // 方案1：通过/proc/self/maps查找libllm.so绝对路径，用RTLD_GLOBAL打开
-    void* handle = nullptr;
-    std::string llmPath = findLoadedLibraryPath("libllm.so");
-    if (!llmPath.empty()) {
-        LOGI("loadMnnSymbols: found libllm.so at %s", llmPath.c_str());
-        handle = dlopen(llmPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
-    }
-    if (!handle) {
-        LOGE("loadMnnSymbols: dlopen via absolute path failed: %s", dlerror());
-        // 方案2：尝试直接用库名
-        handle = dlopen("libllm.so", RTLD_NOW | RTLD_GLOBAL);
-    }
-    if (!handle) {
-        LOGE("loadMnnSymbols: dlopen libllm.so failed: %s", dlerror());
-        // 方案3：尝试RTLD_LAZY
-        handle = dlopen("libllm.so", RTLD_LAZY);
-    }
-    if (!handle) {
-        LOGE("loadMnnSymbols: all dlopen attempts failed: %s", dlerror());
-        return false;
-    }
-    
-    // Load all symbols
-    #define LOAD_SYMBOL(name, mangled) \
-        gMnnFuncs.name = (decltype(gMnnFuncs.name))dlsym(handle, mangled); \
-        if (!gMnnFuncs.name) { \
-            LOGE("loadMnnSymbols: dlsym " #name " failed: %s", dlerror()); \
-            return false; \
-        } \
-        LOGI("loadMnnSymbols: " #name " loaded");
-    
-    LOAD_SYMBOL(createLLM, "_ZN3MNN11Transformer3Llm9createLLMERKNSt6__ndk112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEE")
-    LOAD_SYMBOL(destroy, "_ZN3MNN11Transformer3Llm7destroyEPS1_")
-    LOAD_SYMBOL(set_config, "_ZN3MNN11Transformer3Llm10set_configERKNSt6__ndk112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEE")
-    LOAD_SYMBOL(load, "_ZN3MNN11Transformer3Llm4loadEv")
-    LOAD_SYMBOL(reset, "_ZN3MNN11Transformer3Llm5resetEv")
-    
-    // response has a complex signature
-    LOAD_SYMBOL(response, "_ZN3MNN11Transformer3Llm8responseERKNSt6__ndk112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEEPNS2_13basic_ostreamIcS5_EEPKci")
-    
-    #undef LOAD_SYMBOL
-    
-    gMnnFuncs.loaded = true;
-    LOGI("loadMnnSymbols: all symbols loaded successfully");
-    return true;
-}
-
 // ==================== Session Management ====================
 namespace {
 
 struct LlmSession {
-    LlmPtr llm = nullptr;
+    MNN::Transformer::Llm* llm = nullptr;
     int64_t prefill_ms = 0;
     int64_t decode_ms = 0;
     int     prompt_tokens = 0;
@@ -165,7 +73,7 @@ std::atomic<bool> gModelLoaded{false};
 
 } // anonymous namespace
 
-// ==================== Callback Streambuf ====================
+// Custom streambuf for future streaming support
 class CallbackStreambuf : public std::streambuf {
 public:
     CallbackStreambuf(JNIEnv* e, jobject cb, jmethodID mid, std::atomic<bool>& stopFlag)
@@ -184,11 +92,10 @@ protected:
     }
 
     int overflow(int c) override {
-        if (mStopFlag.load(std::memory_order_relaxed)) return EOF;
-        if (c != EOF) {
+        if (mStopFlag.load(std::memory_order_relaxed)) return traits_type::eof();
+        if (c != traits_type::eof()) {
             char ch = static_cast<char>(c);
-            std::string token(&ch, 1);
-            jstring js = mEnv->NewStringUTF(token.c_str());
+            jstring js = mEnv->NewStringUTF(&ch);
             if (js) {
                 mEnv->CallVoidMethod(mCallback, mMethod, js);
                 mEnv->DeleteLocalRef(js);
@@ -204,93 +111,105 @@ private:
     std::atomic<bool>& mStopFlag;
 };
 
-// ==================== JNI Methods ====================
+// ==================== JNI Implementation ====================
 extern "C" {
 
+// Stop generation
+JNIEXPORT void JNICALL
+Java_com_localai_server_engine_LlamaEngine_nativeStop(JNIEnv*, jclass) {
+    LOGI("nativeStop");
+    LlmSession* s = gSession.load(std::memory_order_relaxed);
+    if (s) {
+        s->stop_flag.store(true, std::memory_order_relaxed);
+    }
+}
+
+// Initialize native layer
 JNIEXPORT jboolean JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeInitNative(JNIEnv* env, jclass) {
-    LOGI("nativeInitNative: initializing");
-    if (!loadMnnSymbols()) {
-        LOGE("nativeInitNative: failed to load MNN symbols");
-        return JNI_FALSE;
+    LOGI("nativeInitNative");
+
+    // Verify MNN libraries are accessible
+    if (!gModelLoaded.load(std::memory_order_relaxed)) {
+        LOGI("nativeInitNative: MNN libraries loaded via DT_NEEDED, symbols available");
     }
+
     return JNI_TRUE;
 }
 
+// Load model
 JNIEXPORT jboolean JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass, 
-                                                            jstring jConfigPath, 
-                                                            jint nCtx, 
+Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
+                                                            jstring jConfigPath,
+                                                            jint nCtx,
                                                             jint nThreads) {
     const char* path = env->GetStringUTFChars(jConfigPath, nullptr);
     if (!path) {
         LOGE("nativeLoadModel: null config path");
         return JNI_FALSE;
     }
-    
+
     std::string configPath(path);
     env->ReleaseStringUTFChars(jConfigPath, path);
 
     LOGI("nativeLoadModel: %s, nCtx=%d, nThreads=%d", configPath.c_str(), nCtx, nThreads);
-    
-    // Ensure symbols are loaded
-    if (!loadMnnSymbols()) {
-        LOGE("nativeLoadModel: MNN symbols not available");
-        return JNI_FALSE;
-    }
-    
-    // Create LLM instance via function pointer
-    LlmPtr llm = gMnnFuncs.createLLM(configPath);
+
+    // Create LLM instance - direct call, no dlsym needed
+    MNN::Transformer::Llm* llm = MNN::Transformer::Llm::createLLM(configPath);
     if (!llm) {
         LOGE("nativeLoadModel: createLLM returned null");
         return JNI_FALSE;
     }
-    
+
     // Set config via JSON
-    std::string configJson = "{\"num_ctx\":" + std::to_string(nCtx) + ",\"num_threads\":" + std::to_string(nThreads) + "}";
-    gMnnFuncs.set_config(llm, configJson);
-    
+    std::string configJson = "{\"num_ctx\":" + std::to_string(nCtx)
+        + ",\"num_threads\":" + std::to_string(nThreads)
+        + ",\"thinking\":false"
+        + ",\"repetition_penalty\":1.2}";
+    llm->set_config(configJson);
+
     // Load the model
     auto t0 = std::chrono::steady_clock::now();
-    bool ok = gMnnFuncs.load(llm);
+    bool ok = llm->load();
     auto t1 = std::chrono::steady_clock::now();
     int64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
-    
+
     if (ok) {
         setCpuAffinity();
-        
+
         auto* session = new LlmSession{llm};
         gSession.store(session, std::memory_order_relaxed);
         gModelLoaded.store(true, std::memory_order_relaxed);
-        
+
+        // Extract model name from path
         size_t lastSlash = configPath.find_last_of("/\\");
-        std::string modelName = (lastSlash != std::string::npos) ? 
+        std::string modelName = (lastSlash != std::string::npos) ?
             configPath.substr(lastSlash + 1) : configPath;
         size_t dotPos = modelName.find(".json");
         if (dotPos != std::string::npos) {
             modelName = modelName.substr(0, dotPos);
         }
         session->loaded_model_name = modelName;
-        
+
         LOGI("nativeLoadModel: success in %lld ms, model=%s", (long long)ms, modelName.c_str());
         return JNI_TRUE;
     } else {
-        gMnnFuncs.destroy(llm);
+        MNN::Transformer::Llm::destroy(llm);
         LOGE("nativeLoadModel: load failed after %lld ms", (long long)ms);
         return JNI_FALSE;
     }
 }
 
+// Unload model
 JNIEXPORT void JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeUnloadModel(JNIEnv* env, jclass) {
+Java_com_localai_server_engine_LlamaEngine_nativeUnloadModel(JNIEnv*, jclass) {
     LOGI("nativeUnloadModel");
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (s) {
         if (s->llm) {
-            gMnnFuncs.destroy(s->llm);
+            MNN::Transformer::Llm::destroy(s->llm);
         }
         if (s->javaCallback) {
-            env->DeleteGlobalRef(s->javaCallback);
             s->javaCallback = nullptr;
         }
         delete s;
@@ -299,11 +218,13 @@ Java_com_localai_server_engine_LlamaEngine_nativeUnloadModel(JNIEnv* env, jclass
     gModelLoaded.store(false, std::memory_order_relaxed);
 }
 
+// Check if model is loaded
 JNIEXPORT jboolean JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeIsModelLoaded(JNIEnv*, jclass) {
     return gModelLoaded.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
 }
 
+// Generate text (sync)
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
                                                           jstring jPrompt,
@@ -325,29 +246,34 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
     std::string prompt(promptCStr);
     env->ReleaseStringUTFChars(jPrompt, promptCStr);
 
-    std::string configJson = "{\"temperature\":" + std::to_string(temperature) + 
-                             ",\"top_k\":" + std::to_string(topK) + 
-                             ",\"top_p\":" + std::to_string(topP) + "}";
-    gMnnFuncs.set_config(s->llm, configJson);
+    // Set sampling config
+    std::string configJson = "{"
+        "\"temperature\":" + std::to_string(temperature) + ","
+        "\"top_k\":" + std::to_string(topK) + ","
+        "\"top_p\":" + std::to_string(topP) +
+    "}";
+    s->llm->set_config(configJson);
 
     LOGI("nativeGenerate: prompt len=%zu, maxTokens=%d", prompt.length(), maxTokens);
-    
+
     std::ostringstream oss;
     auto t0 = std::chrono::steady_clock::now();
-    gMnnFuncs.response(s->llm, prompt, &oss, nullptr, static_cast<int>(maxTokens));
+    s->llm->response(prompt, &oss, nullptr, static_cast<int>(maxTokens));
     auto t1 = std::chrono::steady_clock::now();
+
     int64_t total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
     std::string result = oss.str();
-    
+
     s->generated_tokens = result.length() / 4;
     s->prefill_ms = total_ms * 30 / 100;
     s->decode_ms = total_ms * 70 / 100;
-    
+
     LOGI("nativeGenerate: completed in %lld ms, result len=%zu", (long long)total_ms, result.length());
-    
+
     return env->NewStringUTF(result.c_str());
 }
 
+// Generate text (streaming)
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jclass,
                                                                   jstring jPrompt,
@@ -369,29 +295,34 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
     std::string prompt(promptCStr);
     env->ReleaseStringUTFChars(jPrompt, promptCStr);
 
-    std::string configJson = "{\"temperature\":" + std::to_string(temperature) + 
-                             ",\"top_k\":" + std::to_string(topK) + 
-                             ",\"top_p\":" + std::to_string(topP) + "}";
-    gMnnFuncs.set_config(s->llm, configJson);
+    // Set sampling config
+    std::string configJson = "{"
+        "\"temperature\":" + std::to_string(temperature) + ","
+        "\"top_k\":" + std::to_string(topK) + ","
+        "\"top_p\":" + std::to_string(topP) +
+    "}";
+    s->llm->set_config(configJson);
 
     LOGI("nativeGenerateStream: prompt len=%zu, maxTokens=%d", prompt.length(), maxTokens);
-    
+
     std::ostringstream oss;
     auto t0 = std::chrono::steady_clock::now();
-    gMnnFuncs.response(s->llm, prompt, &oss, nullptr, static_cast<int>(maxTokens));
+    s->llm->response(prompt, &oss, nullptr, static_cast<int>(maxTokens));
     auto t1 = std::chrono::steady_clock::now();
+
     int64_t total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
     std::string result = oss.str();
-    
+
     s->generated_tokens = result.length() / 4;
     s->prefill_ms = total_ms * 30 / 100;
     s->decode_ms = total_ms * 70 / 100;
-    
+
     LOGI("nativeGenerateStream: completed in %lld ms, result len=%zu", (long long)total_ms, result.length());
-    
+
     return env->NewStringUTF(result.c_str());
 }
 
+// Get loaded model name
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGetLoadedModelName(JNIEnv* env, jclass) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
@@ -401,44 +332,50 @@ Java_com_localai_server_engine_LlamaEngine_nativeGetLoadedModelName(JNIEnv* env,
     return env->NewStringUTF("");
 }
 
+// Get context size
 JNIEXPORT jint JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGetContextSize(JNIEnv*, jclass) {
     return 2048;
 }
 
+// Get memory usage
 JNIEXPORT jlong JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGetMemoryUsage(JNIEnv*, jclass) {
     return 0;
 }
 
+// Set system prompt
 JNIEXPORT jboolean JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeSetSystemPrompt(JNIEnv* env, jclass, jstring jSystemPrompt) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (!s || !s->llm) {
         return JNI_FALSE;
     }
-    
+
     const char* sysPrompt = env->GetStringUTFChars(jSystemPrompt, nullptr);
     if (!sysPrompt) {
         return JNI_FALSE;
     }
-    
+
     std::string configJson = "{\"system_prompt\":\"" + std::string(sysPrompt) + "\"}";
     env->ReleaseStringUTFChars(jSystemPrompt, sysPrompt);
-    
-    gMnnFuncs.set_config(s->llm, configJson);
+
+    // MNN set_config returns void
+    s->llm->set_config(configJson);
     return JNI_TRUE;
 }
 
+// Reset conversation
 JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeResetConversation(JNIEnv*, jclass) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (s && s->llm) {
         LOGI("nativeResetConversation: resetting");
-        gMnnFuncs.reset(s->llm);
+        s->llm->reset();
     }
 }
 
+// Get last error
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGetLastError(JNIEnv* env, jclass) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
@@ -448,27 +385,29 @@ Java_com_localai_server_engine_LlamaEngine_nativeGetLastError(JNIEnv* env, jclas
     return env->NewStringUTF("");
 }
 
+// Init native callback
 JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_initNativeCallback(JNIEnv* env, jobject thiz, jobject callback) {
     LOGI("initNativeCallback: setting up callback");
-    
+
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (!s) {
         LOGE("initNativeCallback: no session");
         return;
     }
-    
+
+    // Delete old global ref if exists
     if (s->javaCallback) {
         env->DeleteGlobalRef(s->javaCallback);
         s->javaCallback = nullptr;
     }
-    
+
     if (callback) {
         s->javaCallback = env->NewGlobalRef(callback);
         jclass cls = env->GetObjectClass(callback);
         s->onTokenMethod = env->GetMethodID(cls, "onToken", "(Ljava/lang/String;)V");
         env->DeleteLocalRef(cls);
-        
+
         if (!s->onTokenMethod) {
             LOGE("initNativeCallback: could not find onToken method");
             env->DeleteGlobalRef(s->javaCallback);

@@ -1,57 +1,40 @@
-# MNN 3.5.0 JNI 桥接 CMakeLists.txt
-# 
-# 此文件用于编译 liblocalai-jni-v35.so
-# 编译后的库将使用 MNN Android SDK 的接口
-
 cmake_minimum_required(VERSION 3.22.1)
 project("localai-jni")
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# Android NDK 设置
-if(NOT DEFINED ANDROID_NDK)
-    message(FATAL_ERROR "ANDROID_NDK not defined")
-endif()
-
-# MNN 3.5.0 头文件路径
-set(MNN_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../cpp")
-set(MNN_INCLUDE_DIR "${MNN_ROOT}/include")
-
-include_directories(
-    ${ANDROID_NDK}/sources/cxx-stl/llvm-libc++/include
-    ${ANDROID_NDK}/sysroot/usr/include
-    ${ANDROID_NDK}/sysroot/usr/include/aarch64-linux-android
-    ${MNN_INCLUDE_DIR}
-)
-
-# MNN 3.5.0 库文件目录 - 使用项目自带的jniLibs
-set(MNN_LIB_DIR "${CMAKE_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}")
-
-# 指定库搜索路径
-link_directories(${MNN_LIB_DIR})
-
 # 源文件
-set(SOURCES
-    ../cpp/mnn_llm.cpp
+add_library(${CMAKE_PROJECT_NAME} SHARED
+    mnn_llm.cpp
 )
 
-# 创建库
-add_library(localai-jni SHARED ${SOURCES})
+# 编译选项
+target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -O2 -fPIC)
 
-# 链接 MNN 3.5.0 库 (使用实际的库文件名)
-target_link_libraries(localai-jni
-    mnncore
+# 16KB page size support (Android 15+)
+target_link_options(${CMAKE_PROJECT_NAME} PRIVATE "-Wl,-z,max-page-size=16384")
+
+# MNN头文件
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# 预编译so路径
+set(JNI_LIBS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/arm64-v8a")
+
+# 声明预编译依赖库
+add_library(MNN SHARED IMPORTED)
+set_target_properties(MNN PROPERTIES IMPORTED_LOCATION "${JNI_LIBS_DIR}/libMNN.so")
+
+add_library(llm SHARED IMPORTED)
+set_target_properties(llm PROPERTIES IMPORTED_LOCATION "${JNI_LIBS_DIR}/libllm.so")
+
+add_library(MNN_Express SHARED IMPORTED)
+set_target_properties(MNN_Express PROPERTIES IMPORTED_LOCATION "${JNI_LIBS_DIR}/libMNN_Express.so")
+
+# 链接：关键！这会让编译出的so有DT_NEEDED条目
+target_link_libraries(${CMAKE_PROJECT_NAME}
     MNN
-    MNN_Express
     llm
+    MNN_Express
     android
     log
-    ${ANDROID_NDK}/sources/cxx-stl/llvm-libc++/libs/${ANDROID_ABI}/libc++_shared.so
-)
-
-# 设置输出名称
-set_target_properties(localai-jni PROPERTIES
-    OUTPUT_NAME "localai-jni"
-    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}
 )
