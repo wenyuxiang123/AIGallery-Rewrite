@@ -9,6 +9,7 @@
 #include <fstream>
 #include <vector>
 #include <algorithm>
+#include <dlfcn.h>
 
 #include "llm/llm.hpp"
 
@@ -47,6 +48,143 @@ static void setCpuAffinity() {
     sched_setaffinity(0, sizeof(cpuset), &cpuset);
     LOGI("setCpuAffinity: bound to %zu big cores", bigCores.size());
 }
+
+// ==================== Dynamic Symbol Loading ====================
+// Problem: System.loadLibrary() uses RTLD_LOCAL, making libllm.so symbols
+// invisible to liblocalai-jni.so. Solution: use dlopen/dlsym to dynamically
+// resolve symbols at runtime.
+
+namespace {
+
+// Function pointer types for libllm.so exports
+typedef MNN::Transformer::Llm* (*CreateLLMFunc)(const std::string&);
+typedef void (*DestroyLLMFunc)(MNN::Transformer::Llm*);
+
+// Global handles and function pointers
+void* g_llmHandle = nullptr;
+CreateLLMFunc g_createLLM = nullptr;
+DestroyLLMFunc g_destroyLLM = nullptr;
+std::atomic<bool> g_symbolsLoaded{false};
+
+// Attempt to load libllm.so with RTLD_GLOBAL and resolve symbols
+bool loadLlvmSymbols() {
+    if (g_symbolsLoaded.load(std::memory_order_acquire)) {
+        return true;
+    }
+
+    // libllm.so is already loaded in the process via System.loadLibrary("llm")
+    // Use dlopen with RTLD_NOLOAD to get handle without loading again
+    // Then use dlopen with RTLD_GLOBAL | RTLD_NOLOAD to upgrade to global visibility
+    // Note: Android's linker may not support upgrading RTLD_LOCAL to RTLD_GLOBAL
+    // directly, so we try multiple approaches
+
+    const char* libNames[] = {
+        "libllm.so",
+        nullptr
+    };
+
+    for (int i = 0; libNames[i] != nullptr; i++) {
+        // First, try to get existing handle with RTLD_NOLOAD
+        void* handle = dlopen(libNames[i], RTLD_NOLOAD);
+        if (handle) {
+            LOGI("loadLlvmSymbols: found existing handle for %s", libNames[i]);
+            // Try to upgrade visibility by re-opening with RTLD_GLOBAL
+            // This may not work on Android, but worth trying
+            void* handle2 = dlopen(libNames[i], RTLD_NOLOAD | RTLD_GLOBAL);
+            if (handle2) {
+                dlclose(handle);  // Close the first handle, keep the global one
+                handle = handle2;
+                LOGI("loadLlvmSymbols: upgraded to RTLD_GLOBAL");
+            }
+            g_llmHandle = handle;
+            break;
+        }
+    }
+
+    // If we couldn't get handle via RTLD_NOLOAD, libllm.so might not be in search path
+    // Try dlopen without flags - this will load/find it
+    if (!g_llmHandle) {
+        g_llmHandle = dlopen("libllm.so", RTLD_NOW);
+        if (g_llmHandle) {
+            LOGI("loadLlvmSymbols: loaded libllm.so via dlopen");
+        }
+    }
+
+    if (!g_llmHandle) {
+        // Last resort: search for the library using /proc/self/maps
+        FILE* maps = fopen("/proc/self/maps", "r");
+        if (maps) {
+            char line[512];
+            while (fgets(line, sizeof(line), maps)) {
+                if (strstr(line, "libllm.so")) {
+                    char* pathStart = strchr(line, '/');
+                    if (pathStart) {
+                        char* pathEnd = strrchr(pathStart, ' ');
+                        if (pathEnd) *pathEnd = '\0';
+                        LOGI("loadLlvmSymbols: found libllm.so at %s", pathStart);
+                        g_llmHandle = dlopen(pathStart, RTLD_NOW | RTLD_GLOBAL);
+                        if (g_llmHandle) {
+                            break;
+                        }
+                    }
+                }
+            }
+            fclose(maps);
+        }
+    }
+
+    if (!g_llmHandle) {
+        LOGE("loadLlvmSymbols: failed to get libllm.so handle: %s", dlerror());
+        return false;
+    }
+
+    // Resolve createLLM symbol
+    // Mangled name: _ZN3MNN11Transformer3Llm9createLLMERKNSt6__ndk112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEE
+    const char* createLLMSymbols[] = {
+        "_ZN3MNN11Transformer3Llm9createLLMERKNSt6__ndk112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEE",
+        "createLLM",  // fallback
+        nullptr
+    };
+
+    for (int i = 0; createLLMSymbols[i] != nullptr; i++) {
+        g_createLLM = (CreateLLMFunc)dlsym(g_llmHandle, createLLMSymbols[i]);
+        if (g_createLLM) {
+            LOGI("loadLlvmSymbols: resolved createLLM via %s", createLLMSymbols[i]);
+            break;
+        }
+    }
+
+    if (!g_createLLM) {
+        LOGE("loadLlvmSymbols: failed to resolve createLLM: %s", dlerror());
+        return false;
+    }
+
+    // Resolve destroy symbol
+    const char* destroyLLMSymbols[] = {
+        "_ZN3MNN11Transformer3Llm7destroyEPNS0_3LlmE",
+        "destroy",
+        nullptr
+    };
+
+    for (int i = 0; destroyLLMSymbols[i] != nullptr; i++) {
+        g_destroyLLM = (DestroyLLMFunc)dlsym(g_llmHandle, destroyLLMSymbols[i]);
+        if (g_destroyLLM) {
+            LOGI("loadLlvmSymbols: resolved destroy via %s", destroyLLMSymbols[i]);
+            break;
+        }
+    }
+
+    if (!g_destroyLLM) {
+        LOGE("loadLlvmSymbols: failed to resolve destroy: %s", dlerror());
+        return false;
+    }
+
+    g_symbolsLoaded.store(true, std::memory_order_release);
+    LOGI("loadLlvmSymbols: all symbols loaded successfully");
+    return true;
+}
+
+} // anonymous namespace
 
 namespace {
 
@@ -125,6 +263,13 @@ JNIEXPORT jboolean JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeInitNative(JNIEnv* env, jclass) {
     LOGI("nativeInitNative: initializing");
     // Ensure cache directory exists
+    
+    // Pre-load libllm.so symbols using dlopen/dlsym
+    if (!loadLlvmSymbols()) {
+        LOGE("nativeInitNative: failed to load llm symbols");
+        return JNI_FALSE;
+    }
+    
     return JNI_TRUE;
 }
 
@@ -145,8 +290,14 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
 
     LOGI("nativeLoadModel: %s, nCtx=%d, nThreads=%d", configPath.c_str(), nCtx, nThreads);
     
-    // Create LLM instance
-    MNN::Transformer::Llm* llm = MNN::Transformer::Llm::createLLM(configPath);
+    // Ensure symbols are loaded
+    if (!loadLlvmSymbols()) {
+        LOGE("nativeLoadModel: failed to load llm symbols");
+        return JNI_FALSE;
+    }
+    
+    // Create LLM instance using dynamic function pointer
+    MNN::Transformer::Llm* llm = g_createLLM(configPath);
     if (!llm) {
         LOGE("nativeLoadModel: createLLM returned null");
         return JNI_FALSE;
@@ -185,7 +336,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
         LOGI("nativeLoadModel: success in %lld ms, model=%s", (long long)ms, modelName.c_str());
         return JNI_TRUE;
     } else {
-        MNN::Transformer::Llm::destroy(llm);
+        g_destroyLLM(llm);
         LOGE("nativeLoadModel: load failed after %lld ms", (long long)ms);
         return JNI_FALSE;
     }
@@ -198,7 +349,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeUnloadModel(JNIEnv*, jclass) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (s) {
         if (s->llm) {
-            MNN::Transformer::Llm::destroy(s->llm);
+            g_destroyLLM(s->llm);
         }
         if (s->javaCallback) {
             // Already deleted via DeleteLocalRef in native code
