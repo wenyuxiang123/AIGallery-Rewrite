@@ -87,7 +87,8 @@ fun ChatSessionScreen(
                     userInput = ""
                 },
                 onStop = viewModel::stopGeneration,
-                isGenerating = state.isGenerating
+                isGenerating = state.isGenerating,
+                engineState = engineState  // 传递引擎状态
             )
         }
     ) { paddingValues ->
@@ -374,13 +375,42 @@ private fun BottomInputBar(
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
-    isGenerating: Boolean
+    isGenerating: Boolean,
+    engineState: EngineState? = null  // 添加可选参数
 ) {
+    val showLoadingProgress = engineState?.let { it.isLoading || it.isInitializing } ?: false
+    val loadProgress = engineState?.loadProgress ?: 0f
+    
     Surface(
         shadowElevation = 8.dp,
         tonalElevation = 2.dp
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
+            // 模型加载进度条
+            if (showLoadingProgress) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    LinearProgressIndicator(
+                        progress = { loadProgress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    )
+                    Text(
+                        text = "模型加载中……${(loadProgress * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+
             // 正在生成提示（使用简单条件渲染，避免 AnimatedVisibility 版本兼容问题）
             if (isGenerating) {
                 Row(

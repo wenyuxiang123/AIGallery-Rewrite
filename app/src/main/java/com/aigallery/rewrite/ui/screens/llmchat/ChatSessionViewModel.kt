@@ -57,20 +57,34 @@ class ChatSessionViewModel @Inject constructor(
             }
             
             FileLogger.d(TAG, "autoRestoreModel: attempting to restore previously loaded model...")
-            _engineState.update { it.copy(isInitializing = true) }
+            _engineState.update { it.copy(isInitializing = true, isLoading = true, loadProgress = 0.1f) }
             
             try {
+                // 模拟加载进度更新
+                val progressJob = launch {
+                    var progress = 0.1f
+                    while (progress < 0.9f) {
+                        delay(500)
+                        progress += 0.05f
+                        _engineState.update { it.copy(loadProgress = progress.coerceAtMost(0.9f)) }
+                    }
+                }
+                
                 val restored = inferenceEngine.autoRestore()
+                progressJob.cancel()
+                
                 if (restored) {
                     FileLogger.i(TAG, "autoRestoreModel: model restored successfully")
+                    _engineState.update { it.copy(loadProgress = 1f) }
                 } else {
                     FileLogger.d(TAG, "autoRestoreModel: no model to restore (no saved path or files missing)")
                 }
             } catch (e: Exception) {
                 FileLogger.e(TAG, "autoRestoreModel: failed", e)
+                _engineState.update { it.copy(loadProgress = 0f) }
             } finally {
                 updateEngineState()
-                _engineState.update { it.copy(isInitializing = false) }
+                _engineState.update { it.copy(isInitializing = false, isLoading = false) }
             }
         }
     }
@@ -115,6 +129,7 @@ class ChatSessionViewModel @Inject constructor(
                 if (!inferenceEngine.isInitialized) {
                     FileLogger.d(TAG, "sendMessage: engine not ready, triggering model auto-restore...")
                     updateStreamingMessage(aiMessageId, "⏳ 正在恢复模型...")
+                    _engineState.update { it.copy(isLoading = true, loadProgress = 0.1f) }
                     
                     // 触发自动恢复加载
                     val restoreJob = launch {
@@ -125,15 +140,19 @@ class ChatSessionViewModel @Inject constructor(
                         }
                     }
                     
-                    // 等待加载完成或超时
+                    // 等待加载完成或超时，同时更新进度
                     var waitCount = 0
                     while (!inferenceEngine.isInitialized && waitCount < 300) { // 300 * 100ms = 30s
                         delay(100)
                         waitCount++
+                        // 模拟进度（0.1到0.9之间）
+                        val progress = 0.1f + (waitCount.toFloat() / 300f) * 0.8f
+                        _engineState.update { it.copy(loadProgress = progress.coerceAtMost(0.9f)) }
                     }
                     
                     // 取消恢复任务（如果已完成则无影响）
                     restoreJob.cancel()
+                    _engineState.update { it.copy(isLoading = false, loadProgress = if (inferenceEngine.isInitialized) 1f else 0f) }
                 }
                 
                 if (inferenceEngine.isInitialized) {
@@ -307,13 +326,27 @@ class ChatSessionViewModel @Inject constructor(
         // 加载模型到推理引擎
         viewModelScope.launch {
             try {
-                _engineState.update { it.copy(isInitializing = true) }
+                _engineState.update { it.copy(isInitializing = true, isLoading = true, loadProgress = 0.1f) }
                 updateEngineState()
+                
+                // 模拟加载进度更新
+                val progressJob = launch {
+                    var progress = 0.1f
+                    while (progress < 0.9f) {
+                        delay(500)
+                        progress += 0.05f
+                        _engineState.update { it.copy(loadProgress = progress.coerceAtMost(0.9f)) }
+                    }
+                }
+                
                 FileLogger.i(TAG, "selectModel: model selected successfully")
+                progressJob.cancel()
+                _engineState.update { it.copy(loadProgress = 1f) }
             } catch (e: Exception) {
                 FileLogger.e(TAG, "selectModel: failed", e)
+                _engineState.update { it.copy(loadProgress = 0f) }
             } finally {
-                _engineState.update { it.copy(isInitializing = false) }
+                _engineState.update { it.copy(isInitializing = false, isLoading = false) }
             }
         }
     }
@@ -352,6 +385,8 @@ data class EngineState(
     val isInitialized: Boolean = false,
     val isGenerating: Boolean = false,
     val isInitializing: Boolean = false,
+    val isLoading: Boolean = false,       // 模型加载中
+    val loadProgress: Float = 0f,          // 加载进度 0-1
     val loadedModelName: String? = null,
     val loadedModelPath: String? = null,
     val memoryUsageMB: Float = 0f,
