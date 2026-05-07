@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -394,13 +395,23 @@ class LlamaEngine private constructor(
         val startTime = System.currentTimeMillis()
         
         return callbackFlow {
+            // 大buffer防止JNI回调线程上trySend因buffer满导致StackOverflow
+            // 默认Channel.BUFFERED=64可能不够，显式设256
             var totalTokens = 0
             
             // 注册 token 回调，将每个 token 发送到 Flow
             val callback = object : TokenCallback {
+                @Volatile private var inCallback = false
                 override fun onToken(token: String) {
-                    trySend(token)
-                    totalTokens++
+                    // 防止JNI回调重入导致StackOverflow
+                    if (inCallback) return
+                    inCallback = true
+                    try {
+                        trySend(token)
+                        totalTokens++
+                    } finally {
+                        inCallback = false
+                    }
                 }
             }
             
@@ -446,7 +457,7 @@ class LlamaEngine private constructor(
             }
             
             close()
-        }
+        }.buffer(256)
     }
     
     /**
