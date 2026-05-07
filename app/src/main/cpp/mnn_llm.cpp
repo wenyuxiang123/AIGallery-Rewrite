@@ -124,18 +124,6 @@ Java_com_localai_server_engine_LlamaEngine_nativeStop(JNIEnv*, jclass) {
     }
 }
 
-// Initialize native layer
-JNIEXPORT jboolean JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeInitNative(JNIEnv* env, jclass) {
-    LOGI("nativeInitNative");
-
-    // Verify MNN libraries are accessible
-    if (!gModelLoaded.load(std::memory_order_relaxed)) {
-        LOGI("nativeInitNative: MNN libraries loaded via DT_NEEDED, symbols available");
-    }
-
-    return JNI_TRUE;
-}
 
 // Load model
 JNIEXPORT jboolean JNICALL
