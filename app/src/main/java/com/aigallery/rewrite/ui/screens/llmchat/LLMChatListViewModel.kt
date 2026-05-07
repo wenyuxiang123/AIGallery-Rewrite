@@ -2,7 +2,6 @@ package com.aigallery.rewrite.ui.screens.llmchat
 
 import com.aigallery.rewrite.util.FileLogger
 import androidx.lifecycle.ViewModel
-import com.aigallery.rewrite.util.FileLogger
 import androidx.lifecycle.viewModelScope
 import com.aigallery.rewrite.data.repository.ChatRepository
 import com.aigallery.rewrite.data.repository.ChatRepositoryImpl

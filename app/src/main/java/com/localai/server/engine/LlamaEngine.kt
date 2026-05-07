@@ -2,7 +2,6 @@ package com.localai.server.engine
 
 import android.content.Context
 import com.aigallery.rewrite.util.FileLogger
-import com.aigallery.rewrite.util.FileLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -32,6 +31,10 @@ class LlamaEngine private constructor(
         // 库加载状态
         private var librariesLoaded = false
         private var libraryLoadError: String? = null
+        
+        // Native日志路径设置（静态方法，库加载后立即可用）
+        @JvmStatic
+        private external fun nativeSetLogFilePath(path: String)
         
         /**
          * 获取单例实例
@@ -242,7 +245,6 @@ class LlamaEngine private constructor(
     /**
      * 获取最后错误信息
      */
-    external fun nativeSetLogFilePath(path: String)
 
 
     external fun nativeGetLastError(): String
@@ -259,10 +261,6 @@ class LlamaEngine private constructor(
      */
     fun loadModel(path: String, nCtx: Int = 2048, nThreads: Int = 6): Boolean {
         FileLogger.d(TAG, "loadModel: path=$path, nCtx=$nCtx, nThreads=$nThreads")
-            
-            // Pass log file path to native layer for unified logging
-            nativeSetLogFilePath(FileLogger.getLogFilePath())
-            
         
         if (!librariesLoaded) {
             FileLogger.e(TAG, "loadModel: libraries not loaded")

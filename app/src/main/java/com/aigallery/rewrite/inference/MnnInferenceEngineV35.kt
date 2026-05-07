@@ -2,7 +2,6 @@ package com.aigallery.rewrite.inference
 
 import android.content.Context
 import com.aigallery.rewrite.util.FileLogger
-import com.aigallery.rewrite.util.FileLogger
 import com.localai.server.engine.InferenceStats
 import com.localai.server.engine.LlamaEngineMnn35
 import kotlinx.coroutines.Dispatchers
