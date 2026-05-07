@@ -86,6 +86,16 @@ class LlamaEngine private constructor(
                 System.loadLibrary("localai-jni")
                 FileLogger.d(TAG, "loadLibraries: localai-jni loaded")
                 
+                // 加载so后立即初始化native层（dlsym解析MNN符号）
+                val initResult = nativeInitNative()
+                if (!initResult) {
+                    FileLogger.e(TAG, "loadLibraries: nativeInitNative failed - MNN symbols not resolved")
+                    libraryLoadError = "nativeInitNative failed: MNN symbols not resolved via dlsym"
+                    librariesLoaded = false
+                    return false
+                }
+                FileLogger.d(TAG, "loadLibraries: nativeInitNative success - MNN symbols resolved")
+                
                 librariesLoaded = true
                 FileLogger.i(TAG, "loadLibraries: all MNN libraries loaded successfully")
                 return true

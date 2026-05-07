@@ -58,7 +58,7 @@ typedef void* LlmPtr;
 // Function pointer types
 typedef LlmPtr (*CreateLLMFunc)(const std::string&);
 typedef void (*DestroyLLMFunc)(LlmPtr);
-typedef bool (*SetConfigFunc)(LlmPtr, const std::string&);
+typedef void (*SetConfigFunc)(LlmPtr, const std::string&);
 typedef bool (*LoadFunc)(LlmPtr);
 typedef void (*ResponseFunc)(LlmPtr, const std::string&, std::ostream*, const char*, int);
 typedef void (*ResetFunc)(LlmPtr);
@@ -74,19 +74,45 @@ static struct {
     bool loaded = false;
 } gMnnFuncs;
 
+// 通过 /proc/self/maps 查找已加载库的绝对路径
+static std::string findLoadedLibraryPath(const char* libName) {
+    std::ifstream maps("/proc/self/maps");
+    std::string line;
+    while (std::getline(maps, line)) {
+        if (line.find(libName) != std::string::npos) {
+            // 格式: address perms offset dev inode path
+            size_t pos = line.find('/');
+            if (pos != std::string::npos) {
+                return line.substr(pos);
+            }
+        }
+    }
+    return "";
+}
+
 static bool loadMnnSymbols() {
     if (gMnnFuncs.loaded) return true;
     
-    // libllm.so was already loaded by System.loadLibrary, open with RTLD_GLOBAL
-    void* handle = dlopen("libllm.so", RTLD_NOW | RTLD_GLOBAL);
+    // 方案1：通过/proc/self/maps查找libllm.so绝对路径，用RTLD_GLOBAL打开
+    void* handle = nullptr;
+    std::string llmPath = findLoadedLibraryPath("libllm.so");
+    if (!llmPath.empty()) {
+        LOGI("loadMnnSymbols: found libllm.so at %s", llmPath.c_str());
+        handle = dlopen(llmPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    }
+    if (!handle) {
+        LOGE("loadMnnSymbols: dlopen via absolute path failed: %s", dlerror());
+        // 方案2：尝试直接用库名
+        handle = dlopen("libllm.so", RTLD_NOW | RTLD_GLOBAL);
+    }
     if (!handle) {
         LOGE("loadMnnSymbols: dlopen libllm.so failed: %s", dlerror());
-        // Try without RTLD_GLOBAL
+        // 方案3：尝试RTLD_LAZY
         handle = dlopen("libllm.so", RTLD_LAZY);
-        if (!handle) {
-            LOGE("loadMnnSymbols: dlopen libllm.so failed again: %s", dlerror());
-            return false;
-        }
+    }
+    if (!handle) {
+        LOGE("loadMnnSymbols: all dlopen attempts failed: %s", dlerror());
+        return false;
     }
     
     // Load all symbols
@@ -256,14 +282,17 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
 }
 
 JNIEXPORT void JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeUnloadModel(JNIEnv*, jclass) {
+Java_com_localai_server_engine_LlamaEngine_nativeUnloadModel(JNIEnv* env, jclass) {
     LOGI("nativeUnloadModel");
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (s) {
         if (s->llm) {
             gMnnFuncs.destroy(s->llm);
         }
-        s->javaCallback = nullptr;
+        if (s->javaCallback) {
+            env->DeleteGlobalRef(s->javaCallback);
+            s->javaCallback = nullptr;
+        }
         delete s;
         gSession.store(nullptr, std::memory_order_relaxed);
     }
@@ -397,8 +426,8 @@ Java_com_localai_server_engine_LlamaEngine_nativeSetSystemPrompt(JNIEnv* env, jc
     std::string configJson = "{\"system_prompt\":\"" + std::string(sysPrompt) + "\"}";
     env->ReleaseStringUTFChars(jSystemPrompt, sysPrompt);
     
-    bool ok = gMnnFuncs.set_config(s->llm, configJson);
-    return ok ? JNI_TRUE : JNI_FALSE;
+    gMnnFuncs.set_config(s->llm, configJson);
+    return JNI_TRUE;
 }
 
 JNIEXPORT void JNICALL
