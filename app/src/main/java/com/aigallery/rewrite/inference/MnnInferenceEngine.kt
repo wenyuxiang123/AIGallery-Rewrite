@@ -1,6 +1,7 @@
 package com.aigallery.rewrite.inference
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import com.aigallery.rewrite.util.FileLogger
 import com.localai.server.engine.InferenceStats
@@ -24,6 +25,11 @@ class MnnInferenceEngine(
     companion object {
         private const val TAG = "MnnInferenceEngine"
         
+        // SharedPreferences keys
+        private const val PREFS_NAME = "mnn_inference_engine"
+        private const val KEY_LAST_MODEL_PATH = "last_model_path"
+        private const val KEY_LAST_MODEL_CONFIG = "last_model_config"
+        
         // 默认配置
         const val DEFAULT_MAX_TOKENS = 512
         const val DEFAULT_CONTEXT_LENGTH = 2048
@@ -36,6 +42,14 @@ class MnnInferenceEngine(
     // 库加载状态
     private var librariesLoaded = false
     private var libraryLoadAttempted = false
+    
+    // 最后加载的模型路径（内存缓存，用于 autoRestore）
+    private var lastModelPath: String? = null
+    
+    // SharedPreferences
+    private val prefs: SharedPreferences by lazy {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
     
     override val name: String = "MNN Inference Engine"
     override val version: String = "4.0.0"
@@ -108,6 +122,10 @@ class MnnInferenceEngine(
                     val modelName = llamaEngine?.loadedModelName?.value ?: "unknown"
                     val memoryMB = llamaEngine?.getMemoryUsageMB() ?: 0f
                     FileLogger.i(TAG, "initialize: success, model=$modelName, memory=${memoryMB}MB")
+                    
+                    // 5. 保存模型路径到 SharedPreferences，以便下次自动恢复
+                    saveModelPath(modelPath, config)
+                    lastModelPath = modelPath
                 } else {
                     val error = llamaEngine?.lastError?.value ?: "unknown"
                     FileLogger.e(TAG, "initialize: model load failed, error=$error")
@@ -120,6 +138,102 @@ class MnnInferenceEngine(
                 return@withContext false
             }
         }
+    }
+    
+    /**
+     * 保存模型路径和配置到 SharedPreferences
+     */
+    private fun saveModelPath(modelPath: String, config: InferenceConfig) {
+        try {
+            prefs.edit()
+                .putString(KEY_LAST_MODEL_PATH, modelPath)
+                .putString(KEY_LAST_MODEL_CONFIG, config.toString())
+                .apply()
+            FileLogger.d(TAG, "saveModelPath: saved $modelPath")
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "saveModelPath: failed to save", e)
+        }
+    }
+    
+    /**
+     * 获取上次加载的模型路径
+     */
+    private fun getLastModelPath(): String? {
+        return prefs.getString(KEY_LAST_MODEL_PATH, null)
+    }
+    
+    /**
+     * 清除保存的模型路径
+     */
+    private fun clearSavedModelPath() {
+        prefs.edit()
+            .remove(KEY_LAST_MODEL_PATH)
+            .remove(KEY_LAST_MODEL_CONFIG)
+            .apply()
+        FileLogger.d(TAG, "clearSavedModelPath: cleared")
+    }
+    
+    /**
+     * 自动恢复上次加载的模型
+     * 
+     * 在 APP 重启后调用此方法，可以自动加载上次使用的模型。
+     * 如果之前没有加载过任何模型，或者模型文件已不存在，则返回 false。
+     * 
+     * @return 是否恢复成功
+     */
+    suspend fun autoRestore(): Boolean {
+        FileLogger.d(TAG, "autoRestore: checking for previously loaded model...")
+        
+        // 如果引擎已经初始化，不需要恢复
+        if (isInitialized) {
+            FileLogger.d(TAG, "autoRestore: engine already initialized, skip")
+            return true
+        }
+        
+        val savedPath = getLastModelPath()
+        if (savedPath == null) {
+            FileLogger.d(TAG, "autoRestore: no saved model path found")
+            return false
+        }
+        
+        // 检查模型文件是否存在
+        val modelDir = java.io.File(savedPath)
+        if (!modelDir.exists() || !modelDir.isDirectory) {
+            FileLogger.w(TAG, "autoRestore: saved model path no longer exists: $savedPath")
+            clearSavedModelPath()
+            return false
+        }
+        
+        // 检查必需文件是否存在
+        val requiredFiles = listOf("config.json", "llm_config.json", "llm.mnn", "llm.mnn.weight", "llm.mnn.json", "tokenizer.txt")
+        val missingFiles = requiredFiles.filter { !java.io.File(modelDir, it).exists() }
+        if (missingFiles.isNotEmpty()) {
+            FileLogger.w(TAG, "autoRestore: model files missing: $missingFiles")
+            clearSavedModelPath()
+            return false
+        }
+        
+        FileLogger.i(TAG, "autoRestore: found saved model at $savedPath, attempting to load...")
+        
+        // 使用默认配置恢复加载
+        val config = InferenceConfig(
+            maxLength = DEFAULT_MAX_TOKENS,
+            temperature = 0.7f,
+            topK = 40,
+            topP = 0.9f,
+            numThreads = DEFAULT_THREADS,
+            contextWindow = DEFAULT_CONTEXT_LENGTH
+        )
+        
+        val success = initialize(savedPath, config)
+        if (success) {
+            FileLogger.i(TAG, "autoRestore: successfully restored model from $savedPath")
+        } else {
+            FileLogger.e(TAG, "autoRestore: failed to restore model from $savedPath")
+            clearSavedModelPath()
+        }
+        
+        return success
     }
     
     override suspend fun infer(prompt: String, config: InferenceConfig): InferenceResult {
@@ -219,7 +333,8 @@ class MnnInferenceEngine(
                 llamaEngine = null
                 librariesLoaded = false
                 libraryLoadAttempted = false
-                FileLogger.i(TAG, "release: success")
+                // 注意：不清除保存的模型路径，下次启动时可以自动恢复
+                FileLogger.i(TAG, "release: success, saved model path preserved for auto-restore")
             } catch (e: Throwable) {
                 FileLogger.e(TAG, "release: failed", e)
             }
@@ -253,6 +368,13 @@ class MnnInferenceEngine(
      */
     fun getLoadedModelName(): String? {
         return llamaEngine?.loadedModelName?.value
+    }
+    
+    /**
+     * 获取已加载模型路径
+     */
+    fun getLoadedModelPath(): String? {
+        return lastModelPath ?: getLastModelPath()
     }
     
     /**

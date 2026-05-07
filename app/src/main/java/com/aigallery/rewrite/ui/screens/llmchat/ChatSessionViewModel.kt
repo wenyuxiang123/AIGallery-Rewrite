@@ -39,9 +39,41 @@ class ChatSessionViewModel @Inject constructor(
     init {
         FileLogger.d(TAG, "init: ViewModel created, sessionId=$sessionId")
         updateEngineState()
+        
+        // 自动尝试恢复上次加载的模型
+        autoRestoreModel()
     }
 
     private fun nextMessageId(): Long = messageIdCounter.incrementAndGet()
+
+    /**
+     * 尝试自动恢复上次加载的模型
+     */
+    private fun autoRestoreModel() {
+        viewModelScope.launch {
+            if (inferenceEngine.isInitialized) {
+                FileLogger.d(TAG, "autoRestoreModel: engine already initialized")
+                return@launch
+            }
+            
+            FileLogger.d(TAG, "autoRestoreModel: attempting to restore previously loaded model...")
+            _engineState.update { it.copy(isInitializing = true) }
+            
+            try {
+                val restored = inferenceEngine.autoRestore()
+                if (restored) {
+                    FileLogger.i(TAG, "autoRestoreModel: model restored successfully")
+                } else {
+                    FileLogger.d(TAG, "autoRestoreModel: no model to restore (no saved path or files missing)")
+                }
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "autoRestoreModel: failed", e)
+            } finally {
+                updateEngineState()
+                _engineState.update { it.copy(isInitializing = false) }
+            }
+        }
+    }
 
     /**
      * 更新引擎状态
@@ -51,6 +83,7 @@ class ChatSessionViewModel @Inject constructor(
             state.copy(
                 isInitialized = inferenceEngine.isInitialized,
                 loadedModelName = inferenceEngine.getLoadedModelName(),
+                loadedModelPath = inferenceEngine.getLoadedModelPath(),
                 memoryUsageMB = inferenceEngine.getMemoryUsageMB()
             )
         }
@@ -80,14 +113,27 @@ class ChatSessionViewModel @Inject constructor(
             try {
                 // 等待模型加载完成（最多等30秒）
                 if (!inferenceEngine.isInitialized) {
-                    FileLogger.d(TAG, "sendMessage: engine not ready, waiting for model to load...")
-                    updateStreamingMessage(aiMessageId, "⏳ 模型加载中...")
+                    FileLogger.d(TAG, "sendMessage: engine not ready, triggering model auto-restore...")
+                    updateStreamingMessage(aiMessageId, "⏳ 正在恢复模型...")
                     
+                    // 触发自动恢复加载
+                    val restoreJob = launch {
+                        try {
+                            inferenceEngine.autoRestore()
+                        } catch (e: Exception) {
+                            FileLogger.e(TAG, "sendMessage: auto-restore failed", e)
+                        }
+                    }
+                    
+                    // 等待加载完成或超时
                     var waitCount = 0
                     while (!inferenceEngine.isInitialized && waitCount < 300) { // 300 * 100ms = 30s
                         delay(100)
                         waitCount++
                     }
+                    
+                    // 取消恢复任务（如果已完成则无影响）
+                    restoreJob.cancel()
                 }
                 
                 if (inferenceEngine.isInitialized) {
@@ -166,6 +212,9 @@ class ChatSessionViewModel @Inject constructor(
                 
                 markStreamingComplete(aiMessageId)
                 FileLogger.d(TAG, "sendMessage: stream completed, tokenCount=$tokenCount")
+                
+                // 更新引擎状态
+                updateEngineState()
                 
             } catch (e: Exception) {
                 FileLogger.e(TAG, "sendMessage: inference failed at token $tokenCount", e)
@@ -304,6 +353,7 @@ data class EngineState(
     val isGenerating: Boolean = false,
     val isInitializing: Boolean = false,
     val loadedModelName: String? = null,
+    val loadedModelPath: String? = null,
     val memoryUsageMB: Float = 0f,
     val lastInferenceMs: Long = 0,
     val tokensPerSecond: Float = 0f
