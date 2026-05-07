@@ -214,29 +214,12 @@ Java_com_localai_server_engine_LlamaEngine_nativeIsModelLoaded(JNIEnv*, jclass) 
 }
 
 // Helper: call Java onToken callback from any thread
-static void callJavaTokenCallback(LlmSession* s, const std::string& token) {
-    if (!s->javaCallback || !s->onTokenMethod || !s->javaVM) return;
-
-    JNIEnv* env = nullptr;
-    bool attached = false;
-    int ret = s->javaVM->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
-    if (ret == JNI_EDETACHED) {
-        ret = s->javaVM->AttachCurrentThread(&env, nullptr);
-        attached = (ret == JNI_OK);
-    }
-    if (!env) {
-        LOGE("callJavaTokenCallback: failed to get JNIEnv");
-        return;
-    }
-
+static void callJavaTokenCallbackWithEnv(JNIEnv* env, LlmSession* s, const std::string& token) {
+    if (!env || !s->javaCallback || !s->onTokenMethod) return;
     jstring js = env->NewStringUTF(token.c_str());
     if (js) {
         env->CallVoidMethod(s->javaCallback, s->onTokenMethod, js);
         env->DeleteLocalRef(js);
-    }
-
-    if (attached) {
-        s->javaVM->DetachCurrentThread();
     }
 }
 
@@ -335,15 +318,29 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
     std::vector<std::pair<std::string, std::string>> history;
     history.emplace_back("user", prompt);
 
+    // Attach native thread to JVM once for all token callbacks
+    JNIEnv* callbackEnv = nullptr;
+    bool threadAttached = false;
+    if (s->javaCallback && s->javaVM) {
+        int ret = s->javaVM->GetEnv(reinterpret_cast<void**>(&callbackEnv), JNI_VERSION_1_6);
+        if (ret == JNI_EDETACHED) {
+            ret = s->javaVM->AttachCurrentThread(&callbackEnv, nullptr);
+            threadAttached = (ret == JNI_OK);
+        }
+        if (!callbackEnv) {
+            LOGE("nativeGenerateStream: failed to attach thread for callbacks");
+        }
+    }
+
     // Accumulated result string
     std::string accumulated;
 
     // Create LlmStreamBuffer - each token chunk triggers JNI callback to Kotlin
+    JNIEnv* cbEnv = callbackEnv;
     LlmStreamBuffer stream_buffer([&](const char* str, size_t len) {
         std::string token(str, len);
         accumulated.append(token);
-        // Call Java callback for each token
-        callJavaTokenCallback(s, token);
+        callJavaTokenCallbackWithEnv(cbEnv, s, token);
     });
     std::ostream output_ostream(&stream_buffer);
 
@@ -366,6 +363,11 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
     }
 
     auto t1 = std::chrono::steady_clock::now();
+
+    // Detach native thread from JVM after all callbacks done
+    if (threadAttached && s->javaVM) {
+        s->javaVM->DetachCurrentThread();
+    }
     int64_t total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
 
     s->generated_tokens = generated;
