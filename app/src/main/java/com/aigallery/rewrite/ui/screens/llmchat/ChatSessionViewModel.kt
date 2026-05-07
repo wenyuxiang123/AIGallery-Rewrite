@@ -248,26 +248,9 @@ class ChatSessionViewModel @Inject constructor(
      * 构建提示词
      */
     private fun buildPrompt(userMessage: String): String {
-        val history = _state.value.messages
-            .filter { it.role != MessageRole.SYSTEM }
-            .takeLast(10) // 只保留最近10轮对话
-        
-        val sb = StringBuilder()
-        sb.append("<|im_start|>system\n")
-        sb.append("你是一个有用的AI助手。请直接回答问题，不要输出思考过程。<|im_end|>\n")
-        
-        for (msg in history) {
-            when (msg.role) {
-                MessageRole.USER -> sb.append("<|im_start|>user\n${msg.content}<|im_end|>\n")
-                MessageRole.ASSISTANT -> sb.append("<|im_start|>assistant\n${msg.content}<|im_end|>\n")
-                MessageRole.SYSTEM -> {} // 已处理
-            }
-        }
-        
-        sb.append("<|im_start|>user\n$userMessage<|im_end|>\n")
-        sb.append("<|im_start|>assistant\n")
-        
-        return sb.toString()
+        // 不再手动拼接chat template，MNN的ChatMessages格式会自动处理
+        // 只返回纯用户消息文本
+        return userMessage
     }
 
     /**

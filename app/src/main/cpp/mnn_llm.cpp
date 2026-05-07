@@ -318,6 +318,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
     LOGI("nativeGenerate: prompt len=%zu, maxTokens=%d", prompt.length(), maxTokens);
 
     std::vector<std::pair<std::string, std::string>> history;
+    history.emplace_back("system", "你是一个有用的AI助手。请直接回答问题，不要输出思考过程。");
     history.emplace_back("user", prompt);
 
     std::ostringstream oss;
@@ -386,6 +387,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
 
     // Use ChatMessages format so MNN applies chat template correctly
     std::vector<std::pair<std::string, std::string>> history;
+    history.emplace_back("system", "你是一个有用的AI助手。请直接回答问题，不要输出思考过程。");
     history.emplace_back("user", prompt);
 
     // Attach native thread to JVM once for all token callbacks
