@@ -104,7 +104,7 @@ static bool loadMnnSymbols() {
     LOAD_SYMBOL(load, "_ZN3MNN11Transformer3Llm4loadEv")
     LOAD_SYMBOL(reset, "_ZN3MNN11Transformer3Llm5resetEv")
     
-    // response has a complex signature, we need its mangled name
+    // response has a complex signature
     LOAD_SYMBOL(response, "_ZN3MNN11Transformer3Llm8responseERKNSt6__ndk112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEEPNS2_13basic_ostreamIcS5_EEPKci")
     
     #undef LOAD_SYMBOL
