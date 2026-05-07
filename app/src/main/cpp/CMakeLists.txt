@@ -4,7 +4,7 @@
 # 编译后的库将使用 MNN Android SDK 的接口
 
 cmake_minimum_required(VERSION 3.22.1)
-project("localai-jni-v35")
+project("localai-jni")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -37,10 +37,10 @@ set(SOURCES
 )
 
 # 创建库
-add_library(localai-jni-v35 SHARED ${SOURCES})
+add_library(localai-jni SHARED ${SOURCES})
 
 # 链接 MNN 3.5.0 库 (使用实际的库文件名)
-target_link_libraries(localai-jni-v35
+target_link_libraries(localai-jni
     mnncore
     MNN
     MNN_Express
@@ -51,7 +51,7 @@ target_link_libraries(localai-jni-v35
 )
 
 # 设置输出名称
-set_target_properties(localai-jni-v35 PROPERTIES
-    OUTPUT_NAME "localai-jni-v35"
+set_target_properties(localai-jni PROPERTIES
+    OUTPUT_NAME "localai-jni"
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}
 )
