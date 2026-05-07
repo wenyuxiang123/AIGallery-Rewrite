@@ -10,14 +10,64 @@
 #include <vector>
 #include <algorithm>
 #include <functional>
+#include <ctime>
+#include <sys/stat.h>
 
 #include "llm/llm.hpp"
 
 #define TAG "MNNLlm"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
-#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, TAG, __VA_ARGS__)
 
+// ====== 全局文件日志 - 写入与FileLogger同一个文件 ======
+static std::string g_logFilePath;
+static std::mutex g_logMutex;
+
+static void fileLog(const char* fmt, ...) {
+    if (g_logFilePath.empty()) return;
+    char buf[2048];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    // 获取时间戳
+    auto now = std::chrono::system_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+    auto t = std::chrono::system_clock::to_time_t(now);
+    struct tm tm_buf;
+    localtime_r(&t, &tm_buf);
+    char timebuf[64];
+    strftime(timebuf, sizeof(timebuf), "%m-%d %H:%M:%S", &tm_buf);
+
+    char line[2304];
+    snprintf(line, sizeof(line), "%s.%03lld [MNN-Native] %s\n", timebuf, (long long)ms.count(), buf);
+
+    std::lock_guard<std::mutex> lock(g_logMutex);
+    try {
+        std::ofstream ofs(g_logFilePath, std::ios::app);
+        if (ofs.is_open()) {
+            ofs << line;
+            ofs.flush();
+        }
+    } catch (...) {}
+
+    // 同时输出到logcat
+    LOGI("%s", buf);
+}
+
+// JNI: 设置日志文件路径（由Kotlin层调用，传入FileLogger的日志路径）
+extern "C" JNIEXPORT void JNICALL
+Java_com_localai_server_engine_LlamaEngine_nativeSetLogFilePath(JNIEnv* env, jclass, jstring jPath) {
+    const char* p = env->GetStringUTFChars(jPath, nullptr);
+    if (p) {
+        g_logFilePath = std::string(p);
+        env->ReleaseStringUTFChars(jPath, p);
+        fileLog("nativeSetLogFilePath: log file set to %s", g_logFilePath.c_str());
+    }
+}
+
+// ====== CPU亲和性 ======
 static std::vector<int> getBigCores() {
     std::vector<std::pair<long, int>> freqs;
     for (int i = 0; i < 8; i++) {
@@ -37,9 +87,10 @@ static void setCpuAffinity() {
     cpu_set_t cpuset; CPU_ZERO(&cpuset);
     for (int core : bigCores) CPU_SET(core, &cpuset);
     sched_setaffinity(0, sizeof(cpuset), &cpuset);
-    LOGI("setCpuAffinity: bound to %zu big cores", bigCores.size());
+    fileLog("setCpuAffinity: bound to %zu big cores", bigCores.size());
 }
 
+// ====== Session管理 ======
 namespace {
 struct LlmSession {
     MNN::Transformer::Llm* llm = nullptr;
@@ -57,6 +108,7 @@ std::atomic<bool> gModelLoaded{false};
 
 JavaVM* gJavaVM = nullptr;
 
+// ====== Stream Buffer ======
 class LlmStreamBuffer : public std::streambuf {
 public:
     using CallBack = std::function<void(const char* str, size_t len)>;
@@ -72,6 +124,7 @@ private:
     CallBack callback_ = nullptr;
 };
 
+// ====== UTF8 Processor ======
 class Utf8StreamProcessor {
 public:
     explicit Utf8StreamProcessor(std::function<void(const std::string&)> cb) : callback_(std::move(cb)) {}
@@ -105,48 +158,56 @@ static std::string buildChatPrompt(const std::string& userMessage) {
     return prompt;
 }
 
-// Call Java log method via JNI
-static void jlog(JNIEnv* env, LlmSession* s, const std::string& msg) {
+// ====== JNI回调 ======
+static void callJavaTokenCallbackWithEnv(JNIEnv* env, LlmSession* s, const std::string& token) {
     if (!env || !s->javaCallback || !s->onTokenMethod) return;
-    // We reuse the onToken callback for logging - prepend [NATIVE]
-    // Actually, let's just use __android_log_print which gets captured by logcat
-    LOGI("%s", msg.c_str());
+    jstring js = env->NewStringUTF(token.c_str());
+    if (js) { env->CallVoidMethod(s->javaCallback, s->onTokenMethod, js); env->DeleteLocalRef(js); }
 }
 
 extern "C" {
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
-    LOGI("JNI_OnLoad: saving JavaVM pointer"); gJavaVM = vm; return JNI_VERSION_1_6;
+    fileLog("JNI_OnLoad: saving JavaVM pointer");
+    gJavaVM = vm;
+    return JNI_VERSION_1_6;
 }
 
 JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeStop(JNIEnv*, jclass) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (s) s->stop_flag.store(true, std::memory_order_relaxed);
+    fileLog("nativeStop called");
 }
 
 JNIEXPORT jboolean JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
     jstring jConfigPath, jint nCtx, jint nThreads) {
     const char* path = env->GetStringUTFChars(jConfigPath, nullptr);
-    if (!path) return JNI_FALSE;
+    if (!path) { fileLog("nativeLoadModel: ERROR - null config path"); return JNI_FALSE; }
     std::string configPath(path); env->ReleaseStringUTFChars(jConfigPath, path);
-    LOGI("nativeLoadModel: %s, nCtx=%d, nThreads=%d", configPath.c_str(), nCtx, nThreads);
 
+    fileLog("nativeLoadModel: START - configPath=%s, nCtx=%d, nThreads=%d", configPath.c_str(), nCtx, nThreads);
+
+    fileLog("nativeLoadModel: calling createLLM...");
     MNN::Transformer::Llm* llm = MNN::Transformer::Llm::createLLM(configPath);
-    if (!llm) { LOGE("createLLM returned null"); return JNI_FALSE; }
-    LOGI("createLLM success, setting config");
+    if (!llm) {
+        fileLog("nativeLoadModel: ERROR - createLLM returned null!");
+        return JNI_FALSE;
+    }
+    fileLog("nativeLoadModel: createLLM success, setting config...");
 
     std::string cfg = "{\"num_ctx\":" + std::to_string(nCtx)
         + ",\"num_threads\":" + std::to_string(nThreads) + ",\"mmap\":true}";
+    fileLog("nativeLoadModel: set_config: %s", cfg.c_str());
     llm->set_config(cfg);
 
-    LOGI("calling llm->load()");
+    fileLog("nativeLoadModel: calling llm->load()...");
     auto t0 = std::chrono::steady_clock::now();
     bool ok = llm->load();
     auto t1 = std::chrono::steady_clock::now();
     int64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
-    LOGI("llm->load() returned %s in %lld ms", ok ? "true" : "false", (long long)ms);
+    fileLog("nativeLoadModel: llm->load() returned %s in %lld ms", ok ? "true" : "false", (long long)ms);
 
     if (ok) {
         setCpuAffinity();
@@ -159,24 +220,23 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
         if (dp != std::string::npos) mn = mn.substr(0, dp);
         session->loaded_model_name = mn;
 
-        // Log model context info
         auto* ctx = llm->getContext();
         if (ctx) {
-            LOGI("Model context: prompt_len=%d, gen_seq_len=%d, all_seq_len=%d, status=%d",
+            fileLog("nativeLoadModel: context info - prompt_len=%d, gen_seq_len=%d, all_seq_len=%d, status=%d",
                  ctx->prompt_len, ctx->gen_seq_len, ctx->all_seq_len, (int)ctx->status);
         }
 
-        LOGI("nativeLoadModel: success, model=%s", mn.c_str());
+        fileLog("nativeLoadModel: SUCCESS - model=%s", mn.c_str());
         return JNI_TRUE;
     }
     MNN::Transformer::Llm::destroy(llm);
-    LOGE("nativeLoadModel: failed");
+    fileLog("nativeLoadModel: FAILED - llm->load() returned false");
     return JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeUnloadModel(JNIEnv* env, jclass) {
-    LOGI("nativeUnloadModel");
+    fileLog("nativeUnloadModel: called");
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (s) {
         if (s->llm) MNN::Transformer::Llm::destroy(s->llm);
@@ -184,6 +244,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeUnloadModel(JNIEnv* env, jclass
         delete s; gSession.store(nullptr, std::memory_order_relaxed);
     }
     gModelLoaded.store(false, std::memory_order_relaxed);
+    fileLog("nativeUnloadModel: done");
 }
 
 JNIEXPORT jboolean JNICALL
@@ -191,24 +252,17 @@ Java_com_localai_server_engine_LlamaEngine_nativeIsModelLoaded(JNIEnv*, jclass) 
     return gModelLoaded.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
 }
 
-static void callJavaTokenCallbackWithEnv(JNIEnv* env, LlmSession* s, const std::string& token) {
-    if (!env || !s->javaCallback || !s->onTokenMethod) return;
-    jstring js = env->NewStringUTF(token.c_str());
-    if (js) { env->CallVoidMethod(s->javaCallback, s->onTokenMethod, js); env->DeleteLocalRef(js); }
-}
-
 // Generate (sync)
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
     jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
-    if (!s || !s->llm) return env->NewStringUTF("");
+    if (!s || !s->llm) { fileLog("nativeGenerate: ERROR - model not loaded"); return env->NewStringUTF(""); }
 
     const char* pc = env->GetStringUTFChars(jPrompt, nullptr);
     if (!pc) return env->NewStringUTF("");
     std::string prompt(pc); env->ReleaseStringUTFChars(jPrompt, pc);
 
-    // use_template=false: we build ChatML prompt ourselves
     std::string cfg = "{\"temperature\":" + std::to_string(temperature)
         + ",\"top_k\":" + std::to_string(topK)
         + ",\"top_p\":" + std::to_string(topP)
@@ -216,9 +270,9 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
     s->llm->set_config(cfg);
 
     std::string chatPrompt = buildChatPrompt(prompt);
-    LOGI("nativeGenerate: user_prompt='%s' (len=%zu), chat_prompt len=%zu, maxTokens=%d",
+    fileLog("nativeGenerate: user_prompt='%s' (len=%zu), chat_prompt len=%zu, maxTokens=%d",
          prompt.substr(0, 50).c_str(), prompt.length(), chatPrompt.length(), maxTokens);
-    LOGI("nativeGenerate: chat_prompt first 200 chars: %.200s", chatPrompt.c_str());
+    fileLog("nativeGenerate: chat_prompt content: %.300s", chatPrompt.c_str());
 
     std::ostringstream oss;
     auto t0 = std::chrono::steady_clock::now();
@@ -229,10 +283,10 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
     std::string result = oss.str();
 
     auto* ctx = s->llm->getContext();
-    LOGI("nativeGenerate: completed in %lld ms, result len=%zu, gen_seq_len=%d, status=%d",
+    fileLog("nativeGenerate: completed in %lld ms, result len=%zu, gen_seq_len=%d, status=%d",
          (long long)total_ms, result.length(),
          ctx ? ctx->gen_seq_len : -1, ctx ? (int)ctx->status : -1);
-    LOGI("nativeGenerate: result first 200 chars: %.200s", result.c_str());
+    fileLog("nativeGenerate: result first 300 chars: %.300s", result.c_str());
 
     s->generated_tokens = ctx ? ctx->gen_seq_len : result.length() / 4;
     s->prefill_ms = ctx ? ctx->prefill_us / 1000 : total_ms * 30 / 100;
@@ -245,14 +299,12 @@ JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jclass,
     jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
-    if (!s || !s->llm) { LOGE("nativeGenerateStream: model not loaded"); return env->NewStringUTF(""); }
+    if (!s || !s->llm) { fileLog("nativeGenerateStream: ERROR - model not loaded"); return env->NewStringUTF(""); }
 
     const char* pc = env->GetStringUTFChars(jPrompt, nullptr);
     if (!pc) return env->NewStringUTF("");
     std::string prompt(pc); env->ReleaseStringUTFChars(jPrompt, pc);
 
-    // CRITICAL: use_template=false to prevent MNN from applying its own template
-    // We build the ChatML prompt manually because llm_config.json lacks jinja field
     std::string cfg = "{\"temperature\":" + std::to_string(temperature)
         + ",\"top_k\":" + std::to_string(topK)
         + ",\"top_p\":" + std::to_string(topP)
@@ -260,9 +312,9 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
     s->llm->set_config(cfg);
 
     std::string chatPrompt = buildChatPrompt(prompt);
-    LOGI("nativeGenerateStream: user_prompt='%s' (len=%zu), chat_prompt len=%zu",
+    fileLog("nativeGenerateStream: user_prompt='%s' (len=%zu), chat_prompt len=%zu",
          prompt.substr(0, 80).c_str(), prompt.length(), chatPrompt.length());
-    LOGI("nativeGenerateStream: chat_prompt content: %.300s", chatPrompt.c_str());
+    fileLog("nativeGenerateStream: chat_prompt content: %.300s", chatPrompt.c_str());
 
     s->stop_flag.store(false, std::memory_order_relaxed);
 
@@ -272,7 +324,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
         if (ret == JNI_EDETACHED) {
             ret = s->javaVM->AttachCurrentThread(&callbackEnv, nullptr);
             threadAttached = (ret == JNI_OK);
-            LOGI("nativeGenerateStream: attached thread=%d", threadAttached);
+            fileLog("nativeGenerateStream: attached thread=%d", threadAttached);
         }
     }
 
@@ -282,15 +334,14 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
 
     Utf8StreamProcessor utf8Processor([&](const std::string& chars) {
         std::string filtered = chars;
-        // Filter <|im_end|> from output
         size_t pos = filtered.find("<|im_end|>");
         if (pos != std::string::npos) filtered = filtered.substr(0, pos);
         if (!filtered.empty()) {
             callJavaTokenCallbackWithEnv(cbEnv, s, filtered);
             accumulated.append(filtered);
             tokenCount++;
-            if (tokenCount <= 5 || tokenCount % 50 == 0) {
-                LOGI("nativeGenerateStream: token #%d: '%s' (accumulated len=%zu)",
+            if (tokenCount <= 10 || tokenCount % 50 == 0) {
+                fileLog("nativeGenerateStream: token #%d: '%s' (accumulated len=%zu)",
                      tokenCount, filtered.substr(0, 30).c_str(), accumulated.length());
             }
         }
@@ -301,10 +352,9 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
     });
     std::ostream output_ostream(&stream_buffer);
 
-    LOGI("nativeGenerateStream: calling response() with chatPrompt, end_with=<|im_end|>");
+    fileLog("nativeGenerateStream: calling response() with chatPrompt, end_with=<|im_end|>");
     auto t0 = std::chrono::steady_clock::now();
 
-    // Use response(string) - NOT ChatMessages - with manually built ChatML
     s->llm->response(chatPrompt, &output_ostream, "<|im_end|>", static_cast<int>(maxTokens));
 
     utf8Processor.flush();
@@ -317,11 +367,11 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
     s->prefill_ms = context ? context->prefill_us / 1000 : total_ms * 30 / 100;
     s->decode_ms = context ? context->decode_us / 1000 : total_ms * 70 / 100;
 
-    LOGI("nativeGenerateStream: completed in %lld ms, tokens=%d, gen_seq_len=%d, accumulated=%zu, status=%d",
+    fileLog("nativeGenerateStream: completed in %lld ms, tokens=%d, gen_seq_len=%d, accumulated=%zu, status=%d",
          (long long)total_ms, tokenCount,
          context ? context->gen_seq_len : -1, accumulated.length(),
          context ? (int)context->status : -1);
-    LOGI("nativeGenerateStream: result first 300 chars: %.300s", accumulated.c_str());
+    fileLog("nativeGenerateStream: result first 300 chars: %.300s", accumulated.c_str());
 
     return env->NewStringUTF(accumulated.c_str());
 }
@@ -352,7 +402,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeSetSystemPrompt(JNIEnv* env, jc
 JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeResetConversation(JNIEnv*, jclass) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
-    if (s && s->llm) { LOGI("nativeResetConversation"); s->llm->reset(); }
+    if (s && s->llm) { fileLog("nativeResetConversation"); s->llm->reset(); }
 }
 
 JNIEXPORT jstring JNICALL
@@ -363,17 +413,17 @@ Java_com_localai_server_engine_LlamaEngine_nativeGetLastError(JNIEnv* env, jclas
 
 JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_initNativeCallback(JNIEnv* env, jobject, jobject callback) {
-    LOGI("initNativeCallback");
+    fileLog("initNativeCallback: called");
     LlmSession* s = gSession.load(std::memory_order_relaxed);
-    if (!s) { LOGE("initNativeCallback: no session"); return; }
+    if (!s) { fileLog("initNativeCallback: ERROR - no session"); return; }
     if (s->javaCallback) { env->DeleteGlobalRef(s->javaCallback); s->javaCallback = nullptr; }
     if (callback) {
         s->javaCallback = env->NewGlobalRef(callback);
         jclass cls = env->GetObjectClass(callback);
         s->onTokenMethod = env->GetMethodID(cls, "onToken", "(Ljava/lang/String;)V");
         env->DeleteLocalRef(cls);
-        if (!s->onTokenMethod) { LOGE("initNativeCallback: onToken method not found"); env->DeleteGlobalRef(s->javaCallback); s->javaCallback = nullptr; }
-        else LOGI("initNativeCallback: callback set up successfully");
+        if (!s->onTokenMethod) { fileLog("initNativeCallback: ERROR - onToken method not found"); env->DeleteGlobalRef(s->javaCallback); s->javaCallback = nullptr; }
+        else fileLog("initNativeCallback: callback set up successfully");
     }
 }
 

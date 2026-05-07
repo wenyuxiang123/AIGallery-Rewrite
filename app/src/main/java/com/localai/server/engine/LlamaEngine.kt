@@ -235,6 +235,10 @@ class LlamaEngine private constructor(
     /**
      * 获取最后错误信息
      */
+    external fun nativeSetLogFilePath(path: String)
+
+    external fun nativeSetLogFilePath(path: String)
+
     external fun nativeGetLastError(): String
     
     // ==================== Kotlin 封装方法 ====================
@@ -249,6 +253,12 @@ class LlamaEngine private constructor(
      */
     fun loadModel(path: String, nCtx: Int = 2048, nThreads: Int = 6): Boolean {
         FileLogger.d(TAG, "loadModel: path=$path, nCtx=$nCtx, nThreads=$nThreads")
+            
+            // Pass log file path to native layer for unified logging
+            nativeSetLogFilePath(FileLogger.getLogFilePath())
+            
+            // 传递日志文件路径给native层，实现全局日志抓取
+            nativeSetLogFilePath(FileLogger.getLogFilePath())
         
         if (!librariesLoaded) {
             FileLogger.e(TAG, "loadModel: libraries not loaded")
