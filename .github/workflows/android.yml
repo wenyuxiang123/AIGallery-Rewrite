@@ -42,3 +42,14 @@ jobs:
       with:
         name: release-apk
         path: app/build/outputs/apk/release/*.apk
+
+    - name: Upload to Release
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v89
+        files: |
+          app/build/outputs/apk/debug/*.apk
+          app/build/outputs/apk/release/*.apk
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
