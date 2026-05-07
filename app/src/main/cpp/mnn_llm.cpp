@@ -284,12 +284,8 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
     return env->NewStringUTF(result.c_str());
 }
 
-// Generate (streaming) - follows MNN official MnnLlmChat pattern:
-// 1. response(history, ostream, "<eop>", 0) for prefill
-// 2. generate(1) loop for decode
-// 3. Utf8StreamProcessor for clean UTF-8
-// 4. <eop> detection for proper termination
-// 5. restoreAndroidSteppingStatusIfNeeded for status reset
+// Generate (streaming) - uses response() with full max_tokens for now
+// as a diagnostic: if this works but generate(1) doesn't, the issue is in the decode loop
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jclass,
                                                                   jstring jPrompt, jint maxTokens,
@@ -328,48 +324,18 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
     }
 
     std::string accumulated;
-    bool generate_end = false;
-    const std::string eopMarker = "<eop>";
-    std::string pendingChars;
 
-    // Utf8StreamProcessor + <eop> detection
+    // Simple approach: use response() with full max_tokens
+    // Each token chunk goes through Utf8StreamProcessor then to Java callback
     JNIEnv* cbEnv = callbackEnv;
     Utf8StreamProcessor utf8Processor([&](const std::string& chars) {
-        if (generate_end) return;
-
-        std::string toProcess = pendingChars + chars;
-        pendingChars.clear();
-
-        // Check for <eop> in the text
-        size_t eopPos = toProcess.find(eopMarker);
-        if (eopPos != std::string::npos) {
-            std::string before = toProcess.substr(0, eopPos);
-            if (!before.empty()) {
-                callJavaTokenCallbackWithEnv(cbEnv, s, before);
-                accumulated.append(before);
-            }
-            generate_end = true;
-            LOGI("nativeGenerateStream: detected <eop>, stopping");
-            return;
-        }
-
-        // Check for partial <eop> at end: "<", "<e", "<eo", "<eop"
-        for (int len = 1; len <= 4 && len <= (int)toProcess.size(); len++) {
-            std::string tail = toProcess.substr(toProcess.size() - len, len);
-            if (eopMarker.substr(0, len) == tail) {
-                std::string toSend = toProcess.substr(0, toProcess.size() - len);
-                if (!toSend.empty()) {
-                    callJavaTokenCallbackWithEnv(cbEnv, s, toSend);
-                    accumulated.append(toSend);
-                }
-                pendingChars = tail;
-                return;
-            }
-        }
-
-        if (!toProcess.empty()) {
-            callJavaTokenCallbackWithEnv(cbEnv, s, toProcess);
-            accumulated.append(toProcess);
+        // Filter out <eop> from output
+        std::string filtered = chars;
+        size_t eopPos = filtered.find("<eop>");
+        if (eopPos != std::string::npos) filtered = filtered.substr(0, eopPos);
+        if (!filtered.empty()) {
+            callJavaTokenCallbackWithEnv(cbEnv, s, filtered);
+            accumulated.append(filtered);
         }
     });
 
@@ -380,45 +346,22 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
 
     auto t0 = std::chrono::steady_clock::now();
 
-    // Step 1: Prefill (max_tokens=0)
-    s->llm->response(history, &output_ostream, "<eop>", 0);
-
-    // Restore status after prefill
-    restoreAndroidSteppingStatusIfNeeded(s->llm);
-
-    // Step 2: Decode loop
-    int generated = 0;
-    while (!s->stop_flag.load(std::memory_order_relaxed) &&
-           !generate_end &&
-           generated < maxTokens) {
-        s->llm->generate(1);
-        generated++;
-
-        if (s->llm->stoped()) {
-            auto* context = s->llm->getContext();
-            LOGI("nativeGenerateStream: model stopped at token %d, status=%d",
-                 generated, context ? static_cast<int>(context->status) : -1);
-            if (!accumulated.empty()) break;
-            restoreAndroidSteppingStatusIfNeeded(s->llm);
-        }
-    }
+    // Use response() with full max_tokens - simpler, no generate(1) loop
+    s->llm->response(history, &output_ostream, "<eop>", static_cast<int>(maxTokens));
 
     utf8Processor.flush();
-    if (!pendingChars.empty()) {
-        callJavaTokenCallbackWithEnv(callbackEnv, s, pendingChars);
-        accumulated.append(pendingChars);
-        pendingChars.clear();
-    }
 
     if (threadAttached && s->javaVM) s->javaVM->DetachCurrentThread();
 
     auto t1 = std::chrono::steady_clock::now();
     int64_t total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
-    s->generated_tokens = generated;
-    s->prefill_ms = total_ms * 30 / 100;
-    s->decode_ms = total_ms * 70 / 100;
-    LOGI("nativeGenerateStream: completed in %lld ms, generated=%d, len=%zu, eop=%s",
-         (long long)total_ms, generated, accumulated.length(), generate_end ? "yes" : "no");
+    
+    auto* context = s->llm->getContext();
+    s->generated_tokens = context ? context->gen_seq_len : 0;
+    s->prefill_ms = context ? context->prefill_us / 1000 : total_ms * 30 / 100;
+    s->decode_ms = context ? context->decode_us / 1000 : total_ms * 70 / 100;
+    LOGI("nativeGenerateStream: completed in %lld ms, gen_seq_len=%d, prefill=%lldms, decode=%lldms",
+         (long long)total_ms, s->generated_tokens, (long long)s->prefill_ms, (long long)s->decode_ms);
     return env->NewStringUTF(accumulated.c_str());
 }
 
