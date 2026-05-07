@@ -1,7 +1,7 @@
 package com.localai.server.engine
 
 import android.content.Context
-import android.util.Log
+import com.aigallery.rewrite.util.FileLogger
 import com.aigallery.rewrite.util.FileLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -93,6 +93,13 @@ class LlamaEngine private constructor(
                 
                 
                 librariesLoaded = true
+                // 库加载成功后立即设置native层日志路径，确保后续所有native调用都有日志
+                try {
+                    nativeSetLogFilePath(FileLogger.getLogFilePath())
+                    FileLogger.d(TAG, "loadLibraries: native log path set")
+                } catch (e: Exception) {
+                    FileLogger.w(TAG, "loadLibraries: failed to set native log path: ${e.message}")
+                }
                 FileLogger.i(TAG, "loadLibraries: all MNN libraries loaded successfully")
                 return true
                 
@@ -237,7 +244,6 @@ class LlamaEngine private constructor(
      */
     external fun nativeSetLogFilePath(path: String)
 
-    external fun nativeSetLogFilePath(path: String)
 
     external fun nativeGetLastError(): String
     
@@ -257,8 +263,6 @@ class LlamaEngine private constructor(
             // Pass log file path to native layer for unified logging
             nativeSetLogFilePath(FileLogger.getLogFilePath())
             
-            // 传递日志文件路径给native层，实现全局日志抓取
-            nativeSetLogFilePath(FileLogger.getLogFilePath())
         
         if (!librariesLoaded) {
             FileLogger.e(TAG, "loadModel: libraries not loaded")
@@ -417,7 +421,6 @@ class LlamaEngine private constructor(
                         for (token in tokens) {
                             trySend(token)
                             totalTokens++
-                            this@LlamaEngine.tokenCallback?.onToken(token)
                         }
                     }
                     

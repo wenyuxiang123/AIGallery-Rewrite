@@ -2,7 +2,6 @@ package com.aigallery.rewrite.inference
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.Log
 import com.aigallery.rewrite.util.FileLogger
 import com.localai.server.engine.InferenceStats
 import com.localai.server.engine.LlamaEngine
@@ -174,6 +173,37 @@ class MnnInferenceEngine(
     }
     
     /**
+     * 扫描已下载的MNN模型目录
+     * 在SharedPreferences中没有保存路径时作为fallback
+     */
+    private fun scanForDownloadedModel(): String? {
+        val modelsDir = java.io.File(context.getDir("models", android.content.Context.MODE_PRIVATE), "mnn")
+        if (!modelsDir.exists() || !modelsDir.isDirectory) {
+            FileLogger.d(TAG, "scanForDownloadedModel: models dir not found: ${modelsDir.absolutePath}")
+            // Also check the download directory used by MnnModelDownloader
+            val altDir = java.io.File(context.getExternalFilesDir(null), "models")
+            if (altDir.exists() && altDir.isDirectory) {
+                return scanModelDir(altDir)
+            }
+            return null
+        }
+        return scanModelDir(modelsDir)
+    }
+    
+    private fun scanModelDir(dir: java.io.File): String? {
+        val subDirs = dir.listFiles()?.filter { it.isDirectory } ?: return null
+        for (subDir in subDirs) {
+            val hasLlmMnn = java.io.File(subDir, "llm.mnn").exists()
+            val hasConfig = java.io.File(subDir, "config.json").exists() || java.io.File(subDir, "llm_config.json").exists()
+            if (hasLlmMnn && hasConfig) {
+                FileLogger.i(TAG, "scanModelDir: found valid model at ${subDir.absolutePath}")
+                return subDir.absolutePath
+            }
+        }
+        return null
+    }
+    
+    /**
      * 自动恢复上次加载的模型
      * 
      * 在 APP 重启后调用此方法，可以自动加载上次使用的模型。
@@ -190,10 +220,16 @@ class MnnInferenceEngine(
             return true
         }
         
-        val savedPath = getLastModelPath()
+        var savedPath = getLastModelPath()
         if (savedPath == null) {
-            FileLogger.d(TAG, "autoRestore: no saved model path found")
-            return false
+            // Fallback: 扫描已下载的模型目录
+            FileLogger.d(TAG, "autoRestore: no saved model path, scanning model directories...")
+            savedPath = scanForDownloadedModel()
+            if (savedPath == null) {
+                FileLogger.d(TAG, "autoRestore: no downloaded model found")
+                return false
+            }
+            FileLogger.i(TAG, "autoRestore: found downloaded model at $savedPath")
         }
         
         // 检查模型文件是否存在

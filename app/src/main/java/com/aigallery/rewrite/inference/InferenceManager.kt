@@ -1,7 +1,7 @@
 package com.aigallery.rewrite.inference
 
 import android.content.Context
-import android.util.Log
+import com.aigallery.rewrite.util.FileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
@@ -48,7 +48,7 @@ class InferenceManager @Inject constructor(
         engineType: EngineType = EngineType.MNN,
         config: InferenceConfig = InferenceConfig()
     ): Boolean {
-        Log.d(TAG, "Loading model: $modelId with engine: $engineType")
+        FileLogger.d(TAG, "Loading model: $modelId with engine: $engineType")
 
         // 先释放旧引擎
         release()
@@ -56,7 +56,7 @@ class InferenceManager @Inject constructor(
         // 获取模型路径
         val modelPath = getModelPath(modelId)
         if (modelPath == null) {
-            Log.e(TAG, "Model not found: $modelId")
+            FileLogger.e(TAG, "Model not found: $modelId")
             return false
         }
 
@@ -68,9 +68,9 @@ class InferenceManager @Inject constructor(
             currentEngine = engine
             currentModelId = modelId
             InferenceEngineFactory.setActiveEngine(engine)
-            Log.d(TAG, "Model loaded successfully: $modelId")
+            FileLogger.d(TAG, "Model loaded successfully: $modelId")
         } else {
-            Log.e(TAG, "Failed to load model: $modelId")
+            FileLogger.e(TAG, "Failed to load model: $modelId")
         }
 
         return success
@@ -81,7 +81,7 @@ class InferenceManager @Inject constructor(
      */
     suspend fun infer(prompt: String, config: InferenceConfig = InferenceConfig()): InferenceResult {
         val engine = currentEngine ?: run {
-            Log.w(TAG, "No active engine, using fallback")
+            FileLogger.w(TAG, "No active engine, using fallback")
             val fallback = MnnInferenceEngine(context)
             fallback.initialize("", InferenceConfig())
             return fallback.infer(prompt, config)
@@ -98,7 +98,7 @@ class InferenceManager @Inject constructor(
         config: InferenceConfig = InferenceConfig()
     ): Flow<String> {
         val engine = currentEngine ?: run {
-            Log.w(TAG, "No active engine, using fallback")
+            FileLogger.w(TAG, "No active engine, using fallback")
             val fallback = MnnInferenceEngine(context)
             fallback.initialize("", InferenceConfig())
             return fallback.inferStream(prompt, config)
@@ -122,7 +122,7 @@ class InferenceManager @Inject constructor(
         currentEngine = null
         currentModelId = null
         InferenceEngineFactory.releaseAll()
-        Log.d(TAG, "Inference engine released")
+        FileLogger.d(TAG, "Inference engine released")
     }
 
     /**

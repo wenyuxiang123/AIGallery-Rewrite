@@ -1,7 +1,7 @@
 package com.aigallery.rewrite.memory
 
 import android.content.Context
-import android.util.Log
+import com.aigallery.rewrite.util.FileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -38,7 +38,7 @@ class MemoryManager @Inject constructor(
                     importance = 3
                 )
                 vectorStore.addMemory(instantMemory)
-                Log.d(TAG, "Stored to instant memory: ${message.take(30)}...")
+                FileLogger.d(TAG, "Stored to instant memory: ${message.take(30)}...")
             }
 
             // 2. 分析并提取重要信息到短期/长期记忆
@@ -93,7 +93,7 @@ class MemoryManager @Inject constructor(
             metadata = mapOf("category" to category)
         )
         vectorStore.addMemory(memory)
-        Log.d(TAG, "Stored to CORE memory: ${content.take(50)}...")
+        FileLogger.d(TAG, "Stored to CORE memory: ${content.take(50)}...")
     }
 
     /**
@@ -107,7 +107,7 @@ class MemoryManager @Inject constructor(
             metadata = mapOf("sessionId" to sessionId)
         )
         vectorStore.addMemory(memory)
-        Log.d(TAG, "Stored to WORKING memory: ${content.take(50)}...")
+        FileLogger.d(TAG, "Stored to WORKING memory: ${content.take(50)}...")
     }
 
     /**
@@ -120,7 +120,7 @@ class MemoryManager @Inject constructor(
             importance = 6
         )
         vectorStore.addMemory(memory)
-        Log.d(TAG, "Stored to LONG_TERM memory: ${content.take(50)}...")
+        FileLogger.d(TAG, "Stored to LONG_TERM memory: ${content.take(50)}...")
     }
 
     /**
@@ -196,7 +196,7 @@ class MemoryManager @Inject constructor(
      * 会话结束时进行记忆整合
      */
     suspend fun consolidateSession(sessionId: String) {
-        Log.d(TAG, "Consolidating memories for session: $sessionId")
+        FileLogger.d(TAG, "Consolidating memories for session: $sessionId")
         // 1. 获取所有瞬时记忆
         // 2. 去重和摘要
         // 3. 提升重要内容到短期记忆

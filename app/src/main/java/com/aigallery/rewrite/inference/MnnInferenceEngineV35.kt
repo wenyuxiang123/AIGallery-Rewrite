@@ -1,7 +1,7 @@
 package com.aigallery.rewrite.inference
 
 import android.content.Context
-import android.util.Log
+import com.aigallery.rewrite.util.FileLogger
 import com.aigallery.rewrite.util.FileLogger
 import com.localai.server.engine.InferenceStats
 import com.localai.server.engine.LlamaEngineMnn35

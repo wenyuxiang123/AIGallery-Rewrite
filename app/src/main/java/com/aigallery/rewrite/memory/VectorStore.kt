@@ -1,7 +1,7 @@
 package com.aigallery.rewrite.memory
 
 import android.content.Context
-import android.util.Log
+import com.aigallery.rewrite.util.FileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -42,10 +42,10 @@ class VectorStore @Inject constructor(
                 memoryStorage.value.add(memory)
                 vectorCache[memory.id] = embedding
 
-                Log.d(TAG, "Memory added: ${memory.id}")
+                FileLogger.d(TAG, "Memory added: ${memory.id}")
                 true
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to add memory", e)
+                FileLogger.e(TAG, "Failed to add memory", e)
                 false
             }
         }
@@ -101,7 +101,7 @@ class VectorStore @Inject constructor(
                 results.sortedByDescending { it.similarityScore }
                     .take(topK)
             } catch (e: Exception) {
-                Log.e(TAG, "Search failed", e)
+                FileLogger.e(TAG, "Search failed", e)
                 emptyList()
             }
         }
@@ -165,7 +165,7 @@ class VectorStore @Inject constructor(
                     false
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Update failed", e)
+                FileLogger.e(TAG, "Update failed", e)
                 false
             }
         }
@@ -181,7 +181,7 @@ class VectorStore @Inject constructor(
                 vectorCache.remove(memoryId)
                 removed
             } catch (e: Exception) {
-                Log.e(TAG, "Delete failed", e)
+                FileLogger.e(TAG, "Delete failed", e)
                 false
             }
         }

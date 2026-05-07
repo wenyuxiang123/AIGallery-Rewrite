@@ -1,7 +1,7 @@
 package com.aigallery.rewrite.download
 
 import android.content.Context
-import android.util.Log
+import com.aigallery.rewrite.util.FileLogger
 import com.aigallery.rewrite.util.FileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
