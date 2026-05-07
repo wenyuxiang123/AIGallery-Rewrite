@@ -78,10 +78,26 @@ class ChatSessionViewModel @Inject constructor(
         inferenceJob = viewModelScope.launch {
             var tokenCount = 0
             try {
-                // 检查引擎是否初始化
+                // 等待模型加载完成（最多等30秒）
+                if (!inferenceEngine.isInitialized) {
+                    FileLogger.d(TAG, "sendMessage: engine not ready, waiting for model to load...")
+                    updateStreamingMessage(aiMessageId, "⏳ 模型加载中...")
+                    
+                    var waitCount = 0
+                    while (!inferenceEngine.isInitialized && waitCount < 300) { // 300 * 100ms = 30s
+                        delay(100)
+                        waitCount++
+                    }
+                }
+                
                 if (inferenceEngine.isInitialized) {
                     FileLogger.d(TAG, "sendMessage: using MNN inference")
                     _engineState.update { it.copy(isGenerating = true) }
+                    
+                    // 清除"加载中"提示，准备接收推理结果
+                    _state.update { s ->
+                        s.copy(messages = s.messages.map { if (it.id == aiMessageId) it.copy(content = "") else it })
+                    }
                     
                     // 构建完整提示词
                     val fullPrompt = buildPrompt(message)
@@ -111,10 +127,12 @@ class ChatSessionViewModel @Inject constructor(
                             tokensPerSecond = inferenceEngine.getInferenceStats().tokensPerSecond
                         )
                     }
-                    
                 } else {
-                    // Fallback 模式
-                    FileLogger.d(TAG, "sendMessage: falling back to mock response")
+                    // 超时，模型仍未加载
+                    FileLogger.d(TAG, "sendMessage: model load timeout, falling back to mock response")
+                    _state.update { s ->
+                        s.copy(messages = s.messages.map { if (it.id == aiMessageId) it.copy(content = "") else it })
+                    }
                     val fallbackResponse = generateFallbackResponse(message)
                     for (char in fallbackResponse) {
                         updateStreamingMessage(aiMessageId, char.toString())
