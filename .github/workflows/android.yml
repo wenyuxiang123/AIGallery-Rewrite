@@ -43,11 +43,13 @@ jobs:
         name: release-apk
         path: app/build/outputs/apk/release/*.apk
 
-    - name: Upload to Release
+    - name: Create or Update Release
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v89
+        tag_name: latest
+        name: Latest Build
+        body: ${{ github.event.head_commit.message }}
         files: |
           app/build/outputs/apk/debug/*.apk
           app/build/outputs/apk/release/*.apk
