@@ -5,12 +5,48 @@
 #include <atomic>
 #include <exception>
 #include <android/log.h>
+#include <sched.h>
+#include <fstream>
+#include <vector>
+#include <algorithm>
 
 #include "llm/llm.hpp"
 
 #define TAG "MNNLlm"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+
+// ==================== CPU Affinity Utilities ====================
+static std::vector<int> getBigCores() {
+    std::vector<std::pair<long, int>> freqs;
+    for (int i = 0; i < 8; i++) {
+        std::string path = "/sys/devices/system/cpu/cpu" + std::to_string(i) + "/cpufreq/cpuinfo_max_freq";
+        std::ifstream ifs(path);
+        if (ifs.is_open()) {
+            long freq = 0;
+            ifs >> freq;
+            freqs.push_back({freq, i});
+        }
+    }
+    std::sort(freqs.begin(), freqs.end(), std::greater<>());
+    std::vector<int> bigCores;
+    for (int i = 0; i < std::min((int)freqs.size(), 6); i++) {
+        bigCores.push_back(freqs[i].second);
+    }
+    return bigCores;
+}
+
+static void setCpuAffinity() {
+    auto bigCores = getBigCores();
+    if (bigCores.empty()) return;
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    for (int core : bigCores) {
+        CPU_SET(core, &cpuset);
+    }
+    sched_setaffinity(0, sizeof(cpuset), &cpuset);
+    LOGI("setCpuAffinity: bound to %zu big cores", bigCores.size());
+}
 
 namespace {
 
@@ -127,6 +163,9 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
     int64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
     
     if (ok) {
+        // Set CPU affinity to big cores for better performance
+        setCpuAffinity();
+        
         // Create session
         auto* session = new LlmSession{llm};
         gSession.store(session, std::memory_order_relaxed);

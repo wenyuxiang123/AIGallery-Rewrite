@@ -79,7 +79,7 @@ data class InferenceConfig(
     /** Top-K 采样 */
     val topK: Int = 50,
     /** 重复惩罚 */
-    val repeatPenalty: Float = 1.1f,
+    val repeatPenalty: Float = 1.2f,
     /** 使用 GPU 加速 */
     val useGPU: Boolean = true,
     /** 线程数 */

@@ -102,6 +102,10 @@ class ChatSessionViewModel @Inject constructor(
                     // 构建完整提示词
                     val fullPrompt = buildPrompt(message)
                     
+                    // 流式输出过滤：过滤<think>到</think>之间的内容
+                    var tokenBuffer = ""
+                    var inThinkingBlock = false
+                    
                     // 使用流式推理
                     inferenceEngine.inferStream(
                         prompt = fullPrompt,
@@ -110,11 +114,31 @@ class ChatSessionViewModel @Inject constructor(
                             temperature = 0.7f,
                             topK = 40,
                             topP = 0.9f,
-                            numThreads = 6
+                            numThreads = 6,
+                            repeatPenalty = 1.2f
                         )
                     ).collect { token ->
-                        updateStreamingMessage(aiMessageId, token)
-                        tokenCount++
+                        tokenBuffer += token
+                        
+                        // 处理<think>标签
+                        if (tokenBuffer.contains("<think>")) {
+                            inThinkingBlock = true
+                            tokenBuffer = tokenBuffer.substringAfter("<think>")
+                        }
+                        
+                        // 处理</think>标签
+                        if (tokenBuffer.contains("</think>")) {
+                            inThinkingBlock = false
+                            tokenBuffer = tokenBuffer.substringAfter("</think>")
+                        }
+                        
+                        // 只在非thinking块时输出
+                        if (!inThinkingBlock && tokenBuffer.isNotEmpty()) {
+                            updateStreamingMessage(aiMessageId, tokenBuffer)
+                            tokenCount++
+                            tokenBuffer = ""
+                        }
+                        
                         if (tokenCount % 20 == 0) {
                             FileLogger.d(TAG, "sendMessage: streamed $tokenCount tokens")
                         }
@@ -162,7 +186,7 @@ class ChatSessionViewModel @Inject constructor(
         
         val sb = StringBuilder()
         sb.append("<|im_start|>system\n")
-        sb.append("你是一个有用的AI助手。<|im_end|>\n")
+        sb.append("你是一个有用的AI助手。请直接回答问题，不要输出思考过程。<|im_end|>\n")
         
         for (msg in history) {
             when (msg.role) {
