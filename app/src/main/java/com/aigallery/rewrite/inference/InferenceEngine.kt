@@ -83,7 +83,7 @@ data class InferenceConfig(
     /** 使用 GPU 加速 */
     val useGPU: Boolean = true,
     /** 线程数 */
-    val numThreads: Int = 4,
+    val numThreads: Int = 6,
     /** 上下文窗口大小 */
     val contextWindow: Int = 4096,
     /** 停止词列表 */

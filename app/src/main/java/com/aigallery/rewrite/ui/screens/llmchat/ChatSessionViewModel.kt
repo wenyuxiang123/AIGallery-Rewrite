@@ -110,7 +110,7 @@ class ChatSessionViewModel @Inject constructor(
                             temperature = 0.7f,
                             topK = 40,
                             topP = 0.9f,
-                            numThreads = 4
+                            numThreads = 6
                         )
                     ).collect { token ->
                         updateStreamingMessage(aiMessageId, token)
