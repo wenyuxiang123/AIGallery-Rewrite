@@ -3,10 +3,15 @@ package com.localai.server.engine
 import android.content.Context
 import android.util.Log
 import com.aigallery.rewrite.util.FileLogger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -363,7 +368,8 @@ class LlamaEngine private constructor(
     /**
      * 生成文本（流式）
      * 
-     * 注意：当前实现为模拟流式，实际流式需要 native 层支持
+     * 使用 callbackFlow 实现真正的流式输出
+     * native 层通过 JNI 回调将每个 token 传递给 Kotlin 层
      */
     fun generateStream(
         prompt: String,
@@ -374,20 +380,41 @@ class LlamaEngine private constructor(
     ): Flow<String> {
         FileLogger.d(TAG, "generateStream: prompt len=${prompt.length}")
         val startTime = System.currentTimeMillis()
-        var totalTokens = 0
         
-        return kotlinx.coroutines.flow.flow {
-            try {
-                // 调用 native 流式生成
-                val streamResult = nativeGenerateStream(prompt, maxTokens, temperature, topK, topP)
-                
-                // 解析流式结果（按换行分隔 tokens）
-                val tokens = streamResult.split("\n").filter { it.isNotEmpty() }
-                for (token in tokens) {
-                    emit(token)
+        return callbackFlow {
+            var totalTokens = 0
+            
+            // 注册 token 回调，将每个 token 发送到 Flow
+            val callback = object : TokenCallback {
+                override fun onToken(token: String) {
+                    trySend(token)
                     totalTokens++
-                    // 调用回调
-                    tokenCallback?.onToken(token)
+                    // 同时调用外部回调
+                    this@LlamaEngine.tokenCallback?.onToken(token)
+                }
+            }
+            
+            try {
+                withContext(Dispatchers.IO) {
+                    // 设置回调
+                    setTokenCallback(callback)
+                    
+                    // 调用 native 流式生成
+                    val streamResult = nativeGenerateStream(prompt, maxTokens, temperature, topK, topP)
+                    
+                    // 如果 native 层没有通过回调返回（兼容旧实现），
+                    // 则按换行分隔后逐个 emit
+                    if (totalTokens == 0 && streamResult.isNotEmpty()) {
+                        val tokens = streamResult.split("\n").filter { it.isNotEmpty() }
+                        for (token in tokens) {
+                            trySend(token)
+                            totalTokens++
+                            this@LlamaEngine.tokenCallback?.onToken(token)
+                        }
+                    }
+                    
+                    // 清除回调
+                    setTokenCallback(null)
                 }
                 
                 val elapsed = System.currentTimeMillis() - startTime
@@ -404,8 +431,12 @@ class LlamaEngine private constructor(
             } catch (e: Throwable) {
                 FileLogger.e(TAG, "generateStream failed", e)
                 _lastError.value = e.message
-                emit("生成失败: ${e.message}")
+                trySend("生成失败: ${e.message}")
+            } finally {
+                setTokenCallback(null)
             }
+            
+            close()
         }
     }
     
