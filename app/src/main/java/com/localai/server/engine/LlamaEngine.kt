@@ -58,21 +58,21 @@ class LlamaEngine private constructor(
             try {
                 FileLogger.d(TAG, "loadLibraries: starting library load")
                 
-                // 按正确顺序加载库
-                // localai-jni 依赖 llm -> MNN_Express -> MNN -> MNNOpenCV
+                // 按正确顺序加载库（依赖库必须先加载）
+                // localai-jni 依赖 llm -> MNN_Express -> MNN -> c++_shared
                 
                 // 加载基础库
-                System.loadLibrary("localai-jni")
-                FileLogger.d(TAG, "loadLibraries: localai-jni loaded")
+                System.loadLibrary("c++_shared")
+                FileLogger.d(TAG, "loadLibraries: c++_shared loaded")
                 
-                System.loadLibrary("llm")
-                FileLogger.d(TAG, "loadLibraries: llm loaded")
+                System.loadLibrary("MNN")
+                FileLogger.d(TAG, "loadLibraries: MNN loaded")
                 
                 System.loadLibrary("MNN_Express")
                 FileLogger.d(TAG, "loadLibraries: MNN_Express loaded")
                 
-                System.loadLibrary("MNN")
-                FileLogger.d(TAG, "loadLibraries: MNN loaded")
+                System.loadLibrary("llm")
+                FileLogger.d(TAG, "loadLibraries: llm loaded")
                 
                 // 可选库
                 try {
@@ -82,9 +82,9 @@ class LlamaEngine private constructor(
                     FileLogger.w(TAG, "loadLibraries: MNNOpenCV not available (optional)")
                 }
                 
-                // 加载 C++ 共享库
-                System.loadLibrary("c++_shared")
-                FileLogger.d(TAG, "loadLibraries: c++_shared loaded")
+                // JNI 桥接库最后加载（依赖所有其他库）
+                System.loadLibrary("localai-jni")
+                FileLogger.d(TAG, "loadLibraries: localai-jni loaded")
                 
                 librariesLoaded = true
                 FileLogger.i(TAG, "loadLibraries: all MNN libraries loaded successfully")
