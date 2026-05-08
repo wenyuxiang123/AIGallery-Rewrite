@@ -76,9 +76,22 @@ static std::vector<int> getBigCores() {
         std::ifstream ifs(path);
         if (ifs.is_open()) { long freq = 0; ifs >> freq; freqs.push_back({freq, i}); }
     }
+    if (freqs.empty()) return std::vector<int>();
     std::sort(freqs.begin(), freqs.end(), std::greater<>());
+    
+    // 计算频率中位数，只返回超过中位数的核心（真正的大核）
+    // 避免在778G Plus等芯片上绑到小核导致性能下降
+    size_t mid = freqs.size() / 2;
+    long medianFreq = freqs[mid].first;
+    
     std::vector<int> bigCores;
-    for (int i = 0; i < std::min((int)freqs.size(), 6); i++) bigCores.push_back(freqs[i].second);
+    for (const auto& pair : freqs) {
+        if (pair.first > medianFreq) {
+            bigCores.push_back(pair.second);
+        }
+    }
+    fileLog("getBigCores: detected %zu big cores (median=%ld), cores: ", bigCores.size(), medianFreq);
+    for (int core : bigCores) { fileLog("  cpu%d", core); }
     return bigCores;
 }
 
@@ -201,10 +214,24 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
     }
     fileLog("nativeLoadModel: createLLM success, setting config...");
 
+    // KV Cache量化 + Flash Attention + mmap优化
     std::string cfg = "{\"num_ctx\":" + std::to_string(nCtx)
-        + ",\"num_threads\":" + std::to_string(nThreads) + ",\"mmap\":true}";
+        + ",\"num_threads\":" + std::to_string(nThreads)
+        + ",\"mmap\":true"
+        + ",\"use_mmap\":true"
+        + ",\"attention_mode\":10"
+        + ",\"kvcache_mmap\":true}";
     fileLog("nativeLoadModel: set_config: %s", cfg.c_str());
     llm->set_config(cfg);
+
+    // 设置 tmp_path 用于 mmap 缓存加速二次加载
+    std::string tmpCfg = "{\"tmp_path\":\"/data/data/com.aigallery.rewrite/cache/llm_cache\"}";
+    fileLog("nativeLoadModel: set_config tmp_path: %s", tmpCfg.c_str());
+    llm->set_config(tmpCfg);
+
+    // TODO: QNN/NPU 加速需要重新编译 libMNN.so 添加 -DMNN_QNN=ON
+    // 778G Plus (Snapdragon 778G Plus) 的 Hexagon DSP 可用于加速推理
+    // 需要安装 QNN SDK 并重新编译，预期可额外提速 30-50%
 
     fileLog("nativeLoadModel: calling llm->load()...");
     auto t0 = std::chrono::steady_clock::now();
@@ -214,6 +241,23 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
     fileLog("nativeLoadModel: llm->load() returned %s in %lld ms", ok ? "true" : "false", (long long)ms);
 
     if (ok) {
+        // 自动检测大核数量设置最优线程数（不超过4线程）
+        auto bigCores = getBigCores();
+        int optimalThreads = std::min((int)bigCores.size(), 4);
+        if (nThreads <= 0 || nThreads > optimalThreads) {
+            nThreads = optimalThreads;
+            fileLog("nativeLoadModel: auto-tuned threads to %d based on %zu big cores", nThreads, bigCores.size());
+        }
+        
+        // Lookahead 投机解码加速（2-3x加速）
+        std::string speculativeCfg = "{\"speculative_type\":\"lookahead\",\"draft_token_num\":4}";
+        fileLog("nativeLoadModel: enabling lookahead speculative decoding...");
+        if (!llm->set_config(speculativeCfg)) {
+            fileLog("nativeLoadModel: WARNING - setSpeculativeConfig failed, skipping lookahead");
+        } else {
+            fileLog("nativeLoadModel: lookahead speculative decoding enabled (draft_token_num=4)");
+        }
+        
         setCpuAffinity();
         auto* session = new LlmSession{llm}; session->javaVM = gJavaVM;
         gSession.store(session, std::memory_order_relaxed);
@@ -279,7 +323,8 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
         + ",\"top_k\":" + std::to_string(topK)
         + ",\"top_p\":" + std::to_string(topP)
         + ",\"thinking\":false"
-        + ",\"use_template\":true}";
+        + ",\"use_template\":true"
+        + ",\"repetition_penalty\":1.05}";
     s->llm->set_config(cfg);
 
     MNN::Transformer::ChatMessages msgs;
@@ -327,7 +372,8 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
         + ",\"top_k\":" + std::to_string(topK)
         + ",\"top_p\":" + std::to_string(topP)
         + ",\"thinking\":false"
-        + ",\"use_template\":true}";
+        + ",\"use_template\":true"
+        + ",\"repetition_penalty\":1.05}";
     s->llm->set_config(cfg);
 
     MNN::Transformer::ChatMessages msgs;

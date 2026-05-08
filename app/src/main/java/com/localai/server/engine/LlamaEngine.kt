@@ -257,7 +257,7 @@ class LlamaEngine private constructor(
      * @param nThreads 推理线程数，默认 4
      * @return 是否加载成功
      */
-    fun loadModel(path: String, nCtx: Int = 2048, nThreads: Int = 6): Boolean {
+    fun loadModel(path: String, nCtx: Int = 2048, nThreads: Int = 0): Boolean {
         FileLogger.d(TAG, "loadModel: path=$path, nCtx=$nCtx, nThreads=$nThreads")
         
         if (!librariesLoaded) {
