@@ -276,9 +276,9 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
         + ",\"use_template\":true}";
     s->llm->set_config(cfg);
 
-    ChatMessages msgs;
-    msgs.push_back({"system", "You are a helpful assistant."});
-    msgs.push_back({"user", prompt});  // prompt是原始用户消息
+    MNN::Transformer::ChatMessages msgs;
+    msgs.push_back(MNN::Transformer::ChatMessage{"system", "You are a helpful assistant."});
+    msgs.push_back(MNN::Transformer::ChatMessage{"user", prompt});  // prompt是原始用户消息
 
     fileLog("nativeGenerate: using ChatMessages format, user_prompt='%s' (len=%zu), maxTokens=%d",
          prompt.c_str(), prompt.length(), maxTokens);
@@ -323,9 +323,9 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
         + ",\"use_template\":true}";
     s->llm->set_config(cfg);
 
-    ChatMessages msgs;
-    msgs.push_back({"system", "You are a helpful assistant."});
-    msgs.push_back({"user", prompt});  // prompt是原始用户消息
+    MNN::Transformer::ChatMessages msgs;
+    msgs.push_back(MNN::Transformer::ChatMessage{"system", "You are a helpful assistant."});
+    msgs.push_back(MNN::Transformer::ChatMessage{"user", prompt});  // prompt是原始用户消息
 
     fileLog("nativeGenerateStream: using ChatMessages format, user_prompt='%s' (len=%zu)", prompt.c_str(), prompt.length());
 
