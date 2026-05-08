@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 import java.io.File
+import android.system.Os
+import android.system.OsConstants
 
 /**
  * MNN LLM 推理引擎 JNI 桥接类
@@ -71,22 +73,28 @@ class LlamaEngine private constructor(
                 // localai-jni 依赖 llm -> MNN_Express -> MNN -> c++_shared
                 
                 // 加载基础库
+                // 关键修复：Android的System.loadLibrary使用RTLD_LOCAL，
+                // 导致so之间C++符号（vtable/虚函数）不可见，MNN推理输出乱码/循环。
+                // 解决方案：对MNN相关的so使用dlopen(RTLD_GLOBAL)加载，
+                // 让符号全局可见，这样liblocalai-jni.so才能正确解析libllm.so的符号。
+                
                 System.loadLibrary("c++_shared")
                 FileLogger.d(TAG, "loadLibraries: c++_shared loaded")
                 
-                System.loadLibrary("MNN")
-                FileLogger.d(TAG, "loadLibraries: MNN loaded")
+                // 用dlopen RTLD_GLOBAL加载MNN相关so，使符号全局可见
+                loadLibraryGlobal("libMNN.so")
+                FileLogger.d(TAG, "loadLibraries: MNN loaded (RTLD_GLOBAL)")
                 
-                System.loadLibrary("MNN_Express")
-                FileLogger.d(TAG, "loadLibraries: MNN_Express loaded")
+                loadLibraryGlobal("libMNN_Express.so")
+                FileLogger.d(TAG, "loadLibraries: MNN_Express loaded (RTLD_GLOBAL)")
                 
-                System.loadLibrary("llm")
-                FileLogger.d(TAG, "loadLibraries: llm loaded")
+                loadLibraryGlobal("libllm.so")
+                FileLogger.d(TAG, "loadLibraries: llm loaded (RTLD_GLOBAL)")
                 
                 // 可选库
                 try {
-                    System.loadLibrary("MNNOpenCV")
-                    FileLogger.d(TAG, "loadLibraries: MNNOpenCV loaded (optional)")
+                    loadLibraryGlobal("libMNNOpenCV.so")
+                    FileLogger.d(TAG, "loadLibraries: MNNOpenCV loaded (optional, RTLD_GLOBAL)")
                 } catch (e: UnsatisfiedLinkError) {
                     FileLogger.w(TAG, "loadLibraries: MNNOpenCV not available (optional)")
                 }
@@ -125,6 +133,86 @@ class LlamaEngine private constructor(
          * 检查库是否已加载
          */
         fun isLibrariesLoaded(): Boolean = librariesLoaded
+        
+        /**
+         * 使用dlopen RTLD_GLOBAL加载so库，使符号全局可见。
+         * 
+         * Android的System.loadLibrary内部使用RTLD_LOCAL，导致：
+         * - libllm.so导出的C++符号（createLLM/response/set_config等）对其他so不可见
+         * - liblocalai-jni.so调用这些符号时，虚函数表(vtable)解析失败
+         * - 结果：MNN推理输出乱码或token循环
+         * 
+         * RTLD_GLOBAL让所有符号加入全局符号表，后续加载的so可以正确解析。
+         */
+        private fun loadLibraryGlobal(libraryName: String) {
+            try {
+                // 尝试从应用nativeLibraryDir加载
+                val libDir = "/data/app/~~"
+                // 方法1：使用System.loadLibrary先加载（确保so文件找到）
+                // 然后用dlopen RTLD_GLOBAL重新打开使符号全局可见
+                val path = findLibraryPath(libraryName)
+                if (path != null) {
+                    Os.dlopen(path, OsConstants.RTLD_NOW or OsConstants.RTLD_GLOBAL)
+                    FileLogger.d(TAG, "loadLibraryGlobal: $libraryName loaded from $path (RTLD_GLOBAL)")
+                } else {
+                    // fallback: 直接用System.loadLibrary
+                    val libName = libraryName.removePrefix("lib").removeSuffix(".so")
+                    System.loadLibrary(libName)
+                    FileLogger.w(TAG, "loadLibraryGlobal: fallback to System.loadLibrary for $libraryName")
+                }
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "loadLibraryGlobal: failed to load $libraryName: ${e.message}", e)
+                throw UnsatisfiedLinkError("Failed to load $libraryName with RTLD_GLOBAL: ${e.message}")
+            }
+        }
+        
+        /**
+         * 查找so库的绝对路径
+         */
+        private fun findLibraryPath(libraryName: String): String? {
+            try {
+                // 读取/proc/self/maps查找已加载的库路径
+                val maps = java.io.File("/proc/self/maps").readText()
+                for (line in maps.lines()) {
+                    if (line.contains(libraryName) && line.contains(".so")) {
+                        // 提取路径（maps格式：地址 权限 偏移 设备 inode 路径）
+                        val parts = line.trim().split("\s+".toRegex())
+                        if (parts.size >= 6) {
+                            val path = parts.last()
+                            if (path.endsWith(libraryName) || path.endsWith("/$libraryName")) {
+                                return path
+                            }
+                        }
+                    }
+                }
+                
+                // 如果maps中找不到（库还没加载），尝试nativeLibraryDir
+                // 先用System.loadLibrary触发加载
+                val libName = libraryName.removePrefix("lib").removeSuffix(".so")
+                try {
+                    System.loadLibrary(libName)
+                } catch (e: UnsatisfiedLinkError) {
+                    return null
+                }
+                
+                // 再查一次maps
+                val maps2 = java.io.File("/proc/self/maps").readText()
+                for (line in maps2.lines()) {
+                    if (line.contains(libraryName) && line.contains(".so")) {
+                        val parts = line.trim().split("\s+".toRegex())
+                        if (parts.size >= 6) {
+                            val path = parts.last()
+                            if (path.endsWith(libraryName) || path.endsWith("/$libraryName")) {
+                                return path
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "findLibraryPath: error: ${e.message}")
+            }
+            return null
+        }
     }
     
     // 推理状态
