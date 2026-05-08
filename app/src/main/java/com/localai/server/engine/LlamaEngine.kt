@@ -74,20 +74,14 @@ class LlamaEngine private constructor(
             try {
                 FileLogger.d(TAG, "loadLibraries: starting library load")
                 
-                // v3方案：先加载 localai-jni，通过 DT_NEEDED 链自动拉起所有 MNN 库
-                // 这样所有 so 在同一个 dlopen 作用域，C++ vtable 正确解析
+                // MNN_SEP_BUILD=OFF: 所有代码（核心+Express+LLM）编译进一个libMNN.so
+                // 先加载 localai-jni，其 DT_NEEDED 自动拉起 libMNN.so
                 System.loadLibrary("localai-jni")
-                FileLogger.d(TAG, "loadLibraries: localai-jni loaded (pulls in llm, MNN_Express, MNN via DT_NEEDED)")
+                FileLogger.d(TAG, "loadLibraries: localai-jni loaded (DT_NEEDED pulls in libMNN.so)")
                 
                 // 冗余加载（已是同一个 dlopen 作用域，不会重复加载）
-                System.loadLibrary("llm")
-                FileLogger.d(TAG, "loadLibraries: llm loaded")
-                
-                System.loadLibrary("MNN_Express")
-                FileLogger.d(TAG, "loadLibraries: MNN_Express loaded")
-                
                 System.loadLibrary("MNN")
-                FileLogger.d(TAG, "loadLibraries: MNN loaded")
+                FileLogger.d(TAG, "loadLibraries: MNN loaded (includes Express+LLM, SEP_BUILD=OFF)")
                 
                 // 可选库
                 try {
