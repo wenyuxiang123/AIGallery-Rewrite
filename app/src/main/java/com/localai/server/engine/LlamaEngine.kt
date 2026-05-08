@@ -156,10 +156,11 @@ class LlamaEngine private constructor(
      * 
      * @param configPath 模型配置目录路径
      * @param nCtx 上下文窗口大小
-     * @param nThreads 推理线程数
+     * @param nThreads 推理线程数（传0让C++层自动检测）
+     * @param cacheDir 缓存目录路径
      * @return 是否加载成功
      */
-    external fun nativeLoadModel(configPath: String, nCtx: Int, nThreads: Int): Boolean
+    external fun nativeLoadModel(configPath: String, nCtx: Int, nThreads: Int, cacheDir: String): Boolean
     
     /**
      * 卸载模型
@@ -244,10 +245,10 @@ class LlamaEngine private constructor(
      * 
      * @param path 模型目录路径
      * @param nCtx 上下文窗口大小，默认 2048
-     * @param nThreads 推理线程数，默认 4
+     * @param nThreads 推理线程数，默认0让C++层自动检测
      * @return 是否加载成功
      */
-    fun loadModel(path: String, nCtx: Int = 2048, nThreads: Int = 6): Boolean {
+    fun loadModel(path: String, nCtx: Int = 2048, nThreads: Int = 0): Boolean {
         FileLogger.d(TAG, "loadModel: path=$path, nCtx=$nCtx, nThreads=$nThreads")
         
         if (!librariesLoaded) {
@@ -292,8 +293,8 @@ class LlamaEngine private constructor(
                 FileLogger.d(TAG, "loadModel: created app cache dir ${appCacheDir.absolutePath}")
             }
             
-            // 调用 native 加载
-            val success = nativeLoadModel(nativePath, nCtx, nThreads)
+            // 调用 native 加载（传入 cacheDir 让 C++ 层可以正确设置 tmp_path）
+            val success = nativeLoadModel(nativePath, nCtx, nThreads, appCacheDir.absolutePath)
             
             if (success) {
                 _isModelLoaded.value = true

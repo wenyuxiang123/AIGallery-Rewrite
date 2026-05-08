@@ -82,8 +82,8 @@ data class InferenceConfig(
     val repeatPenalty: Float = 1.2f,
     /** 使用 GPU 加速 */
     val useGPU: Boolean = true,
-    /** 线程数 */
-    val numThreads: Int = 6,
+    /** 线程数（传0让C++层自动检测大核数） */
+    val numThreads: Int = 0,
     /** 上下文窗口大小 */
     val contextWindow: Int = 4096,
     /** 停止词列表 */
