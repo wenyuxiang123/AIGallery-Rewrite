@@ -495,7 +495,7 @@ object ModelCatalog {
             isMnnModel = true
         ),
         AIModel(
-            id = "qwen3.5-27b-claude-reasoning-mnn",
+            // id = "qwen3.5-27b-claude-reasoning-mnn", // ModelScope上不存在此MNN模型
             name = "Qwen3.5 27B Claude Reasoning (MNN)",
             description = "Claude蒸馏推理模型，27B参数",
             provider = ModelProvider.MODELSCOPE,

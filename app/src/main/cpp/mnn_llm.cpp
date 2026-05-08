@@ -149,15 +149,6 @@ private:
     std::function<void(const std::string&)> callback_;
 };
 
-// Build ChatML prompt manually - bypasses MNN's ChatMessages/jinja requirement
-static std::string buildChatPrompt(const std::string& userMessage) {
-    std::string prompt;
-    prompt += "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n";
-    prompt += "<|im_start|>user\n" + userMessage + "<|im_end|>\n";
-    prompt += "<|im_start|>assistant\n";
-    return prompt;
-}
-
 // ====== JNI回调 ======
 static void callJavaTokenCallbackWithEnv(JNIEnv* env, LlmSession* s, const std::string& token) {
     if (!env || !s->javaCallback || !s->onTokenMethod) return;
@@ -263,20 +254,21 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
     if (!pc) return env->NewStringUTF("");
     std::string prompt(pc); env->ReleaseStringUTFChars(jPrompt, pc);
 
+    // Fix Bug 1: 删除use_template:false，让MNN使用默认的use_template:true自动处理chat template
+    // 删除repetition_penalty:1.05，使用MNN默认值
     std::string cfg = "{\"temperature\":" + std::to_string(temperature)
         + ",\"top_k\":" + std::to_string(topK)
         + ",\"top_p\":" + std::to_string(topP)
-        + ",\"repetition_penalty\":1.05,\"thinking\":false,\"use_template\":false}";
+        + ",\"thinking\":false}";
     s->llm->set_config(cfg);
 
-    std::string chatPrompt = buildChatPrompt(prompt);
-    fileLog("nativeGenerate: user_prompt='%s' (len=%zu), chat_prompt len=%zu, maxTokens=%d",
-         prompt.substr(0, 50).c_str(), prompt.length(), chatPrompt.length(), maxTokens);
-    fileLog("nativeGenerate: chat_prompt content: %.300s", chatPrompt.c_str());
+    // 直接传原始prompt，让MNN的use_template:true自动套模板
+    fileLog("nativeGenerate: prompt (first 100 chars): '%.100s', len=%zu, maxTokens=%d",
+         prompt.c_str(), prompt.length(), maxTokens);
 
     std::ostringstream oss;
     auto t0 = std::chrono::steady_clock::now();
-    s->llm->response(chatPrompt, &oss, "<|im_end|>", static_cast<int>(maxTokens));
+    s->llm->response(prompt, &oss, "<|im_end|>", static_cast<int>(maxTokens));
     auto t1 = std::chrono::steady_clock::now();
 
     int64_t total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
@@ -286,7 +278,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
     fileLog("nativeGenerate: completed in %lld ms, result len=%zu, gen_seq_len=%d, status=%d",
          (long long)total_ms, result.length(),
          ctx ? ctx->gen_seq_len : -1, ctx ? (int)ctx->status : -1);
-    fileLog("nativeGenerate: result first 300 chars: %.300s", result.c_str());
+    fileLog("nativeGenerate: result first 100 chars: '%.100s'", result.c_str());
 
     s->generated_tokens = ctx ? ctx->gen_seq_len : result.length() / 4;
     s->prefill_ms = ctx ? ctx->prefill_us / 1000 : total_ms * 30 / 100;
@@ -305,16 +297,16 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
     if (!pc) return env->NewStringUTF("");
     std::string prompt(pc); env->ReleaseStringUTFChars(jPrompt, pc);
 
+    // Fix Bug 1: 删除use_template:false，让MNN使用默认的use_template:true自动处理chat template
+    // 删除repetition_penalty:1.05，使用MNN默认值
     std::string cfg = "{\"temperature\":" + std::to_string(temperature)
         + ",\"top_k\":" + std::to_string(topK)
         + ",\"top_p\":" + std::to_string(topP)
-        + ",\"repetition_penalty\":1.05,\"thinking\":false,\"use_template\":false}";
+        + ",\"thinking\":false}";
     s->llm->set_config(cfg);
 
-    std::string chatPrompt = buildChatPrompt(prompt);
-    fileLog("nativeGenerateStream: user_prompt='%s' (len=%zu), chat_prompt len=%zu",
-         prompt.substr(0, 80).c_str(), prompt.length(), chatPrompt.length());
-    fileLog("nativeGenerateStream: chat_prompt content: %.300s", chatPrompt.c_str());
+    // 直接传原始prompt，让MNN的use_template:true自动套模板
+    fileLog("nativeGenerateStream: prompt (first 100 chars): '%.100s', len=%zu", prompt.c_str(), prompt.length());
 
     s->stop_flag.store(false, std::memory_order_relaxed);
 
@@ -352,10 +344,10 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
     });
     std::ostream output_ostream(&stream_buffer);
 
-    fileLog("nativeGenerateStream: calling response() with chatPrompt, end_with=<|im_end|>");
+    fileLog("nativeGenerateStream: calling response() with prompt, end_with=<|im_end|>");
     auto t0 = std::chrono::steady_clock::now();
 
-    s->llm->response(chatPrompt, &output_ostream, "<|im_end|>", static_cast<int>(maxTokens));
+    s->llm->response(prompt, &output_ostream, "<|im_end|>", static_cast<int>(maxTokens));
 
     utf8Processor.flush();
     if (threadAttached && s->javaVM) s->javaVM->DetachCurrentThread();
@@ -371,7 +363,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
          (long long)total_ms, tokenCount,
          context ? context->gen_seq_len : -1, accumulated.length(),
          context ? (int)context->status : -1);
-    fileLog("nativeGenerateStream: result first 300 chars: %.300s", accumulated.c_str());
+    fileLog("nativeGenerateStream: result first 100 chars: '%.100s'", accumulated.c_str());
 
     return env->NewStringUTF(accumulated.c_str());
 }

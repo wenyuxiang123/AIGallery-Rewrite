@@ -100,26 +100,122 @@ class MnnModelDownloader @Inject constructor(
     private val _downloadStates = MutableStateFlow<Map<String, MnnDownloadState>>(emptyMap())
     val downloadStates: StateFlow<Map<String, MnnDownloadState>> = _downloadStates.asStateFlow()
     
-    // MNN 模型 ID 映射（modelId -> ModelScope 路径）
+        // MNN 模型 ID 映射（modelId -> ModelScope 路径）
     // ModelScope 路径格式: MNN/ModelName
+    // Bug 2 修复：补全所有在AIModel.kt中定义的MNN模型映射
     private val mnnModelPaths = mapOf(
-        // Qwen 2.5 系列
+        // ============ Qwen 2.5 系列 ============
         "qwen2.5-0.5b-mnn" to "MNN/Qwen2.5-0.5B-Instruct-MNN",
         "qwen2.5-1.5b-mnn" to "MNN/Qwen2.5-1.5B-Instruct-MNN",
         "qwen2.5-3b-mnn" to "MNN/Qwen2.5-3B-Instruct-MNN",
         "qwen2.5-7b-mnn" to "MNN/Qwen2.5-7B-Instruct-MNN",
+        "qwen2.5-coder-1.5b-instruct-mnn" to "MNN/Qwen2.5-Coder-1.5B-Instruct-MNN",
+        "qwen2.5-coder-7b-instruct-mnn" to "MNN/Qwen2.5-Coder-7B-Instruct-MNN",
+        "qwen2.5-math-7b-instruct-mnn" to "MNN/Qwen2.5-Math-7B-Instruct-MNN",
         
-        // Qwen 3.5 系列
+        // ============ Qwen 3.5 系列 ============
         "qwen3.5-0.8b-mnn" to "MNN/Qwen3.5-0.8B-MNN",
         "qwen3.5-2b-mnn" to "MNN/Qwen3.5-2B-MNN",
         "qwen3.5-4b-mnn" to "MNN/Qwen3.5-4B-MNN",
         "qwen3.5-9b-mnn" to "MNN/Qwen3.5-9B-MNN",
+        "qwen3.5-0.8b-claude-reasoning-mnn" to "MNN/Qwen3.5-0.8B-Claude-Reasoning-MNN",
+        "qwen3.5-2b-claude-reasoning-mnn" to "MNN/Qwen3.5-2B-Claude-Reasoning-MNN",
+        "qwen3.5-4b-claude-reasoning-mnn" to "MNN/Qwen3.5-4B-Claude-Reasoning-MNN",
         
-        // Qwen2-VL 多模态系列
+        // ============ Qwen 3 系列 ============
+        "qwen3-0.6b-mnn" to "MNN/Qwen3-0.6B-MNN",
+        "qwen3-1.7b-mnn" to "MNN/Qwen3-1.7B-MNN",
+        "qwen3-4b-mnn" to "MNN/Qwen3-4B-MNN",
+        "qwen3-8b-mnn" to "MNN/Qwen3-8B-MNN",
+        "qwen3-14b-mnn" to "MNN/Qwen3-14B-MNN",
+        "qwen3-32b-mnn" to "MNN/Qwen3-32B-MNN",
+        
+        // ============ Qwen 3.6 系列 ============
+        "qwen3.6-27b-mnn" to "MNN/Qwen3.6-27B-MNN",
+        "qwen3.6-35b-a3b-mnn" to "MNN/Qwen3.6-35B-A3B-MNN",
+        
+        // ============ Qwen 早期系列 ============
+        "qwen-7b-chat-mnn" to "MNN/Qwen-7B-Chat-MNN",
+        "qwen2-7b-instruct-mnn" to "MNN/Qwen2-7B-Instruct-MNN",
+        
+        // ============ Qwen2-VL 多模态系列 ============
         "qwen2-vl-2b-mnn" to "MNN/Qwen2-VL-2B-Instruct-MNN",
         
-        // Qwen2.5-Omni 全模态系列
-        "qwen2.5-omni-3b-mnn" to "MNN/Qwen2.5-Omni-3B-MNN"
+        // ============ Qwen2.5-Omni 全模态系列 ============
+        "qwen2.5-omni-3b-mnn" to "MNN/Qwen2.5-Omni-3B-MNN",
+        
+        // ============ DeepSeek 系列 ============
+        "deepseek-llm-7b-chat-mnn" to "MNN/deepseek-llm-7b-chat-MNN",
+        "deepseek-r1-1.5b-qwen-mnn" to "MNN/DeepSeek-R1-1.5B-Qwen-MNN",
+        "deepseek-r1-7b-qwen-mnn" to "MNN/DeepSeek-R1-7B-Qwen-MNN",
+        
+        // ============ Gemma 系列 ============
+        "gemma-2b-it-mnn" to "MNN/gemma-2-2b-it-MNN",
+        "gemma-7b-it-mnn" to "MNN/gemma-7b-it-MNN",
+        "gemma3-1b-mnn" to "MNN/gemma-3-1b-MNN",
+        "gemma3-4b-mnn" to "MNN/gemma-3-4b-MNN",
+        "gemma3-12b-mnn" to "MNN/gemma-3-12b-MNN",
+        "gemma3-27b-mnn" to "MNN/gemma-3-27b-MNN",
+        "gemma3-31b-moe-mnn" to "MNN/gemma-3-31b-Moe-MNN",
+        
+        // ============ MobileLLM 系列 ============
+        "mobilellm-125m-mnn" to "MNN/MobileLLM-125M-MNN",
+        "mobilellm-350m-mnn" to "MNN/MobileLLM-350M-MNN",
+        "mobilellm-500m-mnn" to "MNN/MobileLLM-500M-MNN",
+        "mobilellm-1b-mnn" to "MNN/MobileLLM-1B-MNN",
+        "mobilellm-1.5b-mnn" to "MNN/MobileLLM-1.5B-MNN",
+        
+        // ============ OpenELM 系列 ============
+        "openelm-270m-instruct-mnn" to "MNN/OpenELM-270M-Instruct-MNN",
+        "openelm-1_1b-instruct-mnn" to "MNN/OpenELM-1_1B-Instruct-MNN",
+        "openelm-3b-instruct-mnn" to "MNN/OpenELM-3B-Instruct-MNN",
+        
+        // ============ Phi 系列 ============
+        "phi-2-mnn" to "MNN/phi-2-MNN",
+        "phi-3.5-mini-instruct-mnn" to "MNN/phi-3.5-mini-instruct-MNN",
+        
+        // ============ MiMo 系列 ============
+        "mimo-7b-base-mnn" to "MNN/MiMo-7B-Base-MNN",
+        "mimo-7b-sft-mnn" to "MNN/MiMo-7B-SFT-MNN",
+        "mimo-7b-rl-mnn" to "MNN/MiMo-7B-RL-MNN",
+        "mimo-7b-rl-zero-mnn" to "MNN/MiMo-7B-RL-Zero-MNN",
+        
+        // ============ Llama 系列 ============
+        "llama-2-7b-chat-ms-mnn" to "MNN/Llama-2-7b-chat-ms-MNN",
+        "llama-3.2-1b-instruct-mnn" to "MNN/Llama-3.2-1B-Instruct-MNN",
+        "llama-3.2-3b-instruct-mnn" to "MNN/Llama-3.2-3B-Instruct-MNN",
+        
+        // ============ 其他中文模型 ============
+        "baichuan2-7b-chat-mnn" to "MNN/Baichuan2-7B-Chat-MNN",
+        "yi-6b-chat-mnn" to "MNN/Yi-6B-Chat-MNN",
+        "glm-4-9b-chat-mnn" to "MNN/glm-4-9b-chat-MNN",
+        "chatglm3-6b-mnn" to "MNN/chatglm3-6b-MNN",
+        "reader-lm-0.5b-mnn" to "MNN/reader-lm-0.5b-MNN",
+        "reader-lm-1.5b-mnn" to "MNN/reader-lm-1.5b-MNN",
+        
+        // ============ 多模态模型 ============
+        "internvl2_5-1b-mnn" to "MNN/InternVL2_5-1B-MNN",
+        
+        // ============ LFM 系列 ============
+        "lfm2-350m-mnn" to "MNN/LFM2-350M-MNN",
+        "lfm2-700m-mnn" to "MNN/LFM2-700M-MNN",
+        "lfm2-8b-a1b-mnn" to "MNN/LFM2-8B-A1B-MNN",
+        "lfm2-24b-a2b-mnn" to "MNN/LFM2-24B-A2B-MNN",
+        "lfm2-2.6b-transcript-mnn" to "MNN/LFM2-2.6B-Transcript-MNN",
+        "lfm2.5-audio-1.5b-mnn" to "MNN/LFM2.5-Audio-1.5B-MNN",
+        "lfm2.5-1.2b-thinking-mnn" to "MNN/LFM2.5-1.2B-Thinking-MNN",
+        "lfm2.5-1.2b-jp-mnn" to "MNN/LFM2.5-1.2B-JP-MNN",
+        "lfm2.5-1.2b-base-mnn" to "MNN/LFM2.5-1.2B-Base-MNN",
+        "lfm2-vl-3b-mnn" to "MNN/LFM2-VL-3B-MNN",
+        "lfm2-vl-1.6b-mnn" to "MNN/LFM2-VL-1.6B-MNN",
+        
+        // ============ 其他模型 ============
+        "tinyllama-1.1b-chat-mnn" to "MNN/TinyLlama-1.1B-Chat-MNN",
+        "tinyllama-1.1b-chat-v1.0-mnn" to "MNN/TinyLlama-1.1B-Chat-v1.0-MNN",
+        "qwq-32b-mnn" to "MNN/QwQ-32B-MNN",
+        "smollm2-135m-instruct-mnn" to "MNN/SmolLM2-135M-Instruct-MNN",
+        "smollm2-360m-instruct-mnn" to "MNN/SmolLM2-360M-Instruct-MNN",
+        "smollm2-1.7b-instruct-mnn" to "MNN/SmolLM2-1.7B-Instruct-MNN"
     )
     
     /**
