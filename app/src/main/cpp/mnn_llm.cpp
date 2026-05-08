@@ -12,6 +12,7 @@
 #include <functional>
 #include <ctime>
 #include <sys/stat.h>
+#include <cstdarg>
 
 #include "llm/llm.hpp"
 
@@ -255,7 +256,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeIsModelLoaded(JNIEnv*, jclass) 
     return gModelLoaded.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
 }
 
-// Generate (sync)
+// Generate (sync) - 使用ChatMessages结构化传参，避免双重模板套用
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
     jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP) {
@@ -266,21 +267,25 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
     if (!pc) return env->NewStringUTF("");
     std::string prompt(pc); env->ReleaseStringUTFChars(jPrompt, pc);
 
-    // Fix Bug 1: 删除use_template:false，让MNN使用默认的use_template:true自动处理chat template
-    // 删除repetition_penalty:1.05，使用MNN默认值
+    // 使用ChatMessages结构化传参，MNN内部自动调用apply_chat_template()只套一次模板
+    // 同时显式设置use_template:true确保行为一致
     std::string cfg = "{\"temperature\":" + std::to_string(temperature)
         + ",\"top_k\":" + std::to_string(topK)
         + ",\"top_p\":" + std::to_string(topP)
-        + ",\"thinking\":false}";
+        + ",\"thinking\":false"
+        + ",\"use_template\":true}";
     s->llm->set_config(cfg);
 
-    // 直接传原始prompt，让MNN的use_template:true自动套模板
-    fileLog("nativeGenerate: prompt (first 100 chars): '%.100s', len=%zu, maxTokens=%d",
+    ChatMessages msgs;
+    msgs.push_back({"system", "You are a helpful assistant."});
+    msgs.push_back({"user", prompt});  // prompt是原始用户消息
+
+    fileLog("nativeGenerate: using ChatMessages format, user_prompt='%s' (len=%zu), maxTokens=%d",
          prompt.c_str(), prompt.length(), maxTokens);
 
     std::ostringstream oss;
     auto t0 = std::chrono::steady_clock::now();
-    s->llm->response(prompt, &oss, "<|im_end|>", static_cast<int>(maxTokens));
+    s->llm->response(msgs, &oss, "<|im_end|>", static_cast<int>(maxTokens));
     auto t1 = std::chrono::steady_clock::now();
 
     int64_t total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
@@ -298,7 +303,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
     return env->NewStringUTF(result.c_str());
 }
 
-// Generate (streaming)
+// Generate (streaming) - 使用ChatMessages结构化传参，避免双重模板套用
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jclass,
     jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP) {
@@ -309,16 +314,20 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
     if (!pc) return env->NewStringUTF("");
     std::string prompt(pc); env->ReleaseStringUTFChars(jPrompt, pc);
 
-    // Fix Bug 1: 删除use_template:false，让MNN使用默认的use_template:true自动处理chat template
-    // 删除repetition_penalty:1.05，使用MNN默认值
+    // 使用ChatMessages结构化传参，MNN内部自动调用apply_chat_template()只套一次模板
+    // 同时显式设置use_template:true确保行为一致
     std::string cfg = "{\"temperature\":" + std::to_string(temperature)
         + ",\"top_k\":" + std::to_string(topK)
         + ",\"top_p\":" + std::to_string(topP)
-        + ",\"thinking\":false}";
+        + ",\"thinking\":false"
+        + ",\"use_template\":true}";
     s->llm->set_config(cfg);
 
-    // 直接传原始prompt，让MNN的use_template:true自动套模板
-    fileLog("nativeGenerateStream: prompt (first 100 chars): '%.100s', len=%zu", prompt.c_str(), prompt.length());
+    ChatMessages msgs;
+    msgs.push_back({"system", "You are a helpful assistant."});
+    msgs.push_back({"user", prompt});  // prompt是原始用户消息
+
+    fileLog("nativeGenerateStream: using ChatMessages format, user_prompt='%s' (len=%zu)", prompt.c_str(), prompt.length());
 
     s->stop_flag.store(false, std::memory_order_relaxed);
 
@@ -356,10 +365,10 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
     });
     std::ostream output_ostream(&stream_buffer);
 
-    fileLog("nativeGenerateStream: calling response() with prompt, end_with=<|im_end|>");
+    fileLog("nativeGenerateStream: calling response() with ChatMessages, end_with=<|im_end|>");
     auto t0 = std::chrono::steady_clock::now();
 
-    s->llm->response(prompt, &output_ostream, "<|im_end|>", static_cast<int>(maxTokens));
+    s->llm->response(msgs, &output_ostream, "<|im_end|>", static_cast<int>(maxTokens));
 
     utf8Processor.flush();
     if (threadAttached && s->javaVM) s->javaVM->DetachCurrentThread();

@@ -118,7 +118,6 @@ class MnnModelDownloader @Inject constructor(
         "qwen3.5-2b-mnn" to "MNN/Qwen3.5-2B-MNN",
         "qwen3.5-4b-mnn" to "MNN/Qwen3.5-4B-MNN",
         "qwen3.5-9b-mnn" to "MNN/Qwen3.5-9B-MNN",
-        "qwen3.5-0.8b-claude-reasoning-mnn" to "MNN/Qwen3.5-0.8B-Claude-Reasoning-MNN",
         "qwen3.5-2b-claude-reasoning-mnn" to "MNN/Qwen3.5-2B-Claude-Reasoning-MNN",
         "qwen3.5-4b-claude-reasoning-mnn" to "MNN/Qwen3.5-4B-Claude-Reasoning-MNN",
         
@@ -161,7 +160,6 @@ class MnnModelDownloader @Inject constructor(
         // ============ MobileLLM 系列 ============
         "mobilellm-125m-mnn" to "MNN/MobileLLM-125M-MNN",
         "mobilellm-350m-mnn" to "MNN/MobileLLM-350M-MNN",
-        "mobilellm-500m-mnn" to "MNN/MobileLLM-500M-MNN",
         "mobilellm-1b-mnn" to "MNN/MobileLLM-1B-MNN",
         "mobilellm-1.5b-mnn" to "MNN/MobileLLM-1.5B-MNN",
         

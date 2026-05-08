@@ -444,24 +444,6 @@ object ModelCatalog {
             minMemory = 24000000000,
             isMnnModel = true
         ),
-
-        // ============ Qwen3.5 Claude蒸馏系列 ============
-        AIModel(
-            id = "qwen3.5-0.8b-claude-reasoning-mnn",
-            name = "Qwen3.5 0.8B Claude Reasoning (MNN)",
-            description = "Claude蒸馏推理模型，0.8B参数",
-            provider = ModelProvider.MODELSCOPE,
-            size = "850MB",
-            sizeBytes = 850000000,
-            quantization = "MNN-INT4",
-            parameters = "0.8B",
-            downloadUrl = "MNN://Qwen3.5-0.8B-Claude-4.6-Opus-Reasoning-Distilled-MNN",
-            mirrorUrl = "MNN://Qwen3.5-0.8B-Claude-4.6-Opus-Reasoning-Distilled-MNN",
-            hash = null,
-            isMultimodal = false,
-            minMemory = 1500000000,
-            isMnnModel = true
-        ),
         AIModel(
             id = "qwen3.5-2b-claude-reasoning-mnn",
             name = "Qwen3.5 2B Claude Reasoning (MNN)",
@@ -775,20 +757,6 @@ object ModelCatalog {
             isMnnModel = true
         ),
         AIModel(
-            id = "mobilellm-500m-mnn",
-            name = "MobileLLM 500M (MNN)",
-            description = "Meta移动端优化模型，500M参数",
-            provider = ModelProvider.MODELSCOPE,
-            size = "550MB",
-            sizeBytes = 550000000,
-            quantization = "MNN-INT4",
-            parameters = "500M",
-            downloadUrl = "MNN://MobileLLM-500M-MNN",
-            mirrorUrl = "MNN://MobileLLM-500M-MNN",
-            hash = null,
-            isMultimodal = false,
-            minMemory = 1000000000,
-            isMnnModel = true
         ),
         AIModel(
             id = "mobilellm-1b-mnn",
