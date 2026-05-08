@@ -70,26 +70,21 @@ class LlamaEngine private constructor(
                 FileLogger.d(TAG, "loadLibraries: starting library load")
                 
                 // 按正确顺序加载库（依赖库必须先加载）
-                // localai-jni 依赖 llm -> MNN_Express -> MNN -> c++_shared
+                // localai-jni 依赖 MNN -> c++_shared (MNN_SEP_BUILD=OFF: 全部在libMNN.so中)
                 
                 // 加载基础库
                 // 关键修复：Android的System.loadLibrary使用RTLD_LOCAL，
                 // 导致so之间C++符号（vtable/虚函数）不可见，MNN推理输出乱码/循环。
                 // 解决方案：对MNN相关的so使用dlopen(RTLD_GLOBAL)加载，
-                // 让符号全局可见，这样liblocalai-jni.so才能正确解析libllm.so的符号。
+                // 让符号全局可见，解决跨so符号解析问题。
                 
                 System.loadLibrary("c++_shared")
                 FileLogger.d(TAG, "loadLibraries: c++_shared loaded")
                 
-                // 用dlopen RTLD_GLOBAL加载MNN相关so，使符号全局可见
+                // MNN_SEP_BUILD=OFF: 所有代码（核心、MNN_Express、LLM）都编译到一个libMNN.so
+                // 不再需要单独加载libMNN_Express.so和libllm.so
                 loadLibraryGlobal("libMNN.so")
-                FileLogger.d(TAG, "loadLibraries: MNN loaded (RTLD_GLOBAL)")
-                
-                loadLibraryGlobal("libMNN_Express.so")
-                FileLogger.d(TAG, "loadLibraries: MNN_Express loaded (RTLD_GLOBAL)")
-                
-                loadLibraryGlobal("libllm.so")
-                FileLogger.d(TAG, "loadLibraries: llm loaded (RTLD_GLOBAL)")
+                FileLogger.d(TAG, "loadLibraries: MNN loaded (RTLD_GLOBAL, includes Express+LLM)")
                 
                 // 可选库
                 try {
@@ -138,9 +133,8 @@ class LlamaEngine private constructor(
          * 使用dlopen RTLD_GLOBAL加载so库，使符号全局可见。
          * 
          * Android的System.loadLibrary内部使用RTLD_LOCAL，导致：
-         * - libllm.so导出的C++符号（createLLM/response/set_config等）对其他so不可见
-         * - liblocalai-jni.so调用这些符号时，虚函数表(vtable)解析失败
-         * - 结果：MNN推理输出乱码或token循环
+         * - 跨so符号解析问题可能导致推理输出乱码或token循环
+         * - MNN_SEP_BUILD=OFF将所有代码合并到一个libMNN.so从根本上解决此问题
          * 
          * RTLD_GLOBAL让所有符号加入全局符号表，后续加载的so可以正确解析。
          */
