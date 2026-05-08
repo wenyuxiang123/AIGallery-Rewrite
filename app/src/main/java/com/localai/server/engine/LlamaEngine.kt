@@ -264,6 +264,12 @@ class LlamaEngine private constructor(
             return false
         }
         
+        // 先卸载旧模型，避免切换模型时仍使用旧的推理引擎
+        if (_isModelLoaded.value) {
+            FileLogger.d(TAG, "loadModel: unloading previous model before loading new one")
+            unloadModel()
+        }
+        
         try {
             // 验证模型目录存在
             val modelDir = File(path)

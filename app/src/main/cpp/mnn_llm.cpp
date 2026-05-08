@@ -180,6 +180,18 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
 
     fileLog("nativeLoadModel: START - configPath=%s, nCtx=%d, nThreads=%d", configPath.c_str(), nCtx, nThreads);
 
+    // 先释放旧session，避免内存泄漏和残留状态
+    {
+        LlmSession* oldSession = gSession.exchange(nullptr, std::memory_order_acq_rel);
+        if (oldSession) {
+            fileLog("nativeLoadModel: destroying previous session");
+            if (oldSession->llm) MNN::Transformer::Llm::destroy(oldSession->llm);
+            if (oldSession->javaCallback) { env->DeleteGlobalRef(oldSession->javaCallback); }
+            delete oldSession;
+            gModelLoaded.store(false, std::memory_order_relaxed);
+        }
+    }
+
     fileLog("nativeLoadModel: calling createLLM...");
     MNN::Transformer::Llm* llm = MNN::Transformer::Llm::createLLM(configPath);
     if (!llm) {
