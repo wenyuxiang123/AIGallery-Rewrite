@@ -75,6 +75,15 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    // 防止 AGP strip 掉 MNN so 中的 C++ 符号
+    // 参考 local-ai-server v3: doNotStrip MNN .so files to prevent AGP from over-stripping
+    packagingOptions {
+        jniLibs {
+            // 保留所有MNN相关so的符号表，跨so C++调用需要这些符号
+            doNotStrip += listOf("**/libMNN.so", "**/libMNN_Express.so", "**/libllm.so", "**/liblocalai-jni.so", "**/libMNNOpenCV.so", "**/libMNN_CL.so")
+        }
+    }
 }
 
 dependencies {

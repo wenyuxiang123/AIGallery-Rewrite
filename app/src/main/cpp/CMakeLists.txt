@@ -20,13 +20,21 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # 预编译so路径
 set(JNI_LIBS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/arm64-v8a")
 
-# 声明预编译依赖库 (MNN_SEP_BUILD=OFF: 所有代码合并到libMNN.so)
+# MNN_SEP_BUILD=ON: 三个独立so库
 add_library(MNN SHARED IMPORTED)
 set_target_properties(MNN PROPERTIES IMPORTED_LOCATION "${JNI_LIBS_DIR}/libMNN.so")
 
-# 链接：MNN_SEP_BUILD=OFF时只需要链接libMNN.so (已包含Express和LLM代码)
+add_library(MNN_Express SHARED IMPORTED)
+set_target_properties(MNN_Express PROPERTIES IMPORTED_LOCATION "${JNI_LIBS_DIR}/libMNN_Express.so")
+
+add_library(llm SHARED IMPORTED)
+set_target_properties(llm PROPERTIES IMPORTED_LOCATION "${JNI_LIBS_DIR}/libllm.so")
+
+# 链接所有MNN库（参考local-ai-server v3方案）
 target_link_libraries(${CMAKE_PROJECT_NAME}
     MNN
+    MNN_Express
+    llm
     android
     log
 )

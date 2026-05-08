@@ -13,8 +13,6 @@ import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 import java.io.File
-import android.system.Os
-import android.system.OsConstants
 
 /**
  * MNN LLM 推理引擎 JNI 桥接类
@@ -59,6 +57,13 @@ class LlamaEngine private constructor(
          * 加载 MNN native 库
          * 必须在调用其他 native 方法前调用
          * 
+         * 关键：加载顺序参考 local-ai-server v3 项目
+         * 先加载 localai-jni，它的 DT_NEEDED 会自动拉起 llm → MNN_Express → MNN
+         * 这样所有库在同一个 dlopen 作用域内，C++ 虚函数表可以正确解析
+         * 
+         * 如果反过来先加载 MNN，再加载 localai-jni，每个 System.loadLibrary 
+         * 创建独立的 RTLD_LOCAL 作用域，跨 so 的 C++ 符号不可见，导致推理输出乱码/循环
+         * 
          * @return 是否加载成功
          */
         fun loadLibraries(): Boolean {
@@ -69,38 +74,31 @@ class LlamaEngine private constructor(
             try {
                 FileLogger.d(TAG, "loadLibraries: starting library load")
                 
-                // 按正确顺序加载库（依赖库必须先加载）
-                // localai-jni 依赖 MNN -> c++_shared (MNN_SEP_BUILD=OFF: 全部在libMNN.so中)
+                // v3方案：先加载 localai-jni，通过 DT_NEEDED 链自动拉起所有 MNN 库
+                // 这样所有 so 在同一个 dlopen 作用域，C++ vtable 正确解析
+                System.loadLibrary("localai-jni")
+                FileLogger.d(TAG, "loadLibraries: localai-jni loaded (pulls in llm, MNN_Express, MNN via DT_NEEDED)")
                 
-                // 加载基础库
-                // 关键修复：Android的System.loadLibrary使用RTLD_LOCAL，
-                // 导致so之间C++符号（vtable/虚函数）不可见，MNN推理输出乱码/循环。
-                // 解决方案：对MNN相关的so使用dlopen(RTLD_GLOBAL)加载，
-                // 让符号全局可见，解决跨so符号解析问题。
+                // 冗余加载（已是同一个 dlopen 作用域，不会重复加载）
+                System.loadLibrary("llm")
+                FileLogger.d(TAG, "loadLibraries: llm loaded")
                 
-                System.loadLibrary("c++_shared")
-                FileLogger.d(TAG, "loadLibraries: c++_shared loaded")
+                System.loadLibrary("MNN_Express")
+                FileLogger.d(TAG, "loadLibraries: MNN_Express loaded")
                 
-                // MNN_SEP_BUILD=OFF: 所有代码（核心、MNN_Express、LLM）都编译到一个libMNN.so
-                // 不再需要单独加载libMNN_Express.so和libllm.so
-                loadLibraryGlobal("libMNN.so")
-                FileLogger.d(TAG, "loadLibraries: MNN loaded (RTLD_GLOBAL, includes Express+LLM)")
+                System.loadLibrary("MNN")
+                FileLogger.d(TAG, "loadLibraries: MNN loaded")
                 
                 // 可选库
                 try {
-                    loadLibraryGlobal("libMNNOpenCV.so")
-                    FileLogger.d(TAG, "loadLibraries: MNNOpenCV loaded (optional, RTLD_GLOBAL)")
+                    System.loadLibrary("MNNOpenCV")
+                    FileLogger.d(TAG, "loadLibraries: MNNOpenCV loaded (optional)")
                 } catch (e: UnsatisfiedLinkError) {
                     FileLogger.w(TAG, "loadLibraries: MNNOpenCV not available (optional)")
                 }
                 
-                // JNI 桥接库最后加载（依赖所有其他库）
-                System.loadLibrary("localai-jni")
-                FileLogger.d(TAG, "loadLibraries: localai-jni loaded")
-                
-                
                 librariesLoaded = true
-                // 库加载成功后立即设置native层日志路径，确保后续所有native调用都有日志
+                // 库加载成功后立即设置native层日志路径
                 try {
                     nativeSetLogFilePath(FileLogger.getLogFilePath())
                     FileLogger.d(TAG, "loadLibraries: native log path set")
@@ -128,86 +126,7 @@ class LlamaEngine private constructor(
          * 检查库是否已加载
          */
         fun isLibrariesLoaded(): Boolean = librariesLoaded
-        
-        /**
-         * 使用dlopen RTLD_GLOBAL加载so库，使符号全局可见。
-         * 
-         * Android的System.loadLibrary内部使用RTLD_LOCAL，导致：
-         * - 跨so符号解析问题可能导致推理输出乱码或token循环
-         * - MNN_SEP_BUILD=OFF将所有代码合并到一个libMNN.so从根本上解决此问题
-         * 
-         * RTLD_GLOBAL让所有符号加入全局符号表，后续加载的so可以正确解析。
-         */
-        private fun loadLibraryGlobal(libraryName: String) {
-            try {
-                // 尝试从应用nativeLibraryDir加载
-                val libDir = "/data/app/~~"
-                // 方法1：使用System.loadLibrary先加载（确保so文件找到）
-                // 然后用dlopen RTLD_GLOBAL重新打开使符号全局可见
-                val path = findLibraryPath(libraryName)
-                if (path != null) {
-                    Os.dlopen(path, OsConstants.RTLD_NOW or OsConstants.RTLD_GLOBAL)
-                    FileLogger.d(TAG, "loadLibraryGlobal: $libraryName loaded from $path (RTLD_GLOBAL)")
-                } else {
-                    // fallback: 直接用System.loadLibrary
-                    val libName = libraryName.removePrefix("lib").removeSuffix(".so")
-                    System.loadLibrary(libName)
-                    FileLogger.w(TAG, "loadLibraryGlobal: fallback to System.loadLibrary for $libraryName")
-                }
-            } catch (e: Exception) {
-                FileLogger.e(TAG, "loadLibraryGlobal: failed to load $libraryName: ${e.message}", e)
-                throw UnsatisfiedLinkError("Failed to load $libraryName with RTLD_GLOBAL: ${e.message}")
-            }
-        }
-        
-        /**
-         * 查找so库的绝对路径
-         */
-        private fun findLibraryPath(libraryName: String): String? {
-            try {
-                // 读取/proc/self/maps查找已加载的库路径
-                val maps = java.io.File("/proc/self/maps").readText()
-                for (line in maps.lines()) {
-                    if (line.contains(libraryName) && line.contains(".so")) {
-                        // 提取路径（maps格式：地址 权限 偏移 设备 inode 路径）
-                        val parts = line.trim().split("\s+".toRegex())
-                        if (parts.size >= 6) {
-                            val path = parts.last()
-                            if (path.endsWith(libraryName) || path.endsWith("/$libraryName")) {
-                                return path
-                            }
-                        }
-                    }
-                }
-                
-                // 如果maps中找不到（库还没加载），尝试nativeLibraryDir
-                // 先用System.loadLibrary触发加载
-                val libName = libraryName.removePrefix("lib").removeSuffix(".so")
-                try {
-                    System.loadLibrary(libName)
-                } catch (e: UnsatisfiedLinkError) {
-                    return null
-                }
-                
-                // 再查一次maps
-                val maps2 = java.io.File("/proc/self/maps").readText()
-                for (line in maps2.lines()) {
-                    if (line.contains(libraryName) && line.contains(".so")) {
-                        val parts = line.trim().split("\s+".toRegex())
-                        if (parts.size >= 6) {
-                            val path = parts.last()
-                            if (path.endsWith(libraryName) || path.endsWith("/$libraryName")) {
-                                return path
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                FileLogger.w(TAG, "findLibraryPath: error: ${e.message}")
-            }
-            return null
-        }
-    }
+    }    }
     
     // 推理状态
     private val _isModelLoaded = MutableStateFlow(false)
