@@ -32,7 +32,7 @@ class MnnInferenceEngine(
         // 默认配置
         const val DEFAULT_MAX_TOKENS = 512
         const val DEFAULT_CONTEXT_LENGTH = 2048
-        const val DEFAULT_THREADS = 6  // 骁龙778G+ 8核，4线程最优
+        const val DEFAULT_THREADS = 0  // 骁龙778G+ 8核，4线程最优
     }
     
     // MNN 引擎实例

@@ -424,7 +424,7 @@ class ModelManagerViewModel @Inject constructor(
                         temperature = 0.7f,
                         topK = 40,
                         topP = 0.9f,
-                        numThreads = 6,
+                        numThreads = 0,
                         contextWindow = 2048
                     )
                 )

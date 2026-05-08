@@ -165,7 +165,7 @@ class LlamaEngine private constructor(
      * @param nThreads 推理线程数
      * @return 是否加载成功
      */
-    external fun nativeLoadModel(configPath: String, nCtx: Int, nThreads: Int): Boolean
+    external fun nativeLoadModel(configPath: String, nCtx: Int, nThreads: Int, cacheDir: String): Boolean
     
     /**
      * 卸载模型
@@ -309,7 +309,8 @@ class LlamaEngine private constructor(
             }
             
             // 调用 native 加载
-            val success = nativeLoadModel(nativePath, nCtx, nThreads)
+            val cacheDirPath = appCacheDir.absolutePath
+            val success = nativeLoadModel(nativePath, nCtx, nThreads, cacheDirPath)
             
             if (success) {
                 _isModelLoaded.value = true

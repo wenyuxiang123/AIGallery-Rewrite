@@ -32,7 +32,7 @@ class MnnInferenceEngineV35(
         // 默认配置
         const val DEFAULT_MAX_TOKENS = 512
         const val DEFAULT_CONTEXT_LENGTH = 2048
-        const val DEFAULT_THREADS = 6
+        const val DEFAULT_THREADS = 0
     }
     
     // MNN 3.5.0 引擎实例

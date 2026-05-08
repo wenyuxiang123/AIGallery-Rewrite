@@ -187,7 +187,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeStop(JNIEnv*, jclass) {
 
 JNIEXPORT jboolean JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
-    jstring jConfigPath, jint nCtx, jint nThreads) {
+    jstring jConfigPath, jint nCtx, jint nThreads, jstring jCacheDir) {
     const char* path = env->GetStringUTFChars(jConfigPath, nullptr);
     if (!path) { fileLog("nativeLoadModel: ERROR - null config path"); return JNI_FALSE; }
     std::string configPath(path); env->ReleaseStringUTFChars(jConfigPath, path);
@@ -214,6 +214,17 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
     }
     fileLog("nativeLoadModel: createLLM success, setting config...");
 
+    // 线程自动调优：在load()之前检测大核数，避免绑到小核
+    {
+        auto bigCores = getBigCores();
+        int optimalThreads = std::min((int)bigCores.size(), 4);
+        if (optimalThreads <= 0) optimalThreads = 4; // fallback
+        if (nThreads <= 0 || nThreads > optimalThreads) {
+            fileLog("nativeLoadModel: auto-tuning threads from %d to %d (big cores=%zu)", nThreads, optimalThreads, bigCores.size());
+            nThreads = optimalThreads;
+        }
+    }
+
     // KV Cache量化 + Flash Attention + mmap优化
     std::string cfg = "{\"num_ctx\":" + std::to_string(nCtx)
         + ",\"num_threads\":" + std::to_string(nThreads)
@@ -224,8 +235,19 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
     fileLog("nativeLoadModel: set_config: %s", cfg.c_str());
     llm->set_config(cfg);
 
-    // 设置 tmp_path 用于 mmap 缓存加速二次加载
-    std::string tmpCfg = "{\"tmp_path\":\"/data/data/com.aigallery.rewrite/cache/llm_cache\"}";
+    // 设置 tmp_path（从Kotlin层传入，兼容debug/release包路径）
+    std::string cacheDirStr;
+    if (jCacheDir) {
+        const char* cd = env->GetStringUTFChars(jCacheDir, nullptr);
+        if (cd) {
+            cacheDirStr = std::string(cd);
+            env->ReleaseStringUTFChars(jCacheDir, cd);
+        }
+    }
+    if (cacheDirStr.empty()) {
+        cacheDirStr = "/data/data/com.aigallery.rewrite/cache/llm_cache";
+    }
+    std::string tmpCfg = "{\"tmp_path\":\"" + cacheDirStr + "\"}";
     fileLog("nativeLoadModel: set_config tmp_path: %s", tmpCfg.c_str());
     llm->set_config(tmpCfg);
 
@@ -241,14 +263,6 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
     fileLog("nativeLoadModel: llm->load() returned %s in %lld ms", ok ? "true" : "false", (long long)ms);
 
     if (ok) {
-        // 自动检测大核数量设置最优线程数（不超过4线程）
-        auto bigCores = getBigCores();
-        int optimalThreads = std::min((int)bigCores.size(), 4);
-        if (nThreads <= 0 || nThreads > optimalThreads) {
-            nThreads = optimalThreads;
-            fileLog("nativeLoadModel: auto-tuned threads to %d based on %zu big cores", nThreads, bigCores.size());
-        }
-        
         // Lookahead 投机解码加速（2-3x加速）
         std::string speculativeCfg = "{\"speculative_type\":\"lookahead\",\"draft_token_num\":4}";
         fileLog("nativeLoadModel: enabling lookahead speculative decoding...");
