@@ -332,12 +332,14 @@ class MnnInferenceEngine(
                     throw IllegalStateException("Model not loaded - call initialize() with valid model path")
                 }
                 
+                // Bug7修复: 传入useGPU参数
                 engine.generateStream(
                     prompt = prompt,
                     maxTokens = config.maxLength,
                     temperature = config.temperature,
                     topK = config.topK,
-                    topP = config.topP
+                    topP = config.topP,
+                    useGPU = config.useGPU  // Bug7修复: 传递GPU配置
                 ).collect { token: String ->
                     emit(token)
                 }

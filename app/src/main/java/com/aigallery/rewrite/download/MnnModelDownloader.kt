@@ -260,10 +260,12 @@ class MnnModelDownloader @Inject constructor(
      * @param modelId 模型 ID
      * @param onProgress 进度回调 (current, total, fileName)
      */
+    // Bug5修复: 添加isMultimodal参数，只有多模态模型才下载visual相关文件
     suspend fun downloadModel(
         modelId: String,
         onProgress: (current: Int, total: Int, fileName: String) -> Unit,
-        onByteProgress: (Float) -> Unit = {}
+        onByteProgress: (Float) -> Unit = {},
+        isMultimodal: Boolean = false  // Bug5修复: 默认为false，不下载visual文件
     ): Result<Unit> = withContext(Dispatchers.IO) {
         val modelPath = mnnModelPaths[modelId] 
             ?: return@withContext Result.failure(IllegalArgumentException("Unknown MNN model: $modelId"))
@@ -393,9 +395,23 @@ class MnnModelDownloader @Inject constructor(
             
             FileLogger.i(TAG, "downloadModel: $modelId REQUIRED FILES COMPLETED - Model is now READY")
             
-            // 第二阶段：后台异步下载可选文件（不阻塞）
-            launch(Dispatchers.IO) {
-                downloadOptionalFilesInBackground(modelId, modelPath, targetDir)
+            // Bug5修复: 只有多模态模型才下载可选文件
+            if (isMultimodal) {
+                // 第二阶段：后台异步下载可选文件（不阻塞）
+                launch(Dispatchers.IO) {
+                    downloadOptionalFilesInBackground(modelId, modelPath, targetDir)
+                }
+            } else {
+                // 纯文本模型：直接标记为COMPLETED
+                updateState(modelId, MnnDownloadState(
+                    modelId = modelId,
+                    status = MnnDownloadStatus.COMPLETED,
+                    completedFiles = requiredCount,
+                    totalFiles = requiredCount,
+                    totalBytes = REQUIRED_TOTAL_SIZE,
+                    downloadedBytes = completedRequiredBytes
+                ))
+                FileLogger.i(TAG, "downloadModel: $modelId is text-only model, skipping optional files (isMultimodal=false)")
             }
             
             // 立即返回成功，因为必需文件已经下载完成

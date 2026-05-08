@@ -269,6 +269,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
 
     // 使用ChatMessages结构化传参，MNN内部自动调用apply_chat_template()只套一次模板
     // 同时显式设置use_template:true确保行为一致
+    // Bug7修复: useGPU参数暂不在nativeGenerate中实现（LlamaEngine.generate未添加useGPU参数）
     std::string cfg = "{\"temperature\":" + std::to_string(temperature)
         + ",\"top_k\":" + std::to_string(topK)
         + ",\"top_p\":" + std::to_string(topP)
@@ -277,7 +278,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
     s->llm->set_config(cfg);
 
     MNN::Transformer::ChatMessages msgs;
-    msgs.push_back(MNN::Transformer::ChatMessage{"system", "You are a helpful assistant."});
+    msgs.push_back(MNN::Transformer::ChatMessage{"system", "你是一个有用的AI助手，请用中文回答问题。"});
     msgs.push_back(MNN::Transformer::ChatMessage{"user", prompt});  // prompt是原始用户消息
 
     fileLog("nativeGenerate: using ChatMessages format, user_prompt='%s' (len=%zu), maxTokens=%d",
@@ -306,7 +307,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
 // Generate (streaming) - 使用ChatMessages结构化传参，避免双重模板套用
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jclass,
-    jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP) {
+    jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP, jboolean useGPU) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (!s || !s->llm) { fileLog("nativeGenerateStream: ERROR - model not loaded"); return env->NewStringUTF(""); }
 
@@ -316,6 +317,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
 
     // 使用ChatMessages结构化传参，MNN内部自动调用apply_chat_template()只套一次模板
     // 同时显式设置use_template:true确保行为一致
+    // Bug7修复: useGPU参数暂不在nativeGenerate中实现（LlamaEngine.generate未添加useGPU参数）
     std::string cfg = "{\"temperature\":" + std::to_string(temperature)
         + ",\"top_k\":" + std::to_string(topK)
         + ",\"top_p\":" + std::to_string(topP)
@@ -324,7 +326,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
     s->llm->set_config(cfg);
 
     MNN::Transformer::ChatMessages msgs;
-    msgs.push_back(MNN::Transformer::ChatMessage{"system", "You are a helpful assistant."});
+    msgs.push_back(MNN::Transformer::ChatMessage{"system", "你是一个有用的AI助手，请用中文回答问题。"});
     msgs.push_back(MNN::Transformer::ChatMessage{"user", prompt});  // prompt是原始用户消息
 
     fileLog("nativeGenerateStream: using ChatMessages format, user_prompt='%s' (len=%zu)", prompt.c_str(), prompt.length());
@@ -345,17 +347,106 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
     int tokenCount = 0;
     JNIEnv* cbEnv = callbackEnv;
 
+    // Bug2+3修复: 添加thinking过滤状态变量
+    bool inThinkingBlock = false;
+    std::string thinkingBuffer;
+    
     Utf8StreamProcessor utf8Processor([&](const std::string& chars) {
         std::string filtered = chars;
+        
+        // Bug2+3修复: 过滤<|im_end|>
         size_t pos = filtered.find("<|im_end|>");
         if (pos != std::string::npos) filtered = filtered.substr(0, pos);
+        
+        // Bug2+3修复: 过滤thinking标签
+        // 处理<think>开始标签
+        size_t thinkStart = filtered.find("<think>");
+        while (thinkStart != std::string::npos) {
+            inThinkingBlock = true;
+            // 输出<think>之前的内容
+            if (thinkStart > 0) {
+                std::string beforeThink = filtered.substr(0, thinkStart);
+                if (!beforeThink.empty()) {
+                    callJavaTokenCallbackWithEnv(cbEnv, s, beforeThink);
+                    accumulated.append(beforeThink);
+                    tokenCount++;
+                }
+            }
+            // 找到下一个<think>或</think>
+            size_t nextStart = filtered.find("<think>", thinkStart + 7);
+            size_t thinkEnd = filtered.find("</think>", thinkStart);
+            if (thinkEnd != std::string::npos) {
+                // 先结束再开始的情况: </think>后面还有<think>
+                if (nextStart != std::string::npos && nextStart < thinkEnd) {
+                    // 多个<think>连续
+                    filtered = filtered.substr(nextStart);
+                    thinkStart = 0;
+                    nextStart = filtered.find("<think>", 7);
+                    thinkEnd = filtered.find("</think>");
+                } else {
+                    // 正常情况: 找到</think>
+                    inThinkingBlock = false;
+                    filtered = filtered.substr(thinkEnd + 8);  // 跳过</think>
+                    thinkStart = filtered.find("<think>");
+                    if (thinkStart == std::string::npos && !filtered.empty()) {
+                        // </think>之后没有新的<think>，输出剩余内容
+                        callJavaTokenCallbackWithEnv(cbEnv, s, filtered);
+                        accumulated.append(filtered);
+                        tokenCount++;
+                        filtered.clear();
+                    }
+                }
+            } else {
+                // 没有</think>，记录剩余内容用于下次处理
+                if (thinkStart + 7 < filtered.length()) {
+                    thinkingBuffer = filtered.substr(thinkStart + 7);
+                } else {
+                    thinkingBuffer = "";
+                }
+                filtered.clear();
+                break;
+            }
+        }
+        
+        // 如果还在thinking block中，追加到buffer并跳过
+        if (inThinkingBlock) {
+            thinkingBuffer += filtered;
+            size_t thinkEnd = thinkingBuffer.find("</think>");
+            if (thinkEnd != std::string::npos) {
+                // thinking结束
+                inThinkingBlock = false;
+                filtered = thinkingBuffer.substr(thinkEnd + 8);
+                thinkingBuffer.clear();
+            } else {
+                filtered.clear();
+            }
+        }
+        
+        // Bug2+3修复: 过滤英文思考输出
         if (!filtered.empty()) {
-            callJavaTokenCallbackWithEnv(cbEnv, s, filtered);
-            accumulated.append(filtered);
-            tokenCount++;
-            if (tokenCount <= 10 || tokenCount % 50 == 0) {
-                fileLog("nativeGenerateStream: token #%d: '%s' (accumulated len=%zu)",
-                     tokenCount, filtered.substr(0, 30).c_str(), accumulated.length());
+            // 检查是否包含英文思考前缀
+            std::vector<std::string> thinking_prefixes = {
+                "Thinking Process:",
+                "Here's a thinking process",
+                "Let me think about this",
+                "I need to reason through"
+            };
+            bool skipLine = false;
+            for (const auto& prefix : thinking_prefixes) {
+                if (filtered.find(prefix) != std::string::npos) {
+                    skipLine = true;
+                    break;
+                }
+            }
+            
+            if (!skipLine) {
+                callJavaTokenCallbackWithEnv(cbEnv, s, filtered);
+                accumulated.append(filtered);
+                tokenCount++;
+                if (tokenCount <= 10 || tokenCount % 50 == 0) {
+                    fileLog("nativeGenerateStream: token #%d: '%s' (accumulated len=%zu)",
+                         tokenCount, filtered.substr(0, 30).c_str(), accumulated.length());
+                }
             }
         }
     });

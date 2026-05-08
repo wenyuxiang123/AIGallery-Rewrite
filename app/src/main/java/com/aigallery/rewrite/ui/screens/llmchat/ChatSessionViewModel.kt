@@ -175,7 +175,7 @@ class ChatSessionViewModel @Inject constructor(
                     inferenceEngine.inferStream(
                         prompt = fullPrompt,
                         config = InferenceConfig(
-                            maxLength = 512,
+                            maxLength = 2048,
                             temperature = 0.7f,
                             topK = 40,
                             topP = 0.9f,

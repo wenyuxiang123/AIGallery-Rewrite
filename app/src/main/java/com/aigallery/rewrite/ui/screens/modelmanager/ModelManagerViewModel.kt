@@ -327,7 +327,8 @@ class ModelManagerViewModel @Inject constructor(
                             )
                         }
                     }
-                }
+                },
+                isMultimodal = model.isMultimodal  // Bug5修复: 传入isMultimodal参数
             )
 
             FileLogger.d(TAG, "downloadMnnModel: download completed, checking result")
@@ -419,7 +420,7 @@ class ModelManagerViewModel @Inject constructor(
                 val success = inferenceEngine.initialize(
                     modelPath = modelPath,
                     config = InferenceConfig(
-                        maxLength = 512,
+                        maxLength = 2048,
                         temperature = 0.7f,
                         topK = 40,
                         topP = 0.9f,

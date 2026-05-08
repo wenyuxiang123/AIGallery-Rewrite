@@ -205,12 +205,14 @@ class LlamaEngine private constructor(
      * @param topP Top-P 采样
      * @return 流式结果（每个 token 用换行分隔）
      */
+    // Bug7修复: 添加useGPU参数
     external fun nativeGenerateStream(
         prompt: String,
         maxTokens: Int,
         temperature: Float,
         topK: Int,
-        topP: Float
+        topP: Float,
+        useGPU: Boolean
     ): String
     
     /**
@@ -385,15 +387,19 @@ class LlamaEngine private constructor(
      * 使用 callbackFlow 实现真正的流式输出
      * native 层通过 JNI 回调将每个 token 传递给 Kotlin 层
      */
+    // Bug7修复: 添加useGPU参数，默认为false（避免GPU Vulkan性能问题）
     fun generateStream(
         prompt: String,
         maxTokens: Int = 512,
         temperature: Float = 0.7f,
         topK: Int = 40,
-        topP: Float = 0.9f
+        topP: Float = 0.9f,
+        useGPU: Boolean = false  // Bug7修复: 默认false，避免GPU offload开销
     ): Flow<String> {
         FileLogger.d(TAG, "generateStream: prompt len=${prompt.length}")
         val startTime = System.currentTimeMillis()
+        // Bug1修复: 每次推理前reset()清理KV cache，避免前几次推理乱码
+        resetConversation()
         
         return callbackFlow {
             // 大buffer防止JNI回调线程上trySend因buffer满导致StackOverflow
@@ -422,7 +428,8 @@ class LlamaEngine private constructor(
                     setTokenCallback(callback)
                     
                     // 调用 native 流式生成
-                    val streamResult = nativeGenerateStream(prompt, maxTokens, temperature, topK, topP)
+                    // Bug7修复: 传入useGPU参数
+                    val streamResult = nativeGenerateStream(prompt, maxTokens, temperature, topK, topP, useGPU)
                     
                     // 如果 native 层没有通过回调返回（兼容旧实现），
                     // 则按换行分隔后逐个 emit
