@@ -69,30 +69,46 @@ Java_com_localai_server_engine_LlamaEngine_nativeSetLogFilePath(JNIEnv* env, jcl
 }
 
 // ====== CPU亲和性 ======
-static std::vector<int> getBigCores() {
+// CPU拓扑检测：大核+小核
+struct CpuTopology {
+    std::vector<int> bigCores;   // 高频大核
+    std::vector<int> smallCores; // 低频小核
+};
+
+static CpuTopology getCpuTopology() {
+    CpuTopology topo;
     std::vector<std::pair<long, int>> freqs;
     for (int i = 0; i < 8; i++) {
         std::string path = "/sys/devices/system/cpu/cpu" + std::to_string(i) + "/cpufreq/cpuinfo_max_freq";
         std::ifstream ifs(path);
         if (ifs.is_open()) { long freq = 0; ifs >> freq; freqs.push_back({freq, i}); }
     }
-    if (freqs.empty()) return std::vector<int>();
+    if (freqs.empty()) {
+        topo.bigCores = {0, 1, 2, 3};
+        return topo;
+    }
     std::sort(freqs.begin(), freqs.end(), std::greater<>());
     
-    // 计算频率中位数，只返回超过中位数的核心（真正的大核）
-    // 避免在778G Plus等芯片上绑到小核导致性能下降
+    // 频率中位数分割大小核
     size_t mid = freqs.size() / 2;
     long medianFreq = freqs[mid].first;
     
-    std::vector<int> bigCores;
     for (const auto& pair : freqs) {
         if (pair.first > medianFreq) {
-            bigCores.push_back(pair.second);
+            topo.bigCores.push_back(pair.second);
+        } else {
+            topo.smallCores.push_back(pair.second);
         }
     }
-    fileLog("getBigCores: detected %zu big cores (median=%ld), cores: ", bigCores.size(), medianFreq);
-    for (int core : bigCores) { fileLog("  cpu%d", core); }
-    return bigCores;
+    fileLog("getCpuTopology: %zu big cores + %zu small cores (median=%ld)",
+         topo.bigCores.size(), topo.smallCores.size(), medianFreq);
+    for (int c : topo.bigCores) fileLog("  big: cpu%d", c);
+    for (int c : topo.smallCores) fileLog("  small: cpu%d", c);
+    return topo;
+}
+
+static std::vector<int> getBigCores() {
+    return getCpuTopology().bigCores;
 }
 
 static void setCpuAffinity() {
@@ -214,23 +230,36 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
     }
     fileLog("nativeLoadModel: createLLM success, setting config...");
 
-    // 线程自动调优：在load()之前检测大核数，避免绑到小核
+    // 线程自动调优：所有大核 + 2个小核，充分利用778G Plus算力
+    // 大核做重计算（prefill/decode），小核做轻任务（tokenizer/调度）
+    CpuTopology topo = getCpuTopology();
+    int bigCount = (int)topo.bigCores.size();
+    int smallCount = (int)topo.smallCores.size();
+    if (bigCount <= 0) bigCount = 4; // fallback
+    int smallToUse = std::min(smallCount, 2);
+    int optimalThreads = std::min(bigCount + smallToUse, 8);
+    if (nThreads <= 0 || nThreads > optimalThreads) {
+        nThreads = optimalThreads;
+    }
+    fileLog("nativeLoadModel: thread config: %d big + %d small = %d threads", bigCount, smallToUse, nThreads);
+    
+    // CPU亲和性：绑定所有大核+2个小核（不设亲和性让OS自由调度反而更差）
     {
-        auto bigCores = getBigCores();
-        int optimalThreads = std::min((int)bigCores.size(), 4);
-        if (optimalThreads <= 0) optimalThreads = 4; // fallback
-        if (nThreads <= 0 || nThreads > optimalThreads) {
-            fileLog("nativeLoadModel: auto-tuning threads from %d to %d (big cores=%zu)", nThreads, optimalThreads, bigCores.size());
-            nThreads = optimalThreads;
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        for (int core : topo.bigCores) CPU_SET(core, &cpuset);
+        for (int i = 0; i < smallToUse && i < (int)topo.smallCores.size(); i++) {
+            CPU_SET(topo.smallCores[i], &cpuset);
         }
+        sched_setaffinity(0, sizeof(cpuset), &cpuset);
+        fileLog("nativeLoadModel: CPU affinity set to %d big + %d small cores", bigCount, smallToUse);
     }
 
-    // KV Cache量化 + Flash Attention + mmap优化
+    // mmap优化（KV-INT8和lookahead暂时禁用，778G Plus纯CPU上开销大于收益）
     std::string cfg = "{\"num_ctx\":" + std::to_string(nCtx)
         + ",\"num_threads\":" + std::to_string(nThreads)
         + ",\"mmap\":true"
         + ",\"use_mmap\":true"
-        + ",\"attention_mode\":10"
         + ",\"kvcache_mmap\":true}";
     fileLog("nativeLoadModel: set_config: %s", cfg.c_str());
     llm->set_config(cfg);
@@ -263,16 +292,12 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
     fileLog("nativeLoadModel: llm->load() returned %s in %lld ms", ok ? "true" : "false", (long long)ms);
 
     if (ok) {
-        // Lookahead 投机解码加速（2-3x加速）
-        std::string speculativeCfg = "{\"speculative_type\":\"lookahead\",\"draft_token_num\":4}";
-        fileLog("nativeLoadModel: enabling lookahead speculative decoding...");
-        if (!llm->set_config(speculativeCfg)) {
-            fileLog("nativeLoadModel: WARNING - setSpeculativeConfig failed, skipping lookahead");
-        } else {
-            fileLog("nativeLoadModel: lookahead speculative decoding enabled (draft_token_num=4)");
-        }
+        // Lookahead 投机解码暂时禁用 - 778G Plus纯CPU上draft命中率低，反而拖慢
+        // std::string speculativeCfg = "{\"speculative_type\":\"lookahead\",\"draft_token_num\":4}";
+        // llm->set_config(speculativeCfg);
+        fileLog("nativeLoadModel: lookahead disabled (CPU overhead > benefit on this device)");
         
-        setCpuAffinity();
+        // CPU亲和性已在load()前设置
         auto* session = new LlmSession{llm}; session->javaVM = gJavaVM;
         gSession.store(session, std::memory_order_relaxed);
         gModelLoaded.store(true, std::memory_order_relaxed);
