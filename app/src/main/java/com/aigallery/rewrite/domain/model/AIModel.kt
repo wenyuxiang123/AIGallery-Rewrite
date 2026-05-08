@@ -757,8 +757,6 @@ object ModelCatalog {
             isMnnModel = true
         ),
         AIModel(
-        ),
-        AIModel(
             id = "mobilellm-1b-mnn",
             name = "MobileLLM 1B (MNN)",
             description = "Meta移动端优化模型，1B参数",
