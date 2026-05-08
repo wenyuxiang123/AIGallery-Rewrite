@@ -494,22 +494,6 @@ object ModelCatalog {
             minMemory = 4500000000,
             isMnnModel = true
         ),
-        AIModel(
-            // id = "qwen3.5-27b-claude-reasoning-mnn", // ModelScope上不存在此MNN模型
-            name = "Qwen3.5 27B Claude Reasoning (MNN)",
-            description = "Claude蒸馏推理模型，27B参数",
-            provider = ModelProvider.MODELSCOPE,
-            size = "15GB",
-            sizeBytes = 15000000000,
-            quantization = "MNN-INT4",
-            parameters = "27B",
-            downloadUrl = "MNN://Qwen3.5-27B-Claude-4.6-Opus-Reasoning-Distilled-MNN",
-            mirrorUrl = "MNN://Qwen3.5-27B-Claude-4.6-Opus-Reasoning-Distilled-MNN",
-            hash = null,
-            isMultimodal = false,
-            minMemory = 20000000000,
-            isMnnModel = true
-        ),
 
         // ============ DeepSeek系列 ============
         AIModel(
