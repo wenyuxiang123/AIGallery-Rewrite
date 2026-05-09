@@ -77,7 +77,7 @@ class MnnInferenceEngine(
             FileLogger.d(TAG, "ensureLibrariesLoaded: using APK bundled libraries")
         }
         
-        val success = LlamaEngine.loadLibraries()
+        val success = LlamaEngine.loadLibraries(context)
         librariesLoaded = success
         
         if (success) {

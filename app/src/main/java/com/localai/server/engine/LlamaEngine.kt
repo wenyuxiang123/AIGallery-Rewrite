@@ -68,7 +68,7 @@ class LlamaEngine private constructor(
          * 
          * @return 是否加载成功
          */
-        fun loadLibraries(): Boolean {
+        fun loadLibraries(context: Context): Boolean {
             if (librariesLoaded) {
                 return true
             }
@@ -115,27 +115,9 @@ class LlamaEngine private constructor(
                         FileLogger.d(TAG, "loadLibraries: QnnHtpPrepare loaded (QNN/NPU)")
                         System.loadLibrary("QnnHtpV68Stub")
                         FileLogger.d(TAG, "loadLibraries: QnnHtpV68Stub loaded (QNN/NPU Hexagon V68)")
-                        // V68Skel is DSP6 binary (32-bit), Android linker rejects it
-                        // Copy from assets to cache dir and set ADSP_LIBRARY_PATH so QNN Stub finds it
-                        try {
-                            val skelDir = File(context.cacheDir, "qnn")
-                            skelDir.mkdirs()
-                            val skelFile = File(skelDir, "libQnnHtpV68Skel.so")
-                            if (!skelFile.exists()) {
-                                context.assets.open("qnn/libQnnHtpV68Skel.so").use { input ->
-                                    skelFile.outputStream().use { output ->
-                                        input.copyTo(output)
-                                    }
-                                }
-                            }
-                            // Set ADSP_LIBRARY_PATH so QNN HTP stub can locate the Skel binary
-                            // This env var tells the FastRPC/CDSP where to find DSP executables
-                            Os.setenv("ADSP_LIBRARY_PATH", skelDir.absolutePath, true)
-                            FileLogger.d(TAG, "loadLibraries: QnnHtpV68Skel deployed to ${skelFile.absolutePath}")
-                        } catch (e: Exception) {
-                            FileLogger.w(TAG, "loadLibraries: QnnHtpV68Skel deploy failed: ${e.message}")
-                        }
-                        FileLogger.i(TAG, "loadLibraries: QNN/NPU fully available, will use NPU backend")
+                        // V68Skel is DSP6 binary (32-bit), Android linker rejects dlopen
+                        // It gets deployed in deployQnnSkel() after library load completes
+                        FileLogger.i(TAG, "loadLibraries: QNN/NPU libraries loaded (Skel pending deployment)")
                     } catch (e: UnsatisfiedLinkError) {
                         FileLogger.w(TAG, "loadLibraries: QNN libraries not available (NPU disabled): ${e.message}")
                         qnnAvailable = false
@@ -143,6 +125,27 @@ class LlamaEngine private constructor(
                 }
                 
                 librariesLoaded = true
+                
+                // Deploy QNN V68Skel from assets to cache (DSP6 binary, can't use System.loadLibrary)
+                if (qnnAvailable) {
+                    try {
+                        val skelDir = File(context.cacheDir, "qnn")
+                        skelDir.mkdirs()
+                        val skelFile = File(skelDir, "libQnnHtpV68Skel.so")
+                        if (!skelFile.exists()) {
+                            context.assets.open("qnn/libQnnHtpV68Skel.so").use { input ->
+                                skelFile.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                        }
+                        Os.setenv("ADSP_LIBRARY_PATH", skelDir.absolutePath, true)
+                        FileLogger.d(TAG, "loadLibraries: QnnHtpV68Skel deployed to ${skelFile.absolutePath}")
+                    } catch (e: Exception) {
+                        FileLogger.w(TAG, "loadLibraries: QnnHtpV68Skel deploy failed: ${e.message}")
+                    }
+                }
+                
                 // 库加载成功后立即设置native层日志路径
                 try {
                     nativeSetLogFilePath(FileLogger.getLogFilePath())
