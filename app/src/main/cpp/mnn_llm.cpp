@@ -257,7 +257,9 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
 
     // mmap优化 + QNN/NPU加速（KV-INT8和lookahead暂时禁用，778G Plus纯CPU上开销大于收益）
     // backend_type=5 即 MNN_FORWARD_NN (QNN/NPU后端)
-    std::string cfg = std::string("{\"backend_type\":5")
+    // attention_mode=14 = FlashAttention + KV-TQ4，节省KV Cache内存30%+，短对话质量无感知
+    std::string cfg = std::string("{\"backend_type\":5") 
+        + ",\"attention_mode\":14"
         + ",\"num_ctx\":" + std::to_string(nCtx)
         + ",\"num_threads\":" + std::to_string(nThreads)
         + ",\"mmap\":true"
@@ -308,7 +310,8 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
         llm = MNN::Transformer::Llm::createLLM(configPath);
         if (llm) {
             // CPU回退：不设置backend_type
-            std::string fallbackCfg = std::string("{\"num_ctx\":") + std::to_string(nCtx)
+            std::string fallbackCfg = std::string("{\"attention_mode\":14") 
+                + ",\"num_ctx\":" + std::to_string(nCtx)
                 + ",\"num_threads\":" + std::to_string(nThreads)
                 + ",\"mmap\":true"
                 + ",\"use_mmap\":true"
