@@ -144,7 +144,8 @@ private fun DrawerContent(
         LazyColumn(
             modifier = Modifier.fillMaxWidth()
         ) {
-            items(Screen.drawerItems) { screen ->
+            items(count = Screen.drawerItems.size, key = { index -> Screen.drawerItems[index].route }) { index ->
+                val screen = Screen.drawerItems[index]
                 DrawerItem(
                     screen = screen,
                     isSelected = currentRoute == screen.route ||
