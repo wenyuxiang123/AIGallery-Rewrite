@@ -144,6 +144,11 @@ class LlamaEngine private constructor(
                     } catch (e: Exception) {
                         FileLogger.w(TAG, "loadLibraries: QnnHtpV68Skel deploy failed: ${e.message}")
                     }
+                    // Disable QNN for now: Hexagon V68 (778G Plus) cannot handle LLM inference.
+                    // llm->load() with backend_type=5 hangs silently - NPU graph compile fails
+                    // for INT4 LLM ops. Re-enable only on devices with V73+ (8Gen2+).
+                    qnnAvailable = false
+                    FileLogger.w(TAG, "loadLibraries: QNN disabled - V68 DSP not suitable for LLM inference")
                 }
                 
                 // 库加载成功后立即设置native层日志路径
