@@ -27,6 +27,7 @@ class ChatSessionViewModel @Inject constructor(
         private const val TAG = "ChatSession"
         private const val MAX_MEMORY_CHARS = 500
         private const val MAX_HISTORY_TURNS = 6  // Keep last 6 messages (3 user + 3 assistant)
+        private const val MAX_THINKING_BLOCK_CHARS = 500  // Safety limit for thinking block
         private val memoryConfig = MemoryConfig(shortTermMemoryEnabled = true, shortTermWindowSize = 5, longTermMemoryEnabled = true, longTermRetrievalLimit = 3, personaMemoryEnabled = true)
     }
 
@@ -110,6 +111,18 @@ class ChatSessionViewModel @Inject constructor(
     }
 
     /**
+     * 清理文本中的控制字符和 HTML 标签
+     */
+    private fun cleanContent(text: String): String {
+        return text
+            // 移除控制字符 (保留换行和制表符)
+            .replace(Regex("[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]"), "")
+            // 移除 HTML 标签
+            .replace(Regex("<[^>]+>"), "")
+            .trim()
+    }
+
+    /**
      * 发送消息
      */
     fun sendMessage(message: String) {
@@ -118,16 +131,17 @@ class ChatSessionViewModel @Inject constructor(
             return
         }
 
-        FileLogger.d(TAG, "sendMessage: content=${message.take(50)}")
+        val cleanedMessage = cleanContent(message)
+        FileLogger.d(TAG, "sendMessage: content=${cleanedMessage.take(50)}")
 
         val userMsgId = nextMessageId()
-        addMessage(ChatMessage(id = userMsgId, content = message, role = MessageRole.USER, timestamp = System.currentTimeMillis()))
+        addMessage(ChatMessage(id = userMsgId, content = cleanedMessage, role = MessageRole.USER, timestamp = System.currentTimeMillis()))
         FileLogger.d(TAG, "sendMessage: user msg added, id=$userMsgId")
 
-        // Store user message to WorkingMemory
+        // Store user message to WorkingMemory (cleaned content)
         viewModelScope.launch {
             try {
-                memoryRepository.addWorkingMemory(sessionId, "[用户] $message")
+                memoryRepository.addWorkingMemory(sessionId, "[用户] $cleanedMessage")
                 FileLogger.d(TAG, "sendMessage: stored user msg to working memory, sessionId=$sessionId")
             } catch (e: Exception) { FileLogger.e(TAG, "sendMessage: failed to store working memory", e) }
         }
@@ -179,12 +193,13 @@ class ChatSessionViewModel @Inject constructor(
                     }
                     
                     // 构建完整提示词（包含记忆上下文+对话历史）
-                    val fullPrompt = buildPrompt(message)
+                    val fullPrompt = buildPrompt(cleanedMessage)
                     FileLogger.d(TAG, "sendMessage: built prompt, length=${fullPrompt.length}")
                     
                     // 流式输出过滤：过滤<think>到</think>之间的内容
                     var tokenBuffer = ""
                     var inThinkingBlock = false
+                    var thinkingBlockChars = 0  // Track thinking block length for safety
                     
                     // 使用流式推理
                     inferenceEngine.inferStream(
@@ -204,12 +219,25 @@ class ChatSessionViewModel @Inject constructor(
                         if (tokenBuffer.contains("<think>")) {
                             inThinkingBlock = true
                             tokenBuffer = tokenBuffer.substringAfter("<think>")
+                            thinkingBlockChars = 0
                         }
                         
                         // 处理</think>标签
                         if (tokenBuffer.contains("</think>")) {
                             inThinkingBlock = false
+                            thinkingBlockChars = 0
                             tokenBuffer = tokenBuffer.substringAfter("</think>")
+                        }
+                        
+                        // Safety: 如果 thinking 块超过限制，强制结束
+                        if (inThinkingBlock) {
+                            thinkingBlockChars += token.length
+                            if (thinkingBlockChars > MAX_THINKING_BLOCK_CHARS) {
+                                FileLogger.w(TAG, "sendMessage: thinking block exceeded limit ($thinkingBlockChars chars), forcing end")
+                                inThinkingBlock = false
+                                thinkingBlockChars = 0
+                                // 不输出 buffer 内容，让模型继续生成下一个 token
+                            }
                         }
                         
                         // 只在非thinking块时输出
@@ -224,6 +252,13 @@ class ChatSessionViewModel @Inject constructor(
                         }
                     }
                     
+                    // 修复：如果流结束后仍在 thinking 块中，flush 剩余内容
+                    if (inThinkingBlock && tokenBuffer.isNotEmpty()) {
+                        FileLogger.d(TAG, "sendMessage: flushing remaining thinking buffer (${tokenBuffer.length} chars)")
+                        updateStreamingMessage(aiMessageId, tokenBuffer)
+                        tokenCount++
+                    }
+
                     _engineState.update { 
                         it.copy(
                             isGenerating = false,
@@ -232,12 +267,13 @@ class ChatSessionViewModel @Inject constructor(
                         )
                     }
 
-                    // Store AI response to working memory
+                    // Store AI response to working memory (cleaned content)
                     val aiResponse = _state.value.messages.find { it.id == aiMessageId }?.content ?: ""
                     if (aiResponse.isNotBlank()) {
                         try {
-                            memoryRepository.addWorkingMemory(sessionId, "[助手] ${aiResponse.take(200)}")
-                            FileLogger.d(TAG, "sendMessage: stored AI response to working memory, len=${aiResponse.length}")
+                            val cleanedResponse = cleanContent(aiResponse)
+                            memoryRepository.addWorkingMemory(sessionId, "[助手] ${cleanedResponse.take(200)}")
+                            FileLogger.d(TAG, "sendMessage: stored AI response to working memory, len=${cleanedResponse.length}")
                         } catch (e: Exception) {
                             FileLogger.e(TAG, "sendMessage: failed to store AI working memory", e)
                         }
@@ -248,7 +284,7 @@ class ChatSessionViewModel @Inject constructor(
                     _state.update { s ->
                         s.copy(messages = s.messages.map { if (it.id == aiMessageId) it.copy(content = "") else it })
                     }
-                    val fallbackResponse = generateFallbackResponse(message)
+                    val fallbackResponse = generateFallbackResponse(cleanedMessage)
                     for (char in fallbackResponse) {
                         updateStreamingMessage(aiMessageId, char.toString())
                         delay(30)
@@ -271,36 +307,62 @@ class ChatSessionViewModel @Inject constructor(
     }
 
     /**
-     * 构建完整提示词 - JSON格式多轮对话
-     * 格式: [{"r":"system","c":"记忆上下文"}, {"r":"user","c":"..."}, {"r":"assistant","c":"..."}, ...]
+     * 构建完整提示词 - 简洁格式，适合小模型
+     * 只注入跨 session 的记忆（short-term, long-term, knowledge base, persona）
+     * 不注入 working memory（因为对话历史已经包含了当前 session）
      */
     private suspend fun buildPrompt(userMessage: String): String {
         val messages = mutableListOf<Pair<String, String>>()
 
-        // 1. Retrieve relevant memories
-        val memories = try {
-            memoryRepository.retrieveAllRelevantMemories(userMessage, memoryConfig, sessionId)
+        // 1. Retrieve cross-session memories ONLY (short-term, long-term, knowledge base, persona)
+        // Working memory is NOT included because conversation history already contains current session content
+        val memoryStrings = mutableListOf<String>()
+        
+        try {
+            // Get short-term memories (recent N turns)
+            val shortTerm = memoryRepository.getRecentShortTermMemories(memoryConfig.shortTermWindowSize)
+            memoryStrings.addAll(shortTerm.map { it.content })
+            
+            // Get long-term memories (semantic search)
+            if (memoryConfig.longTermMemoryEnabled) {
+                val longTerm = memoryRepository.searchLongTermMemories(userMessage)
+                    .take(memoryConfig.longTermRetrievalLimit)
+                memoryStrings.addAll(longTerm.map { it.content })
+            }
+            
+            // Get persona memories
+            if (memoryConfig.personaMemoryEnabled) {
+                val personas = memoryRepository.getPersonaMemoriesSync()
+                memoryStrings.addAll(personas.map { it.content })
+            }
         } catch (e: Exception) {
             FileLogger.e(TAG, "buildPrompt: memory retrieval failed", e)
-            emptyList()
         }
-        FileLogger.d(TAG, "buildPrompt: retrieved ${memories.size} memories")
+        
+        FileLogger.d(TAG, "buildPrompt: retrieved ${memoryStrings.size} cross-session memories (excluded working memory)")
 
-        // 2. Add memory context as system message if available
-        if (memories.isNotEmpty()) {
-            val memSb = StringBuilder("【相关记忆】\n")
-            for (mem in memories.take(5)) {
-                val line = "- ${mem.content.take(80)}\n"
-                if (memSb.length + line.length > MAX_MEMORY_CHARS) break
+        // 2. Add memory context as a simple system instruction (not as separate messages)
+        val memoryContext = if (memoryStrings.isNotEmpty()) {
+            val memSb = StringBuilder("【背景】\n")
+            for (mem in memoryStrings.take(3)) {
+                val line = "${mem.take(100)}\n"
+                if (memSb.length + line.length > 300) break
                 memSb.append(line)
             }
-            messages.add("system" to memSb.toString().trimEnd())
+            memSb.toString().trimEnd()
+        } else {
+            ""
         }
 
         // 3. Add conversation history (last N completed messages)
         val history = _state.value.messages
             .filter { !it.isStreaming && it.content.isNotBlank() }
             .takeLast(MAX_HISTORY_TURNS)
+
+        // 4. Build message list with simplified format
+        if (memoryContext.isNotEmpty()) {
+            messages.add("system" to memoryContext)
+        }
 
         for (msg in history) {
             val role = when (msg.role) {
@@ -311,10 +373,10 @@ class ChatSessionViewModel @Inject constructor(
             messages.add(role to msg.content.take(300))
         }
 
-        // 4. Add current user message
+        // 5. Add current user message
         messages.add("user" to userMessage)
 
-        // 5. Build control-char delimited string: \u0001role\u0002content\u0001role\u0002content...
+        // 6. Build control-char delimited string: \u0001role\u0002content\u0001role\u0002content...
         val sb = StringBuilder()
         for ((role, msgContent) in messages) {
             sb.append("\u0001$role\u0002$msgContent")
