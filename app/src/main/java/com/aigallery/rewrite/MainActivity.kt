@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -59,7 +60,7 @@ private fun MainScreen() {
     val onMenuClick: () -> Unit = {
         if (drawerState.isClosed) {
             // 需要在协程中打开 drawer
-            kotlinx.coroutines.GlobalScope.launch {
+            scope.launch {
                 drawerState.open()
             }
         }
@@ -84,7 +85,7 @@ private fun MainScreen() {
                         restoreState = true
                     }
                     // 关闭抽屉
-                    kotlinx.coroutines.GlobalScope.launch {
+                    scope.launch {
                         drawerState.close()
                     }
                 }
