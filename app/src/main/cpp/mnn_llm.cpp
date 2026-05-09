@@ -255,13 +255,15 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
         fileLog("nativeLoadModel: CPU affinity set to %d big + %d small cores", bigCount, smallToUse);
     }
 
-    // mmap优化（KV-INT8和lookahead暂时禁用，778G Plus纯CPU上开销大于收益）
-    std::string cfg = "{\"num_ctx\":" + std::to_string(nCtx)
+    // mmap优化 + QNN/NPU加速（KV-INT8和lookahead暂时禁用，778G Plus纯CPU上开销大于收益）
+    // backend_type=5 即 MNN_FORWARD_NN (QNN/NPU后端)
+    std::string cfg = std::string("{\"backend_type\":5")
+        + ",\"num_ctx\":" + std::to_string(nCtx)
         + ",\"num_threads\":" + std::to_string(nThreads)
         + ",\"mmap\":true"
         + ",\"use_mmap\":true"
         + ",\"kvcache_mmap\":true}";
-    fileLog("nativeLoadModel: set_config: %s", cfg.c_str());
+    fileLog("nativeLoadModel: set_config (with QNN backend_type=5): %s", cfg.c_str());
     llm->set_config(cfg);
 
     // 设置 tmp_path（从Kotlin层传入，兼容debug/release包路径）
