@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 import java.io.File
-import android.os.Os
+import android.system.Os
 
 /**
  * MNN LLM 推理引擎 JNI 桥接类
