@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aigallery.rewrite.domain.model.AIModel
 import com.aigallery.rewrite.domain.model.MessageRole
+import com.aigallery.rewrite.data.repository.MemoryRepository
+import com.aigallery.rewrite.domain.model.MemoryConfig
 import com.aigallery.rewrite.inference.InferenceConfig
 import com.aigallery.rewrite.inference.MnnInferenceEngine
 import com.aigallery.rewrite.util.FileLogger
@@ -17,11 +19,14 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ChatSessionViewModel @Inject constructor(
-    private val inferenceEngine: MnnInferenceEngine
+    private val inferenceEngine: MnnInferenceEngine,
+    private val memoryRepository: MemoryRepository
 ) : ViewModel() {
 
     companion object {
         private const val TAG = "ChatSession"
+        private const val MAX_MEMORY_CHARS = 500
+        private val memoryConfig = MemoryConfig(shortTermMemoryEnabled = true, shortTermWindowSize = 5, longTermMemoryEnabled = true, longTermRetrievalLimit = 3, personaMemoryEnabled = true)
     }
 
     private var inferenceJob: Job? = null
@@ -117,6 +122,13 @@ class ChatSessionViewModel @Inject constructor(
         val userMsgId = nextMessageId()
         addMessage(ChatMessage(id = userMsgId, content = message, role = MessageRole.USER, timestamp = System.currentTimeMillis()))
         FileLogger.d(TAG, "sendMessage: user msg added, id=$userMsgId")
+
+        // Store user message to WorkingMemory
+        viewModelScope.launch {
+            try {
+                memoryRepository.addWorkingMemory(sessionId, "[用户] $message")
+            } catch (e: Exception) { FileLogger.e(TAG, "sendMessage: failed to store working memory", e) }
+        }
 
         val aiMessageId = nextMessageId()
         addMessage(ChatMessage(id = aiMessageId, content = "", role = MessageRole.ASSISTANT, timestamp = System.currentTimeMillis(), isStreaming = true))
@@ -247,10 +259,23 @@ class ChatSessionViewModel @Inject constructor(
     /**
      * 构建提示词
      */
-    private fun buildPrompt(userMessage: String): String {
-        // 不再手动拼接chat template，MNN的ChatMessages格式会自动处理
-        // 只返回纯用户消息文本
-        return userMessage
+    private suspend fun buildPrompt(userMessage: String): String {
+        // Retrieve relevant memories
+        val memories = try {
+            memoryRepository.retrieveAllRelevantMemories(userMessage, memoryConfig)
+        } catch (e: Exception) { FileLogger.e(TAG, "buildPrompt: memory retrieval failed", e); emptyList() }
+
+        if (memories.isEmpty()) return userMessage
+
+        // Build memory context (limited to MAX_MEMORY_CHARS)
+        val sb = StringBuilder("【相关记忆】\n")
+        for (mem in memories.take(5)) {
+            val line = "- ${mem.content.take(80)}\n"
+            if (sb.length + line.length > MAX_MEMORY_CHARS) break
+            sb.append(line)
+        }
+        sb.append("\n用户消息: $userMessage")
+        return sb.toString()
     }
 
     /**
@@ -288,8 +313,10 @@ class ChatSessionViewModel @Inject constructor(
     fun clearChat() {
         FileLogger.d(TAG, "clearChat")
         _state.update { it.copy(messages = emptyList()) }
-        // 重置对话上下文
         inferenceEngine.resetConversation()
+        viewModelScope.launch {
+            try { memoryRepository.clearWorkingMemories(sessionId) } catch (_: Exception) {}
+        }
     }
 
     /**
@@ -358,6 +385,17 @@ class ChatSessionViewModel @Inject constructor(
         FileLogger.d(TAG, "onCleared")
         super.onCleared()
         inferenceJob?.cancel()
+        // Promote working memories to short-term
+        viewModelScope.launch {
+            try {
+                memoryRepository.getWorkingMemories(sessionId).first().forEach { mem ->
+                    if (mem.content.length > 10) {
+                        memoryRepository.addShortTermMemory(mem.content, 0.5f)
+                    }
+                }
+                memoryRepository.clearWorkingMemories(sessionId)
+            } catch (_: Exception) {}
+        }
     }
 }
 
