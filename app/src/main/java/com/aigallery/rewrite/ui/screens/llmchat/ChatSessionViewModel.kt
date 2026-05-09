@@ -182,7 +182,7 @@ class ChatSessionViewModel @Inject constructor(
                     val fullPrompt = buildPrompt(message)
                     FileLogger.d(TAG, "sendMessage: built prompt, length=${fullPrompt.length}")
                     
-                    // 流式输出过滤：过滤<think<param name=""></param>到</think<param name=""></param>之间的内容
+                    // 流式输出过滤：过滤<think>到</think>之间的内容
                     var tokenBuffer = ""
                     var inThinkingBlock = false
                     
@@ -200,16 +200,16 @@ class ChatSessionViewModel @Inject constructor(
                     ).collect { token ->
                         tokenBuffer += token
                         
-                        // 处理<think<param name=""></param>标签
-                        if (tokenBuffer.contains("<think<param name=""></param>")) {
+                        // 处理<think>标签
+                        if (tokenBuffer.contains("<think>")) {
                             inThinkingBlock = true
-                            tokenBuffer = tokenBuffer.substringAfter("<think<param name=""></param>")
+                            tokenBuffer = tokenBuffer.substringAfter("<think>")
                         }
                         
-                        // 处理</think<param name=""></param>标签
-                        if (tokenBuffer.contains("</think<param name=""></param>")) {
+                        // 处理</think>标签
+                        if (tokenBuffer.contains("</think>")) {
                             inThinkingBlock = false
-                            tokenBuffer = tokenBuffer.substringAfter("</think<param name=""></param>")
+                            tokenBuffer = tokenBuffer.substringAfter("</think>")
                         }
                         
                         // 只在非thinking块时输出
