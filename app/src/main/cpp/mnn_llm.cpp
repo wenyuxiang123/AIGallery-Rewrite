@@ -262,7 +262,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
     std::string cfg;
     bool useQnn = jUseQnn == JNI_TRUE;
     if (useQnn) {
-        cfg = std::string("{\"backend_type\":5") 
+        cfg = std::string("{\"backend_type\":5")
             + ",\"attention_mode\":14"
             + ",\"num_ctx\":" + std::to_string(nCtx)
             + ",\"num_threads\":" + std::to_string(nThreads)
@@ -271,18 +271,14 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
             + ",\"kvcache_mmap\":true}";
         fileLog("nativeLoadModel: QNN available, using NPU backend (backend_type=5)");
     } else {
-        cfg = std::string("{\"attention_mode\":14") 
-            + ",\"num_ctx\":" + std::to_string(nCtx)
+        // CPU路径不设attention_mode: KV-TQ4(attention_mode=14)在纯CPU上dequant开销>内存带宽节省
+        cfg = std::string("{\"num_ctx\":") + std::to_string(nCtx)
             + ",\"num_threads\":" + std::to_string(nThreads)
             + ",\"mmap\":true"
             + ",\"use_mmap\":true"
             + ",\"kvcache_mmap\":true}";
         fileLog("nativeLoadModel: QNN not available, using CPU backend");
     }
-    fileLog("nativeLoadModel: set_config: %s", cfg.c_str());
-    llm->set_config(cfg);
-
-    // 设置 tmp_path（从Kotlin层传入，兼容debug/release包路径）
     std::string cacheDirStr;
     if (jCacheDir) {
         const char* cd = env->GetStringUTFChars(jCacheDir, nullptr);

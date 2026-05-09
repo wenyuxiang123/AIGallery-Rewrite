@@ -92,20 +92,18 @@ class LlamaEngine private constructor(
                     FileLogger.w(TAG, "loadLibraries: MNNOpenCV not available (optional)")
                 }
                 
-                // FastRPC库 - libQnnHtpV68Stub.so的DT_NEEDED依赖
-                // Android 14 namespace隔离导致app无法访问/system/lib64/libcdsprpc.so
-                // 从高通官方源码编译并打包进APK，必须在V68Stub之前加载
+                // FastRPC + QNN 逐步加载：每一步失败都会跳过后续
+                // Step 1: FastRPC（V68Stub的DT_NEEDED依赖，Android 14 namespace隔离需打包进APK）
                 try {
                     System.loadLibrary("cdsprpc")
                     FileLogger.d(TAG, "loadLibraries: cdsprpc loaded (FastRPC for QNN)")
+                    qnnAvailable = true  // 前置条件满足，可以尝试QNN
                 } catch (e: UnsatisfiedLinkError) {
                     FileLogger.w(TAG, "loadLibraries: cdsprpc not available, QNN disabled: ${e.message}")
                     qnnAvailable = false
                 }
 
-                // QNN/NPU运行时库（必须在MNN load()之前加载，否则dlopen找不到）
-                // MNN QNN后端通过dlopen("libQnnHtp.so")等动态加载这些库
-                // 必须全部加载成功才启用QNN，否则会native crash
+                // Step 2: QNN/NPU运行时库（必须在MNN load()之前加载，否则dlopen找不到）
                 if (qnnAvailable) {
                     try {
                         System.loadLibrary("QnnSystem")
