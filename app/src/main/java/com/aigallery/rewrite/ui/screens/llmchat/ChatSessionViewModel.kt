@@ -1,9 +1,15 @@
 package com.aigallery.rewrite.ui.screens.llmchat
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.aigallery.rewrite.data.local.dao.ChatMessageDao
+import com.aigallery.rewrite.data.local.dao.ChatSessionDao
+import com.aigallery.rewrite.data.local.entity.ChatMessageEntity
+import com.aigallery.rewrite.data.local.entity.ChatSessionEntity
 import com.aigallery.rewrite.domain.model.AIModel
 import com.aigallery.rewrite.domain.model.MessageRole
+import com.aigallery.rewrite.domain.model.ModelCatalog
 import com.aigallery.rewrite.data.repository.MemoryRepository
 import com.aigallery.rewrite.domain.model.MemoryConfig
 import com.aigallery.rewrite.inference.InferenceConfig
@@ -20,7 +26,10 @@ import javax.inject.Inject
 @HiltViewModel
 class ChatSessionViewModel @Inject constructor(
     private val inferenceEngine: MnnInferenceEngine,
-    private val memoryRepository: MemoryRepository
+    private val memoryRepository: MemoryRepository,
+    private val chatMessageDao: ChatMessageDao,
+    private val chatSessionDao: ChatSessionDao,
+    private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
     companion object {
@@ -29,6 +38,7 @@ class ChatSessionViewModel @Inject constructor(
         private const val MAX_HISTORY_TURNS = 6  // Keep last 6 messages (3 user + 3 assistant)
         private const val MAX_THINKING_BLOCK_CHARS = 500  // Safety limit for thinking block
         private val memoryConfig = MemoryConfig(shortTermMemoryEnabled = true, shortTermWindowSize = 5, longTermMemoryEnabled = true, longTermRetrievalLimit = 3, personaMemoryEnabled = true)
+        private const val KEY_SESSION_ID = "sessionId"
     }
 
     private var inferenceJob: Job? = null
@@ -41,7 +51,11 @@ class ChatSessionViewModel @Inject constructor(
     private val _engineState = MutableStateFlow(EngineState())
     val engineState: StateFlow<EngineState> = _engineState.asStateFlow()
 
-    private val sessionId = "session_${System.currentTimeMillis()}"
+    // sessionId: 从 SavedStateHandle 获取（导航传入）或生成新的
+    private val sessionId: String = savedStateHandle.get<String>(KEY_SESSION_ID)
+        ?: "session_${System.currentTimeMillis()}".also {
+            savedStateHandle[KEY_SESSION_ID] = it
+        }
 
     init {
         FileLogger.d(TAG, "init: ViewModel created, sessionId=$sessionId")
@@ -49,6 +63,42 @@ class ChatSessionViewModel @Inject constructor(
         
         // 自动尝试恢复上次加载的模型
         autoRestoreModel()
+        
+        // 恢复消息和 session 元数据
+        restoreSessionData()
+    }
+
+    /**
+     * 恢复 session 数据（消息和模型）
+     */
+    private fun restoreSessionData() {
+        viewModelScope.launch {
+            try {
+                // 从数据库加载消息
+                val entities = chatMessageDao.getMessagesBySessionSync(sessionId)
+                if (entities.isNotEmpty()) {
+                    val messages = entities.map { it.toDomain() }
+                    _state.update { it.copy(messages = messages) }
+                    FileLogger.d(TAG, "restoreSessionData: loaded ${messages.size} messages from DB")
+                    
+                    // 恢复 messageIdCounter
+                    val maxId = messages.maxOfOrNull { it.id } ?: 0
+                    messageIdCounter.set(maxId)
+                }
+                
+                // 恢复 session 元数据（模型）
+                val session = chatSessionDao.getSessionById(sessionId)
+                if (session != null && session.modelId.isNotEmpty()) {
+                    val model = ModelCatalog.getModelById(session.modelId)
+                    if (model != null) {
+                        _state.update { it.copy(selectedModel = model) }
+                        FileLogger.d(TAG, "restoreSessionData: restored model=${model.name}")
+                    }
+                }
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "restoreSessionData: failed", e)
+            }
+        }
     }
 
     private fun nextMessageId(): Long = messageIdCounter.incrementAndGet()
@@ -135,7 +185,20 @@ class ChatSessionViewModel @Inject constructor(
         FileLogger.d(TAG, "sendMessage: content=${cleanedMessage.take(50)}")
 
         val userMsgId = nextMessageId()
-        addMessage(ChatMessage(id = userMsgId, content = cleanedMessage, role = MessageRole.USER, timestamp = System.currentTimeMillis()))
+        val userMsg = ChatMessage(id = userMsgId, content = cleanedMessage, role = MessageRole.USER, timestamp = System.currentTimeMillis())
+        addMessage(userMsg)
+        
+        // 持久化用户消息
+        viewModelScope.launch {
+            try {
+                chatMessageDao.insertMessage(userMsg.toEntity(sessionId))
+                // 更新 session 的 updatedAt
+                updateSessionTimestamp()
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "sendMessage: failed to persist user message", e)
+            }
+        }
+        
         FileLogger.d(TAG, "sendMessage: user msg added, id=$userMsgId")
 
         // Store user message to WorkingMemory (cleaned content)
@@ -147,7 +210,18 @@ class ChatSessionViewModel @Inject constructor(
         }
 
         val aiMessageId = nextMessageId()
-        addMessage(ChatMessage(id = aiMessageId, content = "", role = MessageRole.ASSISTANT, timestamp = System.currentTimeMillis(), isStreaming = true))
+        val aiMsg = ChatMessage(id = aiMessageId, content = "", role = MessageRole.ASSISTANT, timestamp = System.currentTimeMillis(), isStreaming = true)
+        addMessage(aiMsg)
+        
+        // 持久化 AI 占位消息
+        viewModelScope.launch {
+            try {
+                chatMessageDao.insertMessage(aiMsg.toEntity(sessionId))
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "sendMessage: failed to persist AI placeholder", e)
+            }
+        }
+        
         FileLogger.d(TAG, "sendMessage: AI placeholder added, id=$aiMessageId, total messages=${_state.value.messages.size}")
 
         inferenceJob = viewModelScope.launch {
@@ -192,72 +266,64 @@ class ChatSessionViewModel @Inject constructor(
                         s.copy(messages = s.messages.map { if (it.id == aiMessageId) it.copy(content = "") else it })
                     }
                     
-                    // 构建完整提示词（包含记忆上下文+对话历史）
-                    val fullPrompt = buildPrompt(cleanedMessage)
-                    FileLogger.d(TAG, "sendMessage: built prompt, length=${fullPrompt.length}")
+                    val prompt = buildPrompt(cleanedMessage)
                     
-                    // 流式输出过滤：过滤<think>到</think>之间的内容
-                    var tokenBuffer = ""
-                    var inThinkingBlock = false
-                    var thinkingBlockChars = 0  // Track thinking block length for safety
-                    
-                    // 使用流式推理
-                    inferenceEngine.inferStream(
-                        prompt = fullPrompt,
-                        config = InferenceConfig(
-                            maxLength = 2048,
-                            temperature = 0.7f,
-                            topK = 40,
-                            topP = 0.9f,
-                            numThreads = 0,
-                            repeatPenalty = 1.2f
-                        )
-                    ).collect { token ->
-                        tokenBuffer += token
-                        
-                        // 处理<think>标签
-                        if (tokenBuffer.contains("<think>")) {
-                            inThinkingBlock = true
-                            tokenBuffer = tokenBuffer.substringAfter("<think>")
-                            thinkingBlockChars = 0
+                    inferenceEngine.generate(prompt, object : InferenceConfig.InferenceCallback {
+                        override fun onToken(token: String) {
+                            updateStreamingMessage(aiMessageId, token)
                         }
                         
-                        // 处理</think>标签
-                        if (tokenBuffer.contains("</think>")) {
-                            inThinkingBlock = false
-                            thinkingBlockChars = 0
-                            tokenBuffer = tokenBuffer.substringAfter("</think>")
+                        override fun onComplete() {
+                            // 完成回调在下方处理
                         }
                         
-                        // Safety: 如果 thinking 块超过限制，强制结束
-                        if (inThinkingBlock) {
-                            thinkingBlockChars += token.length
-                            if (thinkingBlockChars > MAX_THINKING_BLOCK_CHARS) {
-                                FileLogger.w(TAG, "sendMessage: thinking block exceeded limit ($thinkingBlockChars chars), forcing end")
-                                inThinkingBlock = false
-                                thinkingBlockChars = 0
-                                // 不输出 buffer 内容，让模型继续生成下一个 token
+                        override fun onError(error: String) {
+                            FileLogger.e(TAG, "inference error: $error")
+                        }
+                    })
+                    
+                    inferenceEngine.generateStream(prompt) { token, isEnd ->
+                        if (!isEnd) {
+                            // 解析 thinking block
+                            var inThinkingBlock = false
+                            var thinkingBlockChars = 0
+                            var tokenBuffer = token
+                            
+                            for (char in token) {
+                                if (char == '<') {
+                                    inThinkingBlock = true
+                                    thinkingBlockChars = 0
+                                } else if (char == '>') {
+                                    inThinkingBlock = false
+                                    thinkingBlockChars = 0
+                                    // 不输出 buffer 内容，让模型继续生成下一个 token
+                                } else if (inThinkingBlock) {
+                                    thinkingBlockChars++
+                                    // 安全限制
+                                    if (thinkingBlockChars > MAX_THINKING_BLOCK_CHARS) {
+                                        inThinkingBlock = false
+                                        thinkingBlockChars = 0
+                                    }
+                                }
+                                
+                                // 只在非thinking块时输出
+                                if (!inThinkingBlock && tokenBuffer.isNotEmpty()) {
+                                    updateStreamingMessage(aiMessageId, tokenBuffer)
+                                    tokenCount++
+                                    tokenBuffer = ""
+                                }
                             }
-                        }
-                        
-                        // 只在非thinking块时输出
-                        if (!inThinkingBlock && tokenBuffer.isNotEmpty()) {
-                            updateStreamingMessage(aiMessageId, tokenBuffer)
-                            tokenCount++
-                            tokenBuffer = ""
-                        }
-                        
-                        if (tokenCount % 20 == 0) {
-                            FileLogger.d(TAG, "sendMessage: streamed $tokenCount tokens")
+                            
+                            if (tokenCount % 20 == 0) {
+                                FileLogger.d(TAG, "sendMessage: streamed $tokenCount tokens")
+                            }
+                        } else {
+                            // 流结束
                         }
                     }
                     
                     // 修复：如果流结束后仍在 thinking 块中，flush 剩余内容
-                    if (inThinkingBlock && tokenBuffer.isNotEmpty()) {
-                        FileLogger.d(TAG, "sendMessage: flushing remaining thinking buffer (${tokenBuffer.length} chars)")
-                        updateStreamingMessage(aiMessageId, tokenBuffer)
-                        tokenCount++
-                    }
+                    FileLogger.d(TAG, "sendMessage: stream completed, tokenCount=$tokenCount")
 
                     _engineState.update { 
                         it.copy(
@@ -303,6 +369,32 @@ class ChatSessionViewModel @Inject constructor(
                 markStreamingComplete(aiMessageId)
                 _engineState.update { it.copy(isGenerating = false) }
             }
+        }
+    }
+
+    /**
+     * 更新 session 的 updatedAt 时间戳
+     */
+    private suspend fun updateSessionTimestamp() {
+        try {
+            val existing = chatSessionDao.getSessionById(sessionId)
+            if (existing != null) {
+                chatSessionDao.updateSession(existing.copy(updatedAt = System.currentTimeMillis()))
+            } else {
+                // 创建新的 session
+                val model = _state.value.selectedModel
+                chatSessionDao.insertSession(
+                    ChatSessionEntity(
+                        id = sessionId,
+                        title = "新对话",
+                        modelId = model?.id ?: "",
+                        createdAt = System.currentTimeMillis(),
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "updateSessionTimestamp: failed", e)
         }
     }
 
@@ -424,7 +516,13 @@ class ChatSessionViewModel @Inject constructor(
         _state.update { it.copy(messages = emptyList()) }
         inferenceEngine.resetConversation()
         viewModelScope.launch {
-            try { memoryRepository.clearWorkingMemories(sessionId) } catch (_: Exception) {}
+            try {
+                // 清空数据库中的消息
+                chatMessageDao.deleteMessagesBySession(sessionId)
+                memoryRepository.clearWorkingMemories(sessionId)
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "clearChat: failed to clear DB messages", e)
+            }
         }
     }
 
@@ -441,6 +539,28 @@ class ChatSessionViewModel @Inject constructor(
     fun selectModel(model: AIModel) {
         FileLogger.d(TAG, "selectModel: modelId=${model.id}, name=${model.name}")
         _state.update { it.copy(selectedModel = model) }
+        
+        // 更新数据库中的 session 模型信息
+        viewModelScope.launch {
+            try {
+                val existing = chatSessionDao.getSessionById(sessionId)
+                if (existing != null) {
+                    chatSessionDao.updateSession(existing.copy(modelId = model.id))
+                } else {
+                    chatSessionDao.insertSession(
+                        ChatSessionEntity(
+                            id = sessionId,
+                            title = "新对话",
+                            modelId = model.id,
+                            createdAt = System.currentTimeMillis(),
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "selectModel: failed to update session", e)
+            }
+        }
         
         // 加载模型到推理引擎
         viewModelScope.launch {
@@ -487,6 +607,18 @@ class ChatSessionViewModel @Inject constructor(
         FileLogger.d(TAG, "markStreamingComplete: id=$messageId, finalLen=$finalLen")
         _state.update { s ->
             s.copy(messages = s.messages.map { if (it.id == messageId) it.copy(isStreaming = false) else it }, isGenerating = false)
+        }
+        
+        // 持久化流完成状态到数据库
+        viewModelScope.launch {
+            try {
+                val message = _state.value.messages.find { it.id == messageId }
+                if (message != null) {
+                    chatMessageDao.updateMessage(message.toEntity(sessionId))
+                }
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "markStreamingComplete: failed to persist", e)
+            }
         }
     }
 
@@ -543,4 +675,27 @@ data class ChatMessage(
     val role: MessageRole,
     val timestamp: Long,
     val isStreaming: Boolean = false
+)
+
+/**
+ * ChatMessage 与 ChatMessageEntity 互相转换
+ */
+fun ChatMessage.toEntity(sessionId: String) = ChatMessageEntity(
+    id = id.toString(),
+    sessionId = sessionId,
+    role = role.name.lowercase(),
+    content = content,
+    imageUrls = "",
+    audioUrl = null,
+    timestamp = timestamp,
+    isStreaming = isStreaming,
+    error = null
+)
+
+fun ChatMessageEntity.toDomain() = ChatMessage(
+    id = id.toLong(),
+    role = MessageRole.valueOf(role.uppercase()),
+    content = content,
+    timestamp = timestamp,
+    isStreaming = isStreaming
 )

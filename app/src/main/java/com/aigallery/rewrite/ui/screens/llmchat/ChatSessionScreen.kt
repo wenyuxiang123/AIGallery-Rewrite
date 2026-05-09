@@ -67,11 +67,11 @@ fun ChatSessionScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = viewModel::clearChat) {
-                        Icon(Icons.Default.Delete, contentDescription = "清除对话")
-                    }
                     IconButton(onClick = { showModelSelector = true }) {
                         Icon(Icons.Default.ModelTraining, contentDescription = "选择模型")
+                    }
+                    IconButton(onClick = viewModel::clearChat) {
+                        Icon(Icons.Default.Delete, contentDescription = "清除对话")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
