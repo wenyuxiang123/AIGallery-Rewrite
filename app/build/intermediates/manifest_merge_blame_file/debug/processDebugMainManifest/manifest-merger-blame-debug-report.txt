@@ -10,100 +10,100 @@
 10
 11    <!-- Permissions -->
 12    <uses-permission android:name="android.permission.INTERNET" />
-12-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:6:5-67
-12-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:6:22-64
+12-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:6:5-67
+12-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:6:22-64
 13    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-13-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:7:5-79
-13-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:7:22-76
+13-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:7:5-79
+13-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:7:22-76
 14    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-14-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:8:5-77
-14-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:8:22-74
+14-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:8:5-77
+14-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:8:22-74
 15    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-15-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:9:5-87
-15-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:9:22-84
+15-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:9:5-87
+15-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:9:22-84
 16    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-16-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:10:5-77
-16-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:10:22-74
+16-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:10:5-77
+16-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:10:22-74
 17    <uses-permission android:name="android.permission.WAKE_LOCK" />
-17-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:11:5-68
-17-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:11:22-65
+17-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:11:5-68
+17-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:11:22-65
 18    <uses-permission android:name="android.permission.CAMERA" />
-18-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:12:5-65
-18-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:12:22-62
+18-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:12:5-65
+18-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:12:22-62
 19    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-19-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:13:5-71
-19-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:13:22-68
+19-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:13:5-71
+19-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:13:22-68
 20    <uses-permission
-20-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:14:5-15:38
+20-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:14:5-15:38
 21        android:name="android.permission.READ_EXTERNAL_STORAGE"
-21-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:14:22-77
+21-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:14:22-77
 22        android:maxSdkVersion="32" />
-22-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:15:9-35
+22-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:15:9-35
 23    <uses-permission
-23-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:16:5-18:40
+23-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:16:5-18:40
 24        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-24-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:16:22-78
+24-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:16:22-78
 25        android:maxSdkVersion="29" />
-25-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:17:9-35
+25-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:17:9-35
 26    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-26-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:19:5-76
-26-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:19:22-73
+26-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:19:5-76
+26-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:19:22-73
 27    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-27-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:20:5-75
-27-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:20:22-72
+27-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:20:5-75
+27-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:20:22-72
 28    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-28-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:21:5-75
-28-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:21:22-72
+28-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:21:5-75
+28-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:21:22-72
 29    <uses-permission android:name="android.permission.BLUETOOTH" />
-29-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:22:5-68
-29-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:22:22-65
+29-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:22:5-68
+29-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:22:22-65
 30    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-30-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:23:5-74
-30-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:23:22-71
+30-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:23:5-74
+30-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:23:22-71
 31    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-31-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:24:5-76
-31-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:24:22-73
+31-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:24:5-76
+31-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:24:22-73
 32    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-32-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:25:5-76
-32-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:25:22-73
+32-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:25:5-76
+32-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:25:22-73
 33    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
-33-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:26:5-76
-33-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:26:22-73
+33-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:26:5-76
+33-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:26:22-73
 34    <uses-permission android:name="android.permission.SEND_SMS" />
-34-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:27:5-67
-34-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:27:22-64
+34-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:27:5-67
+34-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:27:22-64
 35    <uses-permission android:name="android.permission.READ_SMS" />
-35-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:28:5-67
-35-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:28:22-64
+35-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:28:5-67
+35-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:28:22-64
 36    <uses-permission android:name="android.permission.CALL_PHONE" />
-36-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:29:5-69
-36-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:29:22-66
+36-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:29:5-69
+36-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:29:22-66
 37    <uses-permission android:name="android.permission.FLASHLIGHT" />
-37-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:30:5-69
-37-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:30:22-66
+37-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:30:5-69
+37-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:30:22-66
 38    <uses-permission android:name="android.permission.VIBRATE" />
-38-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:31:5-66
-38-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:31:22-63
+38-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:31:5-66
+38-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:31:22-63
 39
 40    <!-- Device Control Permissions - 爱马仕级全操控 -->
 41    <uses-permission android:name="android.permission.ACCESSIBILITY_SERVICE" />
-41-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:34:5-80
-41-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:34:22-77
+41-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:34:5-80
+41-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:34:22-77
 42    <uses-permission android:name="android.permission.READ_NOTIFICATIONS" />
-42-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:35:5-77
-42-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:35:22-74
+42-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:35:5-77
+42-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:35:22-74
 43    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
-43-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:36:5-37:47
-43-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:36:22-70
+43-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:36:5-37:47
+43-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:36:22-70
 44    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-44-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:38:5-79
-44-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:38:22-76
+44-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:38:5-79
+44-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:38:22-76
 45    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-45-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:39:5-81
-45-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:39:22-78
+45-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:39:5-81
+45-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:39:22-78
 46    <uses-permission android:name="android.permission.RECEIVE_SMS" />
-46-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:40:5-70
-46-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:40:22-67
+46-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:40:5-70
+46-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:40:22-67
 47    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 47-->[androidx.work:work-runtime:2.9.0] /root/.gradle/caches/8.9/transforms/70b2524456a4ba276ec97e6856b30ec0/transformed/work-runtime-2.9.0/AndroidManifest.xml:25:5-81
 47-->[androidx.work:work-runtime:2.9.0] /root/.gradle/caches/8.9/transforms/70b2524456a4ba276ec97e6856b30ec0/transformed/work-runtime-2.9.0/AndroidManifest.xml:25:22-78
@@ -120,48 +120,48 @@
 53-->[androidx.core:core:1.12.0] /root/.gradle/caches/8.9/transforms/727ab85211d17a24aee7d816f7a926da/transformed/core-1.12.0/AndroidManifest.xml:26:22-94
 54
 55    <application
-55-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:42:5-89:19
+55-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:42:5-89:19
 56        android:name="com.aigallery.rewrite.AIGalleryApp"
-56-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:43:9-37
+56-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:43:9-37
 57        android:allowBackup="true"
-57-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:44:9-35
+57-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:44:9-35
 58        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
 58-->[androidx.core:core:1.12.0] /root/.gradle/caches/8.9/transforms/727ab85211d17a24aee7d816f7a926da/transformed/core-1.12.0/AndroidManifest.xml:28:18-86
 59        android:dataExtractionRules="@xml/data_extraction_rules"
-59-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:45:9-65
+59-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:45:9-65
 60        android:debuggable="true"
 61        android:extractNativeLibs="false"
 62        android:fullBackupContent="@xml/backup_rules"
-62-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:46:9-54
+62-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:46:9-54
 63        android:icon="@mipmap/ic_launcher"
-63-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:47:9-43
+63-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:47:9-43
 64        android:label="@string/app_name"
-64-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:48:9-41
+64-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:48:9-41
 65        android:roundIcon="@mipmap/ic_launcher_round"
-65-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:49:9-54
+65-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:49:9-54
 66        android:supportsRtl="true"
-66-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:50:9-35
+66-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:50:9-35
 67        android:theme="@style/Theme.AIGalleryRewrite" >
-67-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:51:9-54
+67-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:51:9-54
 68        <activity
-68-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:54:9-63:20
+68-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:54:9-63:20
 69            android:name="com.aigallery.rewrite.MainActivity"
-69-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:55:13-41
+69-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:55:13-41
 70            android:exported="true"
-70-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:56:13-36
+70-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:56:13-36
 71            android:theme="@style/Theme.AIGalleryRewrite.Splash"
-71-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:57:13-65
-72            android:windowSoftInputMode="adjustResize" >
-72-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:58:13-55
+71-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:57:13-65
+72            android:windowSoftInputMode="adjustPan" >
+72-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:58:13-52
 73            <intent-filter>
-73-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:59:13-62:29
+73-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:59:13-62:29
 74                <action android:name="android.intent.action.MAIN" />
-74-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:60:17-69
-74-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:60:25-66
+74-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:60:17-69
+74-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:60:25-66
 75
 76                <category android:name="android.intent.category.LAUNCHER" />
-76-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:61:17-77
-76-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:61:27-74
+76-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:61:17-77
+76-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:61:27-74
 77            </intent-filter>
 78        </activity>
 79
@@ -179,26 +179,26 @@
 91            - 屏幕截图与分析
 92        -->
 93        <service
-93-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:77:9-87:19
+93-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:77:9-87:19
 94            android:name="com.aigallery.rewrite.devicecontrol.AccessibilityServiceImpl"
-94-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:78:13-67
+94-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:78:13-67
 95            android:exported="false"
-95-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:79:13-37
+95-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:79:13-37
 96            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" >
-96-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:80:13-79
+96-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:80:13-79
 97            <intent-filter>
-97-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:81:13-83:29
+97-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:81:13-83:29
 98                <action android:name="android.accessibilityservice.AccessibilityService" />
-98-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:82:17-92
-98-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:82:25-89
+98-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:82:17-92
+98-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:82:25-89
 99            </intent-filter>
 100
 101            <meta-data
-101-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:84:13-86:72
+101-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:84:13-86:72
 102                android:name="android.accessibilityservice"
-102-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:85:17-60
+102-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:85:17-60
 103                android:resource="@xml/accessibility_service_config" />
-103-->/app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:86:17-69
+103-->/root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:86:17-69
 104        </service>
 105
 106        <provider
