@@ -1,9 +1,9 @@
 -- Merging decision tree log ---
 manifest
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:2:1-91:12
-INJECTED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:2:1-91:12
-INJECTED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:2:1-91:12
-INJECTED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:2:1-91:12
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:2:1-91:12
+INJECTED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:2:1-91:12
+INJECTED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:2:1-91:12
+INJECTED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:2:1-91:12
 MERGED from [androidx.work:work-runtime-ktx:2.9.0] /root/.gradle/caches/8.9/transforms/9644349567369bb6cbc85951582646c2/transformed/work-runtime-ktx-2.9.0/AndroidManifest.xml:17:1-22:12
 MERGED from [androidx.work:work-runtime:2.9.0] /root/.gradle/caches/8.9/transforms/70b2524456a4ba276ec97e6856b30ec0/transformed/work-runtime-2.9.0/AndroidManifest.xml:17:1-145:12
 MERGED from [androidx.hilt:hilt-navigation-compose:1.1.0] /root/.gradle/caches/8.9/transforms/56d4174d28e9f7749a9ad1d09b856533/transformed/jetified-hilt-navigation-compose-1.1.0/AndroidManifest.xml:2:1-7:12
@@ -86,148 +86,148 @@ MERGED from [androidx.tracing:tracing:1.0.0] /root/.gradle/caches/8.9/transforms
 MERGED from [androidx.exifinterface:exifinterface:1.3.6] /root/.gradle/caches/8.9/transforms/b78b76362743c0d5cd54602d23d3d195/transformed/exifinterface-1.3.6/AndroidManifest.xml:17:1-24:12
 MERGED from [com.google.dagger:dagger-lint-aar:2.50] /root/.gradle/caches/8.9/transforms/9c26bb6e837c9923f18f50503f33fd26/transformed/jetified-dagger-lint-aar-2.50/AndroidManifest.xml:16:1-19:12
 	package
-		INJECTED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml
+		INJECTED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml
 	android:versionName
-		INJECTED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml
+		INJECTED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml
 	xmlns:tools
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:3:5-51
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:3:5-51
 	android:versionCode
-		INJECTED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml
+		INJECTED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml
 	xmlns:android
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:2:11-69
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:2:11-69
 uses-permission#android.permission.INTERNET
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:6:5-67
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:6:5-67
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:6:22-64
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:6:22-64
 uses-permission#android.permission.ACCESS_NETWORK_STATE
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:7:5-79
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:7:5-79
 MERGED from [androidx.work:work-runtime:2.9.0] /root/.gradle/caches/8.9/transforms/70b2524456a4ba276ec97e6856b30ec0/transformed/work-runtime-2.9.0/AndroidManifest.xml:24:5-79
 MERGED from [androidx.work:work-runtime:2.9.0] /root/.gradle/caches/8.9/transforms/70b2524456a4ba276ec97e6856b30ec0/transformed/work-runtime-2.9.0/AndroidManifest.xml:24:5-79
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:7:22-76
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:7:22-76
 uses-permission#android.permission.FOREGROUND_SERVICE
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:8:5-77
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:8:5-77
 MERGED from [androidx.work:work-runtime:2.9.0] /root/.gradle/caches/8.9/transforms/70b2524456a4ba276ec97e6856b30ec0/transformed/work-runtime-2.9.0/AndroidManifest.xml:26:5-77
 MERGED from [androidx.work:work-runtime:2.9.0] /root/.gradle/caches/8.9/transforms/70b2524456a4ba276ec97e6856b30ec0/transformed/work-runtime-2.9.0/AndroidManifest.xml:26:5-77
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:8:22-74
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:8:22-74
 uses-permission#android.permission.FOREGROUND_SERVICE_DATA_SYNC
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:9:5-87
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:9:5-87
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:9:22-84
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:9:22-84
 uses-permission#android.permission.POST_NOTIFICATIONS
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:10:5-77
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:10:5-77
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:10:22-74
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:10:22-74
 uses-permission#android.permission.WAKE_LOCK
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:11:5-68
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:11:5-68
 MERGED from [androidx.work:work-runtime:2.9.0] /root/.gradle/caches/8.9/transforms/70b2524456a4ba276ec97e6856b30ec0/transformed/work-runtime-2.9.0/AndroidManifest.xml:23:5-68
 MERGED from [androidx.work:work-runtime:2.9.0] /root/.gradle/caches/8.9/transforms/70b2524456a4ba276ec97e6856b30ec0/transformed/work-runtime-2.9.0/AndroidManifest.xml:23:5-68
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:11:22-65
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:11:22-65
 uses-permission#android.permission.CAMERA
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:12:5-65
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:12:5-65
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:12:22-62
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:12:22-62
 uses-permission#android.permission.RECORD_AUDIO
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:13:5-71
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:13:5-71
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:13:22-68
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:13:22-68
 uses-permission#android.permission.READ_EXTERNAL_STORAGE
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:14:5-15:38
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:14:5-15:38
 	android:maxSdkVersion
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:15:9-35
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:15:9-35
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:14:22-77
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:14:22-77
 uses-permission#android.permission.WRITE_EXTERNAL_STORAGE
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:16:5-18:40
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:16:5-18:40
 	android:maxSdkVersion
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:17:9-35
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:17:9-35
 	tools:ignore
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:18:9-37
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:18:9-37
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:16:22-78
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:16:22-78
 uses-permission#android.permission.READ_MEDIA_IMAGES
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:19:5-76
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:19:5-76
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:19:22-73
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:19:22-73
 uses-permission#android.permission.READ_MEDIA_AUDIO
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:20:5-75
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:20:5-75
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:20:22-72
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:20:22-72
 uses-permission#android.permission.READ_MEDIA_VIDEO
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:21:5-75
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:21:5-75
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:21:22-72
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:21:22-72
 uses-permission#android.permission.BLUETOOTH
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:22:5-68
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:22:5-68
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:22:22-65
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:22:22-65
 uses-permission#android.permission.BLUETOOTH_ADMIN
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:23:5-74
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:23:5-74
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:23:22-71
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:23:22-71
 uses-permission#android.permission.BLUETOOTH_CONNECT
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:24:5-76
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:24:5-76
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:24:22-73
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:24:22-73
 uses-permission#android.permission.ACCESS_WIFI_STATE
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:25:5-76
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:25:5-76
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:25:22-73
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:25:22-73
 uses-permission#android.permission.CHANGE_WIFI_STATE
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:26:5-76
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:26:5-76
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:26:22-73
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:26:22-73
 uses-permission#android.permission.SEND_SMS
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:27:5-67
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:27:5-67
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:27:22-64
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:27:22-64
 uses-permission#android.permission.READ_SMS
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:28:5-67
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:28:5-67
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:28:22-64
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:28:22-64
 uses-permission#android.permission.CALL_PHONE
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:29:5-69
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:29:5-69
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:29:22-66
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:29:22-66
 uses-permission#android.permission.FLASHLIGHT
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:30:5-69
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:30:5-69
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:30:22-66
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:30:22-66
 uses-permission#android.permission.VIBRATE
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:31:5-66
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:31:5-66
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:31:22-63
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:31:22-63
 uses-permission#android.permission.ACCESSIBILITY_SERVICE
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:34:5-80
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:34:5-80
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:34:22-77
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:34:22-77
 uses-permission#android.permission.READ_NOTIFICATIONS
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:35:5-77
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:35:5-77
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:35:22-74
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:35:22-74
 uses-permission#android.permission.WRITE_SETTINGS
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:36:5-37:47
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:36:5-37:47
 	tools:ignore
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:37:9-44
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:37:9-44
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:36:22-70
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:36:22-70
 uses-permission#android.permission.ACCESS_FINE_LOCATION
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:38:5-79
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:38:5-79
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:38:22-76
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:38:22-76
 uses-permission#android.permission.ACCESS_COARSE_LOCATION
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:39:5-81
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:39:5-81
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:39:22-78
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:39:22-78
 uses-permission#android.permission.RECEIVE_SMS
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:40:5-70
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:40:5-70
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:40:22-67
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:40:22-67
 application
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:42:5-89:19
-INJECTED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:42:5-89:19
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:42:5-89:19
+INJECTED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:42:5-89:19
 MERGED from [androidx.work:work-runtime:2.9.0] /root/.gradle/caches/8.9/transforms/70b2524456a4ba276ec97e6856b30ec0/transformed/work-runtime-2.9.0/AndroidManifest.xml:28:5-143:19
 MERGED from [androidx.work:work-runtime:2.9.0] /root/.gradle/caches/8.9/transforms/70b2524456a4ba276ec97e6856b30ec0/transformed/work-runtime-2.9.0/AndroidManifest.xml:28:5-143:19
 MERGED from [androidx.compose.ui:ui-tooling-android:1.6.1] /root/.gradle/caches/8.9/transforms/ef42058f05e3abbeca8100f723481000/transformed/jetified-ui-tooling-release/AndroidManifest.xml:22:5-26:19
@@ -249,73 +249,73 @@ MERGED from [androidx.profileinstaller:profileinstaller:1.3.1] /root/.gradle/cac
 MERGED from [androidx.startup:startup-runtime:1.1.1] /root/.gradle/caches/8.9/transforms/ab328fe7915298d1e46761fddf4c08ab/transformed/jetified-startup-runtime-1.1.1/AndroidManifest.xml:25:5-31:19
 MERGED from [androidx.startup:startup-runtime:1.1.1] /root/.gradle/caches/8.9/transforms/ab328fe7915298d1e46761fddf4c08ab/transformed/jetified-startup-runtime-1.1.1/AndroidManifest.xml:25:5-31:19
 	android:extractNativeLibs
-		INJECTED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml
+		INJECTED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml
 	android:appComponentFactory
 		ADDED from [androidx.core:core:1.12.0] /root/.gradle/caches/8.9/transforms/727ab85211d17a24aee7d816f7a926da/transformed/core-1.12.0/AndroidManifest.xml:28:18-86
 	android:supportsRtl
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:50:9-35
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:50:9-35
 	android:label
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:48:9-41
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:48:9-41
 	android:fullBackupContent
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:46:9-54
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:46:9-54
 	android:roundIcon
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:49:9-54
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:49:9-54
 	tools:targetApi
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:52:9-29
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:52:9-29
 	android:icon
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:47:9-43
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:47:9-43
 	android:allowBackup
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:44:9-35
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:44:9-35
 	android:theme
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:51:9-54
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:51:9-54
 	android:dataExtractionRules
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:45:9-65
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:45:9-65
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:43:9-37
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:43:9-37
 activity#com.aigallery.rewrite.MainActivity
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:54:9-63:20
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:54:9-63:20
 	android:windowSoftInputMode
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:58:13-55
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:58:13-52
 	android:exported
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:56:13-36
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:56:13-36
 	android:theme
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:57:13-65
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:57:13-65
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:55:13-41
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:55:13-41
 intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:59:13-62:29
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:59:13-62:29
 action#android.intent.action.MAIN
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:60:17-69
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:60:17-69
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:60:25-66
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:60:25-66
 category#android.intent.category.LAUNCHER
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:61:17-77
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:61:17-77
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:61:27-74
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:61:27-74
 service#com.aigallery.rewrite.devicecontrol.AccessibilityServiceImpl
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:77:9-87:19
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:77:9-87:19
 	android:exported
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:79:13-37
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:79:13-37
 	android:permission
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:80:13-79
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:80:13-79
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:78:13-67
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:78:13-67
 intent-filter#action:name:android.accessibilityservice.AccessibilityService
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:81:13-83:29
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:81:13-83:29
 action#android.accessibilityservice.AccessibilityService
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:82:17-92
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:82:17-92
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:82:25-89
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:82:25-89
 meta-data#android.accessibilityservice
-ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:84:13-86:72
+ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:84:13-86:72
 	android:resource
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:86:17-69
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:86:17-69
 	android:name
-		ADDED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:85:17-60
+		ADDED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml:85:17-60
 uses-sdk
-INJECTED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml reason: use-sdk injection requested
-INJECTED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml
-INJECTED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml
+INJECTED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml
+INJECTED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml
 MERGED from [androidx.work:work-runtime-ktx:2.9.0] /root/.gradle/caches/8.9/transforms/9644349567369bb6cbc85951582646c2/transformed/work-runtime-ktx-2.9.0/AndroidManifest.xml:20:5-44
 MERGED from [androidx.work:work-runtime-ktx:2.9.0] /root/.gradle/caches/8.9/transforms/9644349567369bb6cbc85951582646c2/transformed/work-runtime-ktx-2.9.0/AndroidManifest.xml:20:5-44
 MERGED from [androidx.work:work-runtime:2.9.0] /root/.gradle/caches/8.9/transforms/70b2524456a4ba276ec97e6856b30ec0/transformed/work-runtime-2.9.0/AndroidManifest.xml:21:5-44
@@ -479,9 +479,9 @@ MERGED from [androidx.exifinterface:exifinterface:1.3.6] /root/.gradle/caches/8.
 MERGED from [com.google.dagger:dagger-lint-aar:2.50] /root/.gradle/caches/8.9/transforms/9c26bb6e837c9923f18f50503f33fd26/transformed/jetified-dagger-lint-aar-2.50/AndroidManifest.xml:18:3-42
 MERGED from [com.google.dagger:dagger-lint-aar:2.50] /root/.gradle/caches/8.9/transforms/9c26bb6e837c9923f18f50503f33fd26/transformed/jetified-dagger-lint-aar-2.50/AndroidManifest.xml:18:3-42
 	android:targetSdkVersion
-		INJECTED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml
+		INJECTED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml
 	android:minSdkVersion
-		INJECTED from /app/data/所有对话/主对话/AIGallery-Rewrite/app/src/main/AndroidManifest.xml
+		INJECTED from /root/AIGallery-Rewrite/app/src/main/AndroidManifest.xml
 uses-permission#android.permission.RECEIVE_BOOT_COMPLETED
 ADDED from [androidx.work:work-runtime:2.9.0] /root/.gradle/caches/8.9/transforms/70b2524456a4ba276ec97e6856b30ec0/transformed/work-runtime-2.9.0/AndroidManifest.xml:25:5-81
 	android:name

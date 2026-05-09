@@ -1,7 +1,6 @@
 package com.aigallery.rewrite.download
 
 import android.content.Context
-import android.util.Log
 import com.aigallery.rewrite.util.FileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -101,26 +100,15 @@ class MnnModelDownloader @Inject constructor(
     private val _downloadStates = MutableStateFlow<Map<String, MnnDownloadState>>(emptyMap())
     val downloadStates: StateFlow<Map<String, MnnDownloadState>> = _downloadStates.asStateFlow()
     
-    // MNN 模型 ID 映射（modelId -> ModelScope 路径）
+        // MNN 模型 ID 映射（modelId -> ModelScope 路径）
     // ModelScope 路径格式: MNN/ModelName
+    // Bug 2 修复：补全所有在AIModel.kt中定义的MNN模型映射
     private val mnnModelPaths = mapOf(
-        // Qwen 2.5 系列
-        "qwen2.5-0.5b-mnn" to "MNN/Qwen2.5-0.5B-Instruct-MNN",
-        "qwen2.5-1.5b-mnn" to "MNN/Qwen2.5-1.5B-Instruct-MNN",
-        "qwen2.5-3b-mnn" to "MNN/Qwen2.5-3B-Instruct-MNN",
-        "qwen2.5-7b-mnn" to "MNN/Qwen2.5-7B-Instruct-MNN",
-        
-        // Qwen 3.5 系列
+        // ============ Qwen 3.5 系列 ============
         "qwen3.5-0.8b-mnn" to "MNN/Qwen3.5-0.8B-MNN",
         "qwen3.5-2b-mnn" to "MNN/Qwen3.5-2B-MNN",
         "qwen3.5-4b-mnn" to "MNN/Qwen3.5-4B-MNN",
-        "qwen3.5-9b-mnn" to "MNN/Qwen3.5-9B-MNN",
-        
-        // Qwen2-VL 多模态系列
-        "qwen2-vl-2b-mnn" to "MNN/Qwen2-VL-2B-Instruct-MNN",
-        
-        // Qwen2.5-Omni 全模态系列
-        "qwen2.5-omni-3b-mnn" to "MNN/Qwen2.5-Omni-3B-MNN"
+        "qwen3.5-9b-mnn" to "MNN/Qwen3.5-9B-MNN"
     )
     
     /**
@@ -167,10 +155,12 @@ class MnnModelDownloader @Inject constructor(
      * @param modelId 模型 ID
      * @param onProgress 进度回调 (current, total, fileName)
      */
+    // Bug5修复: 添加isMultimodal参数，只有多模态模型才下载visual相关文件
     suspend fun downloadModel(
         modelId: String,
         onProgress: (current: Int, total: Int, fileName: String) -> Unit,
-        onByteProgress: (Float) -> Unit = {}
+        onByteProgress: (Float) -> Unit = {},
+        isMultimodal: Boolean = false  // Bug5修复: 默认为false，不下载visual文件
     ): Result<Unit> = withContext(Dispatchers.IO) {
         val modelPath = mnnModelPaths[modelId] 
             ?: return@withContext Result.failure(IllegalArgumentException("Unknown MNN model: $modelId"))
@@ -300,9 +290,23 @@ class MnnModelDownloader @Inject constructor(
             
             FileLogger.i(TAG, "downloadModel: $modelId REQUIRED FILES COMPLETED - Model is now READY")
             
-            // 第二阶段：后台异步下载可选文件（不阻塞）
-            launch(Dispatchers.IO) {
-                downloadOptionalFilesInBackground(modelId, modelPath, targetDir)
+            // Bug5修复: 只有多模态模型才下载可选文件
+            if (isMultimodal) {
+                // 第二阶段：后台异步下载可选文件（不阻塞）
+                launch(Dispatchers.IO) {
+                    downloadOptionalFilesInBackground(modelId, modelPath, targetDir)
+                }
+            } else {
+                // 纯文本模型：直接标记为COMPLETED
+                updateState(modelId, MnnDownloadState(
+                    modelId = modelId,
+                    status = MnnDownloadStatus.COMPLETED,
+                    completedFiles = requiredCount,
+                    totalFiles = requiredCount,
+                    totalBytes = REQUIRED_TOTAL_SIZE,
+                    downloadedBytes = completedRequiredBytes
+                ))
+                FileLogger.i(TAG, "downloadModel: $modelId is text-only model, skipping optional files (isMultimodal=false)")
             }
             
             // 立即返回成功，因为必需文件已经下载完成

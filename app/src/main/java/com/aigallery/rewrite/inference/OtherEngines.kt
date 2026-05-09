@@ -1,6 +1,6 @@
 package com.aigallery.rewrite.inference
 
-import android.util.Log
+import com.aigallery.rewrite.util.FileLogger
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -15,7 +15,7 @@ class OnnxInferenceEngine : InferenceEngine {
         private set
 
     override suspend fun initialize(modelPath: String, config: InferenceConfig): Boolean {
-        Log.d("OnnxInferenceEngine", "ONNX Runtime - placeholder implementation")
+        FileLogger.d("OnnxInferenceEngine", "ONNX Runtime - placeholder implementation")
         delay(100)
         isInitialized = true
         return true
@@ -66,7 +66,7 @@ class TFLiteInferenceEngine : InferenceEngine {
         private set
 
     override suspend fun initialize(modelPath: String, config: InferenceConfig): Boolean {
-        Log.d("TFLiteInferenceEngine", "TFLite - placeholder implementation")
+        FileLogger.d("TFLiteInferenceEngine", "TFLite - placeholder implementation")
         delay(100)
         isInitialized = true
         return true
@@ -117,7 +117,7 @@ class GgmlInferenceEngine : InferenceEngine {
         private set
 
     override suspend fun initialize(modelPath: String, config: InferenceConfig): Boolean {
-        Log.d("GgmlInferenceEngine", "GGML - placeholder implementation")
+        FileLogger.d("GgmlInferenceEngine", "GGML - placeholder implementation")
         delay(100)
         isInitialized = true
         return true

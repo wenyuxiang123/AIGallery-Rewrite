@@ -7,7 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
 import android.os.Environment
-import android.util.Log
+import com.aigallery.rewrite.util.FileLogger
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,7 +55,7 @@ class ModelDownloadManager @Inject constructor(
             if (intent?.action == DownloadManager.ACTION_DOWNLOAD_COMPLETE) {
                 val downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
                 if (downloadId != -1L) {
-                    Log.d(TAG, "Download completed: $downloadId")
+                    FileLogger.d(TAG, "Download completed: $downloadId")
                     updateProgress()
                 }
             }
@@ -87,7 +87,7 @@ class ModelDownloadManager @Inject constructor(
         val url = downloadUrl ?: generateDownloadUrl(modelId, source)
         val fileName = "$modelId.gguf" // 使用 gguf 扩展名
 
-        Log.d(TAG, "Starting download: modelId=$modelId, url=$url, fileName=$fileName")
+        FileLogger.d(TAG, "Starting download: modelId=$modelId, url=$url, fileName=$fileName")
 
         // 创建下载请求
         val request = DownloadManager.Request(Uri.parse(url))
@@ -109,9 +109,9 @@ class ModelDownloadManager @Inject constructor(
                 status = DownloadStatus.PENDING,
                 downloadId = downloadId
             ))
-            Log.d(TAG, "Download started with ID: $downloadId")
+            FileLogger.d(TAG, "Download started with ID: $downloadId")
         } else {
-            Log.e(TAG, "Failed to start download")
+            FileLogger.e(TAG, "Failed to start download")
         }
 
         return downloadId
@@ -158,7 +158,7 @@ class ModelDownloadManager @Inject constructor(
                 status = DownloadStatus.CANCELLED,
                 downloadId = downloadId
             ))
-            Log.d(TAG, "Download cancelled: modelId=$modelId")
+            FileLogger.d(TAG, "Download cancelled: modelId=$modelId")
         }
     }
 
@@ -214,7 +214,7 @@ class ModelDownloadManager @Inject constructor(
 
                 val progress = if (bytesTotal > 0) bytesDownloaded.toFloat() / bytesTotal.toFloat() else 0f
 
-                Log.d(TAG, "Update progress: modelId=$modelId, status=$downloadStatus, progress=$progress, downloaded=$bytesDownloaded, total=$bytesTotal")
+                FileLogger.d(TAG, "Update progress: modelId=$modelId, status=$downloadStatus, progress=$progress, downloaded=$bytesDownloaded, total=$bytesTotal")
 
                 updateDownloadState(modelId, DownloadState(
                     modelId = modelId,
@@ -233,7 +233,7 @@ class ModelDownloadManager @Inject constructor(
                 }
             } else {
                 // Cursor 为空，可能下载已从系统移除
-                Log.w(TAG, "Cursor empty for downloadId=$downloadId")
+                FileLogger.w(TAG, "Cursor empty for downloadId=$downloadId")
                 downloadIdToModel.remove(downloadId)
             }
 
@@ -267,15 +267,15 @@ class ModelDownloadManager @Inject constructor(
                 
                 // 删除原始文件
                 if (sourceFile.delete()) {
-                    Log.d(TAG, "Model $modelId moved to app directory: ${targetFile.absolutePath}")
+                    FileLogger.d(TAG, "Model $modelId moved to app directory: ${targetFile.absolutePath}")
                 } else {
-                    Log.w(TAG, "Failed to delete source file: ${sourceFile.absolutePath}")
+                    FileLogger.w(TAG, "Failed to delete source file: ${sourceFile.absolutePath}")
                 }
             } else {
-                Log.w(TAG, "Source file not found: ${sourceFile.absolutePath}")
+                FileLogger.w(TAG, "Source file not found: ${sourceFile.absolutePath}")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to move model to app directory", e)
+            FileLogger.e(TAG, "Failed to move model to app directory", e)
         }
     }
 
@@ -351,7 +351,7 @@ class ModelDownloadManager @Inject constructor(
             val file = File(modelDir, "$modelId.$ext")
             if (file.exists()) {
                 deleted = file.delete() || deleted
-                Log.d(TAG, "Deleted model file: ${file.absolutePath}")
+                FileLogger.d(TAG, "Deleted model file: ${file.absolutePath}")
             }
         }
         

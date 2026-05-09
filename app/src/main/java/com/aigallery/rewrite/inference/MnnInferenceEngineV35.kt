@@ -1,7 +1,6 @@
 package com.aigallery.rewrite.inference
 
 import android.content.Context
-import android.util.Log
 import com.aigallery.rewrite.util.FileLogger
 import com.localai.server.engine.InferenceStats
 import com.localai.server.engine.LlamaEngineMnn35
@@ -33,7 +32,7 @@ class MnnInferenceEngineV35(
         // 默认配置
         const val DEFAULT_MAX_TOKENS = 512
         const val DEFAULT_CONTEXT_LENGTH = 2048
-        const val DEFAULT_THREADS = 0  // 传0让C++层自动检测大核数
+        const val DEFAULT_THREADS = 0
     }
     
     // MNN 3.5.0 引擎实例

@@ -1,7 +1,6 @@
 package com.localai.server.engine
 
 import android.content.Context
-import android.util.Log
 import com.aigallery.rewrite.util.FileLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -10,9 +9,11 @@ import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 import java.io.File
+import android.system.Os
 
 /**
  * MNN LLM 推理引擎 JNI 桥接类
@@ -31,7 +32,12 @@ class LlamaEngine private constructor(
         
         // 库加载状态
         private var librariesLoaded = false
+        private var qnnAvailable = false
         private var libraryLoadError: String? = null
+        
+        // Native日志路径设置（静态方法，库加载后立即可用）
+        @JvmStatic
+        private external fun nativeSetLogFilePath(path: String)
         
         /**
          * 获取单例实例
@@ -53,9 +59,16 @@ class LlamaEngine private constructor(
          * 加载 MNN native 库
          * 必须在调用其他 native 方法前调用
          * 
+         * 关键：加载顺序参考 local-ai-server v3 项目
+         * 先加载 localai-jni，它的 DT_NEEDED 会自动拉起 llm → MNN_Express → MNN
+         * 这样所有库在同一个 dlopen 作用域内，C++ 虚函数表可以正确解析
+         * 
+         * 如果反过来先加载 MNN，再加载 localai-jni，每个 System.loadLibrary 
+         * 创建独立的 RTLD_LOCAL 作用域，跨 so 的 C++ 符号不可见，导致推理输出乱码/循环
+         * 
          * @return 是否加载成功
          */
-        fun loadLibraries(): Boolean {
+        fun loadLibraries(context: Context): Boolean {
             if (librariesLoaded) {
                 return true
             }
@@ -63,21 +76,14 @@ class LlamaEngine private constructor(
             try {
                 FileLogger.d(TAG, "loadLibraries: starting library load")
                 
-                // 按正确顺序加载库（依赖库必须先加载）
-                // localai-jni 依赖 llm -> MNN_Express -> MNN -> c++_shared
+                // MNN_SEP_BUILD=OFF: 所有代码（核心+Express+LLM）编译进一个libMNN.so
+                // 先加载 localai-jni，其 DT_NEEDED 自动拉起 libMNN.so
+                System.loadLibrary("localai-jni")
+                FileLogger.d(TAG, "loadLibraries: localai-jni loaded (DT_NEEDED pulls in libMNN.so)")
                 
-                // 加载基础库
-                System.loadLibrary("c++_shared")
-                FileLogger.d(TAG, "loadLibraries: c++_shared loaded")
-                
+                // 冗余加载（已是同一个 dlopen 作用域，不会重复加载）
                 System.loadLibrary("MNN")
-                FileLogger.d(TAG, "loadLibraries: MNN loaded")
-                
-                System.loadLibrary("MNN_Express")
-                FileLogger.d(TAG, "loadLibraries: MNN_Express loaded")
-                
-                System.loadLibrary("llm")
-                FileLogger.d(TAG, "loadLibraries: llm loaded")
+                FileLogger.d(TAG, "loadLibraries: MNN loaded (includes Express+LLM, SEP_BUILD=OFF)")
                 
                 // 可选库
                 try {
@@ -87,12 +93,71 @@ class LlamaEngine private constructor(
                     FileLogger.w(TAG, "loadLibraries: MNNOpenCV not available (optional)")
                 }
                 
-                // JNI 桥接库最后加载（依赖所有其他库）
-                System.loadLibrary("localai-jni")
-                FileLogger.d(TAG, "loadLibraries: localai-jni loaded")
-                
+                // FastRPC + QNN 逐步加载：每一步失败都会跳过后续
+                // Step 1: FastRPC（V68Stub的DT_NEEDED依赖，Android 14 namespace隔离需打包进APK）
+                try {
+                    System.loadLibrary("cdsprpc")
+                    FileLogger.d(TAG, "loadLibraries: cdsprpc loaded (FastRPC for QNN)")
+                    qnnAvailable = true  // 前置条件满足，可以尝试QNN
+                } catch (e: UnsatisfiedLinkError) {
+                    FileLogger.w(TAG, "loadLibraries: cdsprpc not available, QNN disabled: ${e.message}")
+                    qnnAvailable = false
+                }
+
+                // Step 2: QNN/NPU运行时库（必须在MNN load()之前加载，否则dlopen找不到）
+                if (qnnAvailable) {
+                    try {
+                        System.loadLibrary("QnnSystem")
+                        FileLogger.d(TAG, "loadLibraries: QnnSystem loaded (QNN/NPU)")
+                        System.loadLibrary("QnnHtp")
+                        FileLogger.d(TAG, "loadLibraries: QnnHtp loaded (QNN/NPU)")
+                        System.loadLibrary("QnnHtpPrepare")
+                        FileLogger.d(TAG, "loadLibraries: QnnHtpPrepare loaded (QNN/NPU)")
+                        System.loadLibrary("QnnHtpV68Stub")
+                        FileLogger.d(TAG, "loadLibraries: QnnHtpV68Stub loaded (QNN/NPU Hexagon V68)")
+                        // V68Skel is DSP6 binary (32-bit), Android linker rejects dlopen
+                        // It gets deployed in deployQnnSkel() after library load completes
+                        FileLogger.i(TAG, "loadLibraries: QNN/NPU libraries loaded (Skel pending deployment)")
+                    } catch (e: UnsatisfiedLinkError) {
+                        FileLogger.w(TAG, "loadLibraries: QNN libraries not available (NPU disabled): ${e.message}")
+                        qnnAvailable = false
+                    }
+                }
                 
                 librariesLoaded = true
+                
+                // Deploy QNN V68Skel from assets to cache (DSP6 binary, can't use System.loadLibrary)
+                if (qnnAvailable) {
+                    try {
+                        val skelDir = File(context.cacheDir, "qnn")
+                        skelDir.mkdirs()
+                        val skelFile = File(skelDir, "libQnnHtpV68Skel.so")
+                        if (!skelFile.exists()) {
+                            context.assets.open("qnn/libQnnHtpV68Skel.so").use { input ->
+                                skelFile.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                        }
+                        Os.setenv("ADSP_LIBRARY_PATH", skelDir.absolutePath, true)
+                        FileLogger.d(TAG, "loadLibraries: QnnHtpV68Skel deployed to ${skelFile.absolutePath}")
+                    } catch (e: Exception) {
+                        FileLogger.w(TAG, "loadLibraries: QnnHtpV68Skel deploy failed: ${e.message}")
+                    }
+                    // Disable QNN for now: Hexagon V68 (778G Plus) cannot handle LLM inference.
+                    // llm->load() with backend_type=5 hangs silently - NPU graph compile fails
+                    // for INT4 LLM ops. Re-enable only on devices with V73+ (8Gen2+).
+                    qnnAvailable = false
+                    FileLogger.w(TAG, "loadLibraries: QNN disabled - V68 DSP not suitable for LLM inference")
+                }
+                
+                // 库加载成功后立即设置native层日志路径
+                try {
+                    nativeSetLogFilePath(FileLogger.getLogFilePath())
+                    FileLogger.d(TAG, "loadLibraries: native log path set")
+                } catch (e: Exception) {
+                    FileLogger.w(TAG, "loadLibraries: failed to set native log path: ${e.message}")
+                }
                 FileLogger.i(TAG, "loadLibraries: all MNN libraries loaded successfully")
                 return true
                 
@@ -156,11 +221,10 @@ class LlamaEngine private constructor(
      * 
      * @param configPath 模型配置目录路径
      * @param nCtx 上下文窗口大小
-     * @param nThreads 推理线程数（传0让C++层自动检测）
-     * @param cacheDir 缓存目录路径
+     * @param nThreads 推理线程数
      * @return 是否加载成功
      */
-    external fun nativeLoadModel(configPath: String, nCtx: Int, nThreads: Int, cacheDir: String): Boolean
+    external fun nativeLoadModel(configPath: String, nCtx: Int, nThreads: Int, cacheDir: String, useQnn: Boolean): Boolean
     
     /**
      * 卸载模型
@@ -200,12 +264,14 @@ class LlamaEngine private constructor(
      * @param topP Top-P 采样
      * @return 流式结果（每个 token 用换行分隔）
      */
+    // Bug7修复: 添加useGPU参数
     external fun nativeGenerateStream(
         prompt: String,
         maxTokens: Int,
         temperature: Float,
         topK: Int,
-        topP: Float
+        topP: Float,
+        useGPU: Boolean
     ): String
     
     /**
@@ -236,6 +302,8 @@ class LlamaEngine private constructor(
     /**
      * 获取最后错误信息
      */
+
+
     external fun nativeGetLastError(): String
     
     // ==================== Kotlin 封装方法 ====================
@@ -245,7 +313,7 @@ class LlamaEngine private constructor(
      * 
      * @param path 模型目录路径
      * @param nCtx 上下文窗口大小，默认 2048
-     * @param nThreads 推理线程数，默认0让C++层自动检测
+     * @param nThreads 推理线程数，默认 4
      * @return 是否加载成功
      */
     fun loadModel(path: String, nCtx: Int = 2048, nThreads: Int = 0): Boolean {
@@ -255,6 +323,12 @@ class LlamaEngine private constructor(
             FileLogger.e(TAG, "loadModel: libraries not loaded")
             _lastError.value = "Native libraries not loaded"
             return false
+        }
+        
+        // 先卸载旧模型，避免切换模型时仍使用旧的推理引擎
+        if (_isModelLoaded.value) {
+            FileLogger.d(TAG, "loadModel: unloading previous model before loading new one")
+            unloadModel()
         }
         
         try {
@@ -293,8 +367,9 @@ class LlamaEngine private constructor(
                 FileLogger.d(TAG, "loadModel: created app cache dir ${appCacheDir.absolutePath}")
             }
             
-            // 调用 native 加载（传入 cacheDir 让 C++ 层可以正确设置 tmp_path）
-            val success = nativeLoadModel(nativePath, nCtx, nThreads, appCacheDir.absolutePath)
+            // 调用 native 加载
+            val cacheDirPath = appCacheDir.absolutePath
+            val success = nativeLoadModel(nativePath, nCtx, nThreads, cacheDirPath, qnnAvailable)
             
             if (success) {
                 _isModelLoaded.value = true
@@ -372,26 +447,38 @@ class LlamaEngine private constructor(
      * 使用 callbackFlow 实现真正的流式输出
      * native 层通过 JNI 回调将每个 token 传递给 Kotlin 层
      */
+    // Bug7修复: 添加useGPU参数，默认为false（避免GPU Vulkan性能问题）
     fun generateStream(
         prompt: String,
         maxTokens: Int = 512,
         temperature: Float = 0.7f,
         topK: Int = 40,
-        topP: Float = 0.9f
+        topP: Float = 0.9f,
+        useGPU: Boolean = false  // Bug7修复: 默认false，避免GPU offload开销
     ): Flow<String> {
         FileLogger.d(TAG, "generateStream: prompt len=${prompt.length}")
         val startTime = System.currentTimeMillis()
+        // Bug1修复: 每次推理前reset()清理KV cache，避免前几次推理乱码
+        resetConversation()
         
         return callbackFlow {
+            // 大buffer防止JNI回调线程上trySend因buffer满导致StackOverflow
+            // 默认Channel.BUFFERED=64可能不够，显式设256
             var totalTokens = 0
             
             // 注册 token 回调，将每个 token 发送到 Flow
             val callback = object : TokenCallback {
+                @Volatile private var inCallback = false
                 override fun onToken(token: String) {
-                    trySend(token)
-                    totalTokens++
-                    // 同时调用外部回调
-                    this@LlamaEngine.tokenCallback?.onToken(token)
+                    // 防止JNI回调重入导致StackOverflow
+                    if (inCallback) return
+                    inCallback = true
+                    try {
+                        trySend(token)
+                        totalTokens++
+                    } finally {
+                        inCallback = false
+                    }
                 }
             }
             
@@ -401,7 +488,8 @@ class LlamaEngine private constructor(
                     setTokenCallback(callback)
                     
                     // 调用 native 流式生成
-                    val streamResult = nativeGenerateStream(prompt, maxTokens, temperature, topK, topP)
+                    // Bug7修复: 传入useGPU参数
+                    val streamResult = nativeGenerateStream(prompt, maxTokens, temperature, topK, topP, useGPU)
                     
                     // 如果 native 层没有通过回调返回（兼容旧实现），
                     // 则按换行分隔后逐个 emit
@@ -410,7 +498,6 @@ class LlamaEngine private constructor(
                         for (token in tokens) {
                             trySend(token)
                             totalTokens++
-                            this@LlamaEngine.tokenCallback?.onToken(token)
                         }
                     }
                     
@@ -438,7 +525,7 @@ class LlamaEngine private constructor(
             }
             
             close()
-        }
+        }.buffer(256)
     }
     
     /**
