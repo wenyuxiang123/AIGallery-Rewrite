@@ -279,6 +279,9 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
             + ",\"kvcache_mmap\":true}";
         fileLog("nativeLoadModel: QNN not available, using CPU backend");
     }
+    fileLog("nativeLoadModel: set_config: %s", cfg.c_str());
+    llm->set_config(cfg);
+
     std::string cacheDirStr;
     if (jCacheDir) {
         const char* cd = env->GetStringUTFChars(jCacheDir, nullptr);

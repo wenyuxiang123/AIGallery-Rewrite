@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 import java.io.File
+import android.os.Os
 
 /**
  * MNN LLM 推理引擎 JNI 桥接类
@@ -114,8 +115,26 @@ class LlamaEngine private constructor(
                         FileLogger.d(TAG, "loadLibraries: QnnHtpPrepare loaded (QNN/NPU)")
                         System.loadLibrary("QnnHtpV68Stub")
                         FileLogger.d(TAG, "loadLibraries: QnnHtpV68Stub loaded (QNN/NPU Hexagon V68)")
-                        System.loadLibrary("QnnHtpV68Skel")
-                        FileLogger.d(TAG, "loadLibraries: QnnHtpV68Skel loaded (QNN/NPU Hexagon V68 Skel)")
+                        // V68Skel is DSP6 binary (32-bit), Android linker rejects it
+                        // Copy from assets to cache dir and set ADSP_LIBRARY_PATH so QNN Stub finds it
+                        try {
+                            val skelDir = File(context.cacheDir, "qnn")
+                            skelDir.mkdirs()
+                            val skelFile = File(skelDir, "libQnnHtpV68Skel.so")
+                            if (!skelFile.exists()) {
+                                context.assets.open("qnn/libQnnHtpV68Skel.so").use { input ->
+                                    skelFile.outputStream().use { output ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                            }
+                            // Set ADSP_LIBRARY_PATH so QNN HTP stub can locate the Skel binary
+                            // This env var tells the FastRPC/CDSP where to find DSP executables
+                            Os.setenv("ADSP_LIBRARY_PATH", skelDir.absolutePath, true)
+                            FileLogger.d(TAG, "loadLibraries: QnnHtpV68Skel deployed to ${skelFile.absolutePath}")
+                        } catch (e: Exception) {
+                            FileLogger.w(TAG, "loadLibraries: QnnHtpV68Skel deploy failed: ${e.message}")
+                        }
                         FileLogger.i(TAG, "loadLibraries: QNN/NPU fully available, will use NPU backend")
                     } catch (e: UnsatisfiedLinkError) {
                         FileLogger.w(TAG, "loadLibraries: QNN libraries not available (NPU disabled): ${e.message}")
