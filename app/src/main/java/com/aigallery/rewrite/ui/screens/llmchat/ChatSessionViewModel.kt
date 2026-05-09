@@ -266,45 +266,53 @@ class ChatSessionViewModel @Inject constructor(
                         s.copy(messages = s.messages.map { if (it.id == aiMessageId) it.copy(content = "") else it })
                     }
                     
-                    val prompt = buildPrompt(cleanedMessage)
+                    val fullPrompt = buildPrompt(cleanedMessage)
+                    var tokenBuffer = ""
+                    var inThinkingBlock = false
+                    var thinkingBlockChars = 0
                     
-                    inferenceEngine.generateStream(prompt) { token, isEnd ->
-                        if (!isEnd) {
-                            // 解析 thinking block
-                            var inThinkingBlock = false
-                            var thinkingBlockChars = 0
-                            var tokenBuffer = token
-                            
-                            for (char in token) {
-                                if (char == '<') {
-                                    inThinkingBlock = true
-                                    thinkingBlockChars = 0
-                                } else if (char == '>') {
-                                    inThinkingBlock = false
-                                    thinkingBlockChars = 0
-                                    // 不输出 buffer 内容，让模型继续生成下一个 token
-                                } else if (inThinkingBlock) {
-                                    thinkingBlockChars++
-                                    // 安全限制
-                                    if (thinkingBlockChars > MAX_THINKING_BLOCK_CHARS) {
-                                        inThinkingBlock = false
-                                        thinkingBlockChars = 0
-                                    }
-                                }
-                                
-                                // 只在非thinking块时输出
-                                if (!inThinkingBlock && tokenBuffer.isNotEmpty()) {
-                                    updateStreamingMessage(aiMessageId, tokenBuffer)
-                                    tokenCount++
-                                    tokenBuffer = ""
-                                }
+                    inferenceEngine.inferStream(
+                        prompt = fullPrompt,
+                        config = InferenceConfig(
+                            maxLength = 2048,
+                            temperature = 0.7f,
+                            topK = 40,
+                            topP = 0.9f,
+                            numThreads = 0,
+                            repeatPenalty = 1.2f
+                        )
+                    ).collect { token ->
+                        tokenBuffer += token
+                        
+                        if (tokenBuffer.contains("<think")) {
+                            inThinkingBlock = true
+                            tokenBuffer = ""
+                            thinkingBlockChars = 0
+                        }
+                        
+                        if (inThinkingBlock && tokenBuffer.contains(">")) {
+                            inThinkingBlock = false
+                            thinkingBlockChars = 0
+                            tokenBuffer = ""
+                        }
+                        
+                        if (inThinkingBlock) {
+                            thinkingBlockChars += token.length
+                            if (thinkingBlockChars > MAX_THINKING_BLOCK_CHARS) {
+                                inThinkingBlock = false
+                                thinkingBlockChars = 0
+                                tokenBuffer = ""
                             }
-                            
-                            if (tokenCount % 20 == 0) {
-                                FileLogger.d(TAG, "sendMessage: streamed $tokenCount tokens")
-                            }
-                        } else {
-                            // 流结束
+                        }
+                        
+                        if (!inThinkingBlock && tokenBuffer.isNotEmpty()) {
+                            updateStreamingMessage(aiMessageId, tokenBuffer)
+                            tokenCount++
+                            tokenBuffer = ""
+                        }
+                        
+                        if (tokenCount % 20 == 0) {
+                            FileLogger.d(TAG, "sendMessage: streamed $tokenCount tokens")
                         }
                     }
                     
