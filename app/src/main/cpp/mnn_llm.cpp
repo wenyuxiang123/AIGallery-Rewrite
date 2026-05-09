@@ -282,16 +282,51 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
     fileLog("nativeLoadModel: set_config tmp_path: %s", tmpCfg.c_str());
     llm->set_config(tmpCfg);
 
-    // TODO: QNN/NPU 加速需要重新编译 libMNN.so 添加 -DMNN_QNN=ON
-    // 778G Plus (Snapdragon 778G Plus) 的 Hexagon DSP 可用于加速推理
-    // 需要安装 QNN SDK 并重新编译，预期可额外提速 30-50%
+    // QNN/NPU加速已启用（libMNN.so编译时MNN_QNN=ON，backend_type=5=MNN_FORWARD_NN）
+    // 如果QNN初始化失败，自动回退到CPU后端
 
     fileLog("nativeLoadModel: calling llm->load()...");
     auto t0 = std::chrono::steady_clock::now();
-    bool ok = llm->load();
+    bool ok = false;
+    try {
+        ok = llm->load();
+    } catch (const std::exception& e) {
+        fileLog("nativeLoadModel: llm->load() threw exception: %s", e.what());
+        ok = false;
+    } catch (...) {
+        fileLog("nativeLoadModel: llm->load() threw unknown exception");
+        ok = false;
+    }
     auto t1 = std::chrono::steady_clock::now();
     int64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
     fileLog("nativeLoadModel: llm->load() returned %s in %lld ms", ok ? "true" : "false", (long long)ms);
+
+    // QNN失败时回退到CPU后端重试
+    if (!ok) {
+        fileLog("nativeLoadModel: QNN load failed, retrying with CPU backend...");
+        MNN::Transformer::Llm::destroy(llm);
+        llm = MNN::Transformer::Llm::createLLM(configPath);
+        if (llm) {
+            // CPU回退：不设置backend_type
+            std::string fallbackCfg = std::string("{\"num_ctx\":") + std::to_string(nCtx)
+                + ",\"num_threads\":" + std::to_string(nThreads)
+                + ",\"mmap\":true"
+                + ",\"use_mmap\":true"
+                + ",\"kvcache_mmap\":true}";
+            llm->set_config(fallbackCfg);
+            llm->set_config(tmpCfg);
+            fileLog("nativeLoadModel: retrying load() with CPU backend...");
+            try {
+                ok = llm->load();
+            } catch (...) {
+                fileLog("nativeLoadModel: CPU fallback also failed");
+                ok = false;
+            }
+            if (ok) {
+                fileLog("nativeLoadModel: CPU fallback succeeded!");
+            }
+        }
+    }
 
     if (ok) {
         // Lookahead 投机解码暂时禁用 - 778G Plus纯CPU上draft命中率低，反而拖慢

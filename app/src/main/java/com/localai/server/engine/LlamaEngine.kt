@@ -91,6 +91,23 @@ class LlamaEngine private constructor(
                     FileLogger.w(TAG, "loadLibraries: MNNOpenCV not available (optional)")
                 }
                 
+                // QNN/NPU运行时库（必须在MNN load()之前加载，否则dlopen找不到）
+                // MNN QNN后端通过dlopen("libQnnHtp.so")等动态加载这些库
+                try {
+                    System.loadLibrary("QnnSystem")
+                    FileLogger.d(TAG, "loadLibraries: QnnSystem loaded (QNN/NPU)")
+                    System.loadLibrary("QnnHtp")
+                    FileLogger.d(TAG, "loadLibraries: QnnHtp loaded (QNN/NPU)")
+                    System.loadLibrary("QnnHtpPrepare")
+                    FileLogger.d(TAG, "loadLibraries: QnnHtpPrepare loaded (QNN/NPU)")
+                    System.loadLibrary("QnnHtpV68Stub")
+                    FileLogger.d(TAG, "loadLibraries: QnnHtpV68Stub loaded (QNN/NPU Hexagon V68)")
+                    System.loadLibrary("QnnHtpV68Skel")
+                    FileLogger.d(TAG, "loadLibraries: QnnHtpV68Skel loaded (QNN/NPU Hexagon V68 Skel)")
+                } catch (e: UnsatisfiedLinkError) {
+                    FileLogger.w(TAG, "loadLibraries: QNN libraries not available (NPU disabled): ${e.message}")
+                }
+                
                 librariesLoaded = true
                 // 库加载成功后立即设置native层日志路径
                 try {
