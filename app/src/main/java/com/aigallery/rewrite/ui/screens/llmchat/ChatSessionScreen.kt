@@ -29,7 +29,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun ChatSessionScreen(
     viewModel: ChatSessionViewModel = hiltViewModel(),
-    onBack: () -> Unit = {}
+    onBack: () -> Unit = {},
+    onMenuClick: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
     val engineState by viewModel.engineState.collectAsState()
@@ -61,8 +62,8 @@ fun ChatSessionScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    IconButton(onClick = onMenuClick) {
+                        Icon(Icons.Default.Menu, contentDescription = "菜单")
                     }
                 },
                 actions = {

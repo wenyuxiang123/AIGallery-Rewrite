@@ -29,6 +29,7 @@ import java.util.*
 @Composable
 fun LLMChatScreen(
     onNavigateToSession: (String) -> Unit,
+    onMenuClick: () -> Unit = {},
     viewModel: LLMChatListViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -38,6 +39,11 @@ fun LLMChatScreen(
         topBar = {
             TopAppBar(
                 title = { Text("AI对话") },
+                navigationIcon = {
+                    IconButton(onClick = onMenuClick) {
+                        Icon(Icons.Default.Menu, contentDescription = "菜单")
+                    }
+                },
                 actions = {
                     if (state.sessions.isNotEmpty()) {
                         IconButton(onClick = { showClearDialog = true }) {

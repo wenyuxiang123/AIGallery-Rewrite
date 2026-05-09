@@ -106,12 +106,25 @@ sealed class Screen(
     )
 
     companion object {
+        // 底部导航项（已弃用，保留兼容性）
+        @Deprecated("Use drawerItems instead")
         val bottomNavItems = listOf(
             ModelManager,
             LLMChat,
             Memory,
             CustomTasks,
             SingleTurn
+        )
+        
+        // 抽屉导航项，包含所有主要功能
+        val drawerItems = listOf(
+            LLMChat,
+            ModelManager,
+            Memory,
+            CustomTasks,
+            SingleTurn,
+            Settings,
+            About
         )
     }
 }

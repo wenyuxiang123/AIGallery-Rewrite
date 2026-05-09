@@ -17,6 +17,7 @@ import com.aigallery.rewrite.ui.screens.memory.MemoryScreen
 import com.aigallery.rewrite.ui.screens.modelmanager.ModelManagerScreen
 import com.aigallery.rewrite.ui.screens.settings.SettingsScreen
 import com.aigallery.rewrite.ui.screens.singleturn.SingleTurnScreen
+import com.aigallery.rewrite.ui.screens.about.AboutScreen
 
 /**
  * App导航宿主
@@ -25,6 +26,7 @@ import com.aigallery.rewrite.ui.screens.singleturn.SingleTurnScreen
 @Composable
 fun AppNavHost(
     navController: NavHostController,
+    onMenuClick: () -> Unit = {},
     startDestination: String = Screen.LLMChat.route
 ) {
     NavHost(
@@ -55,7 +57,8 @@ fun AppNavHost(
             LLMChatScreen(
                 onNavigateToSession = { sessionId ->
                     navController.navigate(Screen.ChatSession.createRoute(sessionId))
-                }
+                },
+                onMenuClick = onMenuClick
             )
         }
 
@@ -84,6 +87,10 @@ fun AppNavHost(
             SettingsScreen(onNavigateBack = { navController.popBackStack() })
         }
 
+        composable(Screen.About.route) {
+            AboutScreen(onNavigateBack = { navController.popBackStack() })
+        }
+
         // Detail screens
         composable(
             route = Screen.ChatSession.route,
@@ -91,7 +98,8 @@ fun AppNavHost(
         ) { backStackEntry ->
             val sessionId = backStackEntry.arguments?.getString("sessionId") ?: ""
             ChatSessionScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onMenuClick = onMenuClick
             )
         }
 
