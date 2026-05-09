@@ -203,7 +203,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeStop(JNIEnv*, jclass) {
 
 JNIEXPORT jboolean JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
-    jstring jConfigPath, jint nCtx, jint nThreads, jstring jCacheDir) {
+    jstring jConfigPath, jint nCtx, jint nThreads, jstring jCacheDir, jboolean jUseQnn) {
     const char* path = env->GetStringUTFChars(jConfigPath, nullptr);
     if (!path) { fileLog("nativeLoadModel: ERROR - null config path"); return JNI_FALSE; }
     std::string configPath(path); env->ReleaseStringUTFChars(jConfigPath, path);
@@ -256,16 +256,30 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
     }
 
     // mmap优化 + QNN/NPU加速（KV-INT8和lookahead暂时禁用，778G Plus纯CPU上开销大于收益）
-    // backend_type=5 即 MNN_FORWARD_NN (QNN/NPU后端)
-    // attention_mode=14 = FlashAttention + KV-TQ4，节省KV Cache内存30%+，短对话质量无感知
-    std::string cfg = std::string("{\"backend_type\":5") 
-        + ",\"attention_mode\":14"
-        + ",\"num_ctx\":" + std::to_string(nCtx)
-        + ",\"num_threads\":" + std::to_string(nThreads)
-        + ",\"mmap\":true"
-        + ",\"use_mmap\":true"
-        + ",\"kvcache_mmap\":true}";
-    fileLog("nativeLoadModel: set_config (with QNN backend_type=5): %s", cfg.c_str());
+    // 根据QNN库是否完整加载决定后端
+    // QNN完整: backend_type=5 (MNN_FORWARD_NN = QNN/NPU)，换8Gen2+手机可加速
+    // QNN不完整: 不设backend_type，默认CPU后端，避免native crash
+    std::string cfg;
+    bool useQnn = jUseQnn == JNI_TRUE;
+    if (useQnn) {
+        cfg = std::string("{\"backend_type\":5") 
+            + ",\"attention_mode\":14"
+            + ",\"num_ctx\":" + std::to_string(nCtx)
+            + ",\"num_threads\":" + std::to_string(nThreads)
+            + ",\"mmap\":true"
+            + ",\"use_mmap\":true"
+            + ",\"kvcache_mmap\":true}";
+        fileLog("nativeLoadModel: QNN available, using NPU backend (backend_type=5)");
+    } else {
+        cfg = std::string("{\"attention_mode\":14") 
+            + ",\"num_ctx\":" + std::to_string(nCtx)
+            + ",\"num_threads\":" + std::to_string(nThreads)
+            + ",\"mmap\":true"
+            + ",\"use_mmap\":true"
+            + ",\"kvcache_mmap\":true}";
+        fileLog("nativeLoadModel: QNN not available, using CPU backend");
+    }
+    fileLog("nativeLoadModel: set_config: %s", cfg.c_str());
     llm->set_config(cfg);
 
     // 设置 tmp_path（从Kotlin层传入，兼容debug/release包路径）
@@ -284,8 +298,8 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
     fileLog("nativeLoadModel: set_config tmp_path: %s", tmpCfg.c_str());
     llm->set_config(tmpCfg);
 
-    // QNN/NPU加速已启用（libMNN.so编译时MNN_QNN=ON，backend_type=5=MNN_FORWARD_NN）
-    // 如果QNN初始化失败，自动回退到CPU后端
+    // QNN/NPU加速: 仅在Kotlin层检测到QNN库完整加载时启用backend_type=5
+    // 778G Plus上libcdsprpc.so不可访问，QNN不完整，自动使用CPU后端
 
     fileLog("nativeLoadModel: calling llm->load()...");
     auto t0 = std::chrono::steady_clock::now();
@@ -303,33 +317,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
     int64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
     fileLog("nativeLoadModel: llm->load() returned %s in %lld ms", ok ? "true" : "false", (long long)ms);
 
-    // QNN失败时回退到CPU后端重试
-    if (!ok) {
-        fileLog("nativeLoadModel: QNN load failed, retrying with CPU backend...");
-        MNN::Transformer::Llm::destroy(llm);
-        llm = MNN::Transformer::Llm::createLLM(configPath);
-        if (llm) {
-            // CPU回退：不设置backend_type
-            std::string fallbackCfg = std::string("{\"attention_mode\":14") 
-                + ",\"num_ctx\":" + std::to_string(nCtx)
-                + ",\"num_threads\":" + std::to_string(nThreads)
-                + ",\"mmap\":true"
-                + ",\"use_mmap\":true"
-                + ",\"kvcache_mmap\":true}";
-            llm->set_config(fallbackCfg);
-            llm->set_config(tmpCfg);
-            fileLog("nativeLoadModel: retrying load() with CPU backend...");
-            try {
-                ok = llm->load();
-            } catch (...) {
-                fileLog("nativeLoadModel: CPU fallback also failed");
-                ok = false;
-            }
-            if (ok) {
-                fileLog("nativeLoadModel: CPU fallback succeeded!");
-            }
-        }
-    }
+
 
     if (ok) {
         // Lookahead 投机解码暂时禁用 - 778G Plus纯CPU上draft命中率低，反而拖慢

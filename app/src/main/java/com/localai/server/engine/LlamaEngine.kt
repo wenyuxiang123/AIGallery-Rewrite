@@ -31,6 +31,7 @@ class LlamaEngine private constructor(
         
         // 库加载状态
         private var librariesLoaded = false
+        private var qnnAvailable = false
         private var libraryLoadError: String? = null
         
         // Native日志路径设置（静态方法，库加载后立即可用）
@@ -93,6 +94,7 @@ class LlamaEngine private constructor(
                 
                 // QNN/NPU运行时库（必须在MNN load()之前加载，否则dlopen找不到）
                 // MNN QNN后端通过dlopen("libQnnHtp.so")等动态加载这些库
+                // 必须全部加载成功才启用QNN，否则会native crash
                 try {
                     System.loadLibrary("QnnSystem")
                     FileLogger.d(TAG, "loadLibraries: QnnSystem loaded (QNN/NPU)")
@@ -104,8 +106,11 @@ class LlamaEngine private constructor(
                     FileLogger.d(TAG, "loadLibraries: QnnHtpV68Stub loaded (QNN/NPU Hexagon V68)")
                     System.loadLibrary("QnnHtpV68Skel")
                     FileLogger.d(TAG, "loadLibraries: QnnHtpV68Skel loaded (QNN/NPU Hexagon V68 Skel)")
+                    qnnAvailable = true
+                    FileLogger.i(TAG, "loadLibraries: QNN/NPU fully available, will use NPU backend")
                 } catch (e: UnsatisfiedLinkError) {
                     FileLogger.w(TAG, "loadLibraries: QNN libraries not available (NPU disabled): ${e.message}")
+                    qnnAvailable = false
                 }
                 
                 librariesLoaded = true
@@ -182,7 +187,7 @@ class LlamaEngine private constructor(
      * @param nThreads 推理线程数
      * @return 是否加载成功
      */
-    external fun nativeLoadModel(configPath: String, nCtx: Int, nThreads: Int, cacheDir: String): Boolean
+    external fun nativeLoadModel(configPath: String, nCtx: Int, nThreads: Int, cacheDir: String, useQnn: Boolean): Boolean
     
     /**
      * 卸载模型
@@ -327,7 +332,7 @@ class LlamaEngine private constructor(
             
             // 调用 native 加载
             val cacheDirPath = appCacheDir.absolutePath
-            val success = nativeLoadModel(nativePath, nCtx, nThreads, cacheDirPath)
+            val success = nativeLoadModel(nativePath, nCtx, nThreads, cacheDirPath, qnnAvailable)
             
             if (success) {
                 _isModelLoaded.value = true
