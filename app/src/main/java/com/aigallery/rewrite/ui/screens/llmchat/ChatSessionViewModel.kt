@@ -268,20 +268,6 @@ class ChatSessionViewModel @Inject constructor(
                     
                     val prompt = buildPrompt(cleanedMessage)
                     
-                    inferenceEngine.generate(prompt, object : InferenceConfig.InferenceCallback {
-                        override fun onToken(token: String) {
-                            updateStreamingMessage(aiMessageId, token)
-                        }
-                        
-                        override fun onComplete() {
-                            // 完成回调在下方处理
-                        }
-                        
-                        override fun onError(error: String) {
-                            FileLogger.e(TAG, "inference error: $error")
-                        }
-                    })
-                    
                     inferenceEngine.generateStream(prompt) { token, isEnd ->
                         if (!isEnd) {
                             // 解析 thinking block
