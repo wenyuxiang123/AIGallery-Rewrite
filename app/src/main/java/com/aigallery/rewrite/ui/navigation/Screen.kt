@@ -107,7 +107,6 @@ sealed class Screen(
 
     companion object {
         val bottomNavItems = listOf(
-            Home,
             ModelManager,
             LLMChat,
             Memory,

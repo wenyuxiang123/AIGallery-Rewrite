@@ -25,7 +25,7 @@ import com.aigallery.rewrite.ui.screens.singleturn.SingleTurnScreen
 @Composable
 fun AppNavHost(
     navController: NavHostController,
-    startDestination: String = Screen.Home.route
+    startDestination: String = Screen.LLMChat.route
 ) {
     NavHost(
         navController = navController,

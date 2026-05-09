@@ -2,8 +2,8 @@ package com.aigallery.rewrite.ui.screens.llmchat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.aigallery.rewrite.domain.model.AIModel
-import com.aigallery.rewrite.domain.model.MessageRole
+import com.aigallery.rewrite.data.repository.MemoryRepository
+import com.aigallery.rewrite.domain.model.*
 import com.aigallery.rewrite.inference.InferenceConfig
 import com.aigallery.rewrite.inference.MnnInferenceEngine
 import com.aigallery.rewrite.util.FileLogger
@@ -17,11 +17,20 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ChatSessionViewModel @Inject constructor(
-    private val inferenceEngine: MnnInferenceEngine
+    private val inferenceEngine: MnnInferenceEngine,
+    private val memoryRepository: MemoryRepository
 ) : ViewModel() {
 
     companion object {
         private const val TAG = "ChatSession"
+        private const val MAX_MEMORY_PROMPT_CHARS = 500
+        private val memoryConfig = MemoryConfig(
+            shortTermMemoryEnabled = true,
+            shortTermWindowSize = 5,
+            longTermMemoryEnabled = true,
+            longTermRetrievalLimit = 3,
+            personaMemoryEnabled = true
+        )
     }
 
     private var inferenceJob: Job? = null
@@ -118,6 +127,16 @@ class ChatSessionViewModel @Inject constructor(
         addMessage(ChatMessage(id = userMsgId, content = message, role = MessageRole.USER, timestamp = System.currentTimeMillis()))
         FileLogger.d(TAG, "sendMessage: user msg added, id=$userMsgId")
 
+        // 存储用户消息到 WorkingMemory
+        viewModelScope.launch {
+            try {
+                memoryRepository.addWorkingMemory(sessionId, "[用户]: $message")
+                FileLogger.d(TAG, "sendMessage: user message stored in working memory")
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "sendMessage: failed to store user message in working memory", e)
+            }
+        }
+
         val aiMessageId = nextMessageId()
         addMessage(ChatMessage(id = aiMessageId, content = "", role = MessageRole.ASSISTANT, timestamp = System.currentTimeMillis(), isStreaming = true))
         FileLogger.d(TAG, "sendMessage: AI placeholder added, id=$aiMessageId, total messages=${_state.value.messages.size}")
@@ -164,12 +183,13 @@ class ChatSessionViewModel @Inject constructor(
                         s.copy(messages = s.messages.map { if (it.id == aiMessageId) it.copy(content = "") else it })
                     }
                     
-                    // 构建完整提示词
+                    // 构建完整提示词（带记忆检索）
                     val fullPrompt = buildPrompt(message)
                     
                     // 流式输出过滤：过滤<think>到</think>之间的内容
                     var tokenBuffer = ""
                     var inThinkingBlock = false
+                    var fullResponse = StringBuilder()
                     
                     // 使用流式推理
                     inferenceEngine.inferStream(
@@ -184,6 +204,7 @@ class ChatSessionViewModel @Inject constructor(
                         )
                     ).collect { token ->
                         tokenBuffer += token
+                        fullResponse.append(token)
                         
                         // 处理<think>标签
                         if (tokenBuffer.contains("<think>")) {
@@ -206,6 +227,17 @@ class ChatSessionViewModel @Inject constructor(
                         
                         if (tokenCount % 20 == 0) {
                             FileLogger.d(TAG, "sendMessage: streamed $tokenCount tokens")
+                        }
+                    }
+                    
+                    // 存储 AI 回复到 WorkingMemory
+                    val aiResponse = fullResponse.toString()
+                    if (aiResponse.isNotBlank()) {
+                        try {
+                            memoryRepository.addWorkingMemory(sessionId, "[AI]: $aiResponse")
+                            FileLogger.d(TAG, "sendMessage: AI response stored in working memory")
+                        } catch (e: Exception) {
+                            FileLogger.e(TAG, "sendMessage: failed to store AI response in working memory", e)
                         }
                     }
                     
@@ -245,16 +277,44 @@ class ChatSessionViewModel @Inject constructor(
     }
 
     /**
-     * 构建提示词
+     * 构建提示词（suspend 函数，支持记忆检索）
      */
-    private fun buildPrompt(userMessage: String): String {
+    private suspend fun buildPrompt(userMessage: String): String {
         val history = _state.value.messages
             .filter { it.role != MessageRole.SYSTEM }
             .takeLast(10) // 只保留最近10轮对话
         
         val sb = StringBuilder()
         sb.append("<|im_start|>system\n")
-        sb.append("你是一个有用的AI助手。请直接回答问题，不要输出思考过程。<|im_end|>\n")
+        sb.append("你是一个有用的AI助手。请直接回答问题，不要输出思考过程。")
+        
+        // 检索相关记忆并注入
+        val relevantMemories = try {
+            memoryRepository.retrieveAllRelevantMemories(userMessage, memoryConfig)
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "buildPrompt: failed to retrieve memories", e)
+            emptyList()
+        }
+        
+        if (relevantMemories.isNotEmpty()) {
+            sb.append("\n\n【相关记忆】\n")
+            val memoryTexts = relevantMemories.map { it.content }.take(5)
+            // 限制记忆总长度
+            val totalLength = memoryTexts.joinToString("\n").length
+            val truncated = if (totalLength > MAX_MEMORY_PROMPT_CHARS) {
+                // 按比例截断
+                val ratio = MAX_MEMORY_PROMPT_CHARS.toFloat() / totalLength
+                memoryTexts.map { text ->
+                    text.take((text.length * ratio).toInt().coerceAtLeast(20))
+                }
+            } else {
+                memoryTexts
+            }
+            sb.append(truncated.joinToString("\n").take(MAX_MEMORY_PROMPT_CHARS))
+            sb.append("\n请结合以上记忆来回答。")
+        }
+        
+        sb.append("<|im_end|>\n")
         
         for (msg in history) {
             when (msg.role) {
@@ -300,13 +360,22 @@ class ChatSessionViewModel @Inject constructor(
     }
 
     /**
-     * 清空聊天
+     * 清空聊天（同时清空 WorkingMemory）
      */
     fun clearChat() {
         FileLogger.d(TAG, "clearChat")
         _state.update { it.copy(messages = emptyList()) }
-        // 重置对话上下文
+        // 清空对话上下文
         inferenceEngine.resetConversation()
+        // 清空 WorkingMemory
+        viewModelScope.launch {
+            try {
+                memoryRepository.clearWorkingMemories(sessionId)
+                FileLogger.d(TAG, "clearChat: working memories cleared")
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "clearChat: failed to clear working memories", e)
+            }
+        }
     }
 
     /**
@@ -372,9 +441,41 @@ class ChatSessionViewModel @Inject constructor(
     }
 
     override fun onCleared() {
-        FileLogger.d(TAG, "onCleared")
+        FileLogger.d(TAG, "onCleared: promoting working memories to short-term/long-term")
         super.onCleared()
         inferenceJob?.cancel()
+        
+        // 将 WorkingMemory 提升到 ShortTerm/LongTerm
+        viewModelScope.launch {
+            try {
+                // 获取当前会话的所有 WorkingMemory
+                memoryRepository.getWorkingMemories(sessionId).first().forEach { workingMemory ->
+                    // 提取对话内容（去除 [用户]: 或 [AI]: 前缀）
+                    val content = workingMemory.content
+                        .removePrefix("[用户]: ")
+                        .removePrefix("[AI]: ")
+                    
+                    // 根据内容长度和重要性决定存储层级
+                    val importance = when {
+                        content.length > 100 && content.contains("记住", ignoreCase = true) -> 0.8f
+                        content.length > 50 -> 0.6f
+                        content.length > 20 -> 0.4f
+                        else -> 0.2f
+                    }
+                    
+                    if (content.isNotBlank() && content.length > 10) {
+                        // 重要内容存入短期记忆
+                        memoryRepository.addShortTermMemory(content, importance)
+                    }
+                }
+                
+                // 清空 WorkingMemory
+                memoryRepository.clearWorkingMemories(sessionId)
+                FileLogger.d(TAG, "onCleared: working memories promoted and cleared")
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "onCleared: failed to promote working memories", e)
+            }
+        }
     }
 }
 

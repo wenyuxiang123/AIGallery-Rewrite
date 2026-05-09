@@ -1,26 +1,63 @@
 package com.aigallery.rewrite.ui.screens.memory
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.aigallery.rewrite.memory.MemoryItem
-import com.aigallery.rewrite.memory.MemoryManager
-import com.aigallery.rewrite.memory.MemoryType
-import com.aigallery.rewrite.memory.VectorStore
+import com.aigallery.rewrite.data.repository.MemoryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * 记忆类型（5 层记忆系统 - UI展示用）
+ */
+enum class MemoryType {
+    INSTANT,     // 瞬时记忆
+    SHORT_TERM,  // 短期记忆
+    WORKING,     // 工作记忆
+    LONG_TERM,   // 长期记忆
+    CORE         // 核心记忆
+}
+
+/**
+ * 记忆数据项（UI展示用）
+ */
+data class MemoryItem(
+    val id: String,
+    val content: String,
+    val type: MemoryType,
+    val importance: Int = 5,
+    val createdAt: Long = System.currentTimeMillis(),
+    val accessCount: Int = 0
+) {
+    /**
+     * 获取格式化的时间显示
+     */
+    fun getFormattedTime(): String {
+        val elapsed = System.currentTimeMillis() - createdAt
+        val minutes = elapsed / (1000 * 60)
+        val hours = minutes / 60
+        val days = hours / 24
+
+        return when {
+            minutes < 1 -> "刚刚"
+            minutes < 60 -> "${minutes}分钟前"
+            hours < 24 -> "${hours}小时前"
+            days < 7 -> "${days}天前"
+            else -> "${days / 7}周前"
+        }
+    }
+
+    /**
+     * 获取重要性星级
+     */
+    fun getImportanceStars(): String = "★".repeat(importance) + "☆".repeat(10 - importance)
+}
+
 @HiltViewModel
 class MemoryViewModel @Inject constructor(
-    application: Application
-) : AndroidViewModel(application) {
-
-    // 由于没有完整的依赖注入图，直接创建实例（演示用）
-    // 真实项目中应该通过 Hilt 注入
-    private val vectorStore = VectorStore(application)
-    private val memoryManager = MemoryManager(application, vectorStore)
+    private val memoryRepository: MemoryRepository
+) : ViewModel() {
 
     private val _state = MutableStateFlow(MemoryState())
     val state: StateFlow<MemoryState> = _state.asStateFlow()
@@ -60,19 +97,82 @@ class MemoryViewModel @Inject constructor(
 
     init {
         loadMemories()
-        loadDemoData() // 加载演示数据
     }
 
     /**
-     * 加载所有记忆
+     * 加载所有记忆（从各个 MemoryRepository 源合并）
      */
     private fun loadMemories() {
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true) }
             try {
-                // TODO: 从 memoryManager 获取真实数据
-                // val allMemories = memoryManager.getMemoriesByType()
-                _state.update { it.copy(isLoading = false) }
+                // 并行加载各层记忆
+                val shortTermFlow = memoryRepository.getShortTermMemories()
+                val longTermFlow = memoryRepository.getLongTermMemories()
+                val knowledgeFlow = memoryRepository.getKnowledgeBaseMemories()
+                val personaFlow = memoryRepository.getPersonaMemories()
+                
+                // 合并所有记忆流
+                combine(
+                    shortTermFlow,
+                    longTermFlow,
+                    knowledgeFlow,
+                    personaFlow
+                ) { shortTerm, longTerm, knowledge, persona ->
+                    val allMemories = mutableListOf<MemoryItem>()
+                    
+                    // 短期记忆
+                    allMemories.addAll(shortTerm.map { mem ->
+                        MemoryItem(
+                            id = mem.id,
+                            content = mem.content,
+                            type = MemoryType.SHORT_TERM,
+                            importance = (mem.importance * 10).toInt().coerceIn(1, 10),
+                            createdAt = mem.createdAt,
+                            accessCount = mem.turnCount
+                        )
+                    })
+                    
+                    // 长期记忆
+                    allMemories.addAll(longTerm.map { mem ->
+                        MemoryItem(
+                            id = mem.id,
+                            content = mem.content,
+                            type = MemoryType.LONG_TERM,
+                            importance = 7,
+                            createdAt = mem.createdAt,
+                            accessCount = mem.accessCount
+                        )
+                    })
+                    
+                    // 知识库
+                    allMemories.addAll(knowledge.map { mem ->
+                        MemoryItem(
+                            id = mem.id,
+                            content = "[${mem.title}] ${mem.content}",
+                            type = MemoryType.LONG_TERM,
+                            importance = 6,
+                            createdAt = mem.createdAt,
+                            accessCount = 0
+                        )
+                    })
+                    
+                    // 角色记忆
+                    allMemories.addAll(persona.map { mem ->
+                        MemoryItem(
+                            id = mem.id,
+                            content = mem.content,
+                            type = MemoryType.CORE,
+                            importance = 9,
+                            createdAt = mem.createdAt,
+                            accessCount = 0
+                        )
+                    })
+                    
+                    allMemories
+                }.collect { memories ->
+                    _state.update { it.copy(memories = memories, isLoading = false) }
+                }
             } catch (e: Exception) {
                 _state.update {
                     it.copy(
@@ -82,64 +182,6 @@ class MemoryViewModel @Inject constructor(
                 }
             }
         }
-    }
-
-    /**
-     * 加载演示数据（用于开发测试）
-     */
-    private fun loadDemoData() {
-        val demoMemories = listOf(
-            MemoryItem(
-                id = "demo_1",
-                content = "用户喜欢用简洁明了的方式回答问题，不喜欢长篇大论",
-                type = MemoryType.CORE,
-                importance = 9
-            ),
-            MemoryItem(
-                id = "demo_2",
-                content = "用户正在开发一个 AI Android 应用，项目名称为 AIGallery",
-                type = MemoryType.LONG_TERM,
-                importance = 8
-            ),
-            MemoryItem(
-                id = "demo_3",
-                content = "需要集成 MNN 推理引擎来实现本地 AI 推理",
-                type = MemoryType.WORKING,
-                importance = 7
-            ),
-            MemoryItem(
-                id = "demo_4",
-                content = "刚刚修复了 Material3 的编译警告问题",
-                type = MemoryType.SHORT_TERM,
-                importance = 5
-            ),
-            MemoryItem(
-                id = "demo_5",
-                content = "模型下载管理器支持 Hugging Face 和 ModelScope 两个源",
-                type = MemoryType.LONG_TERM,
-                importance = 6
-            ),
-            MemoryItem(
-                id = "demo_6",
-                content = "5 层记忆系统：瞬时、短期、工作、长期、核心",
-                type = MemoryType.CORE,
-                importance = 10
-            ),
-            MemoryItem(
-                id = "demo_7",
-                content = "用户偏好技术细节，喜欢了解底层实现原理",
-                type = MemoryType.CORE,
-                importance = 9
-            ),
-            MemoryItem(
-                id = "demo_8",
-                content = "聊天界面实现了流式 Token 输出效果",
-                type = MemoryType.SHORT_TERM,
-                importance = 4
-            )
-        )
-
-        _state.update { it.copy(memories = demoMemories) }
     }
 
     /**
@@ -157,15 +199,53 @@ class MemoryViewModel @Inject constructor(
     }
 
     /**
-     * 搜索记忆（向量相似度搜索）
+     * 搜索记忆（使用 MemoryRepository 的检索功能）
      */
     fun performVectorSearch(query: String) {
+        if (query.isBlank()) {
+            return
+        }
+        
         viewModelScope.launch {
             _state.update { it.copy(isSearching = true) }
             try {
-                // TODO: 使用真实的向量搜索
-                // val results = memoryManager.searchMemories(query)
-                _state.update { it.copy(isSearching = false) }
+                val results = memoryRepository.retrieveAllRelevantMemories(
+                    context = query,
+                    config = com.aigallery.rewrite.domain.model.MemoryConfig(
+                        shortTermMemoryEnabled = true,
+                        shortTermWindowSize = 10,
+                        longTermMemoryEnabled = true,
+                        longTermRetrievalLimit = 10,
+                        knowledgeBaseEnabled = true,
+                        personaMemoryEnabled = true
+                    )
+                )
+                
+                // 将搜索结果转换为 UI 类型
+                val searchResults = results.map { mem ->
+                    MemoryItem(
+                        id = mem.id,
+                        content = mem.content,
+                        type = when (mem.memoryLayer) {
+                            com.aigallery.rewrite.domain.model.MemoryLayer.WORKING -> MemoryType.WORKING
+                            com.aigallery.rewrite.domain.model.MemoryLayer.SHORT_TERM -> MemoryType.SHORT_TERM
+                            com.aigallery.rewrite.domain.model.MemoryLayer.LONG_TERM -> MemoryType.LONG_TERM
+                            com.aigallery.rewrite.domain.model.MemoryLayer.KNOWLEDGE_BASE -> MemoryType.LONG_TERM
+                            com.aigallery.rewrite.domain.model.MemoryLayer.PERSONA -> MemoryType.CORE
+                        },
+                        importance = 7,
+                        createdAt = mem.createdAt,
+                        accessCount = 0
+                    )
+                }
+                
+                // 搜索结果合并到 memories 字段（按任务要求）
+                _state.update { currentState ->
+                    currentState.copy(
+                        memories = searchResults,
+                        isSearching = false
+                    )
+                }
             } catch (e: Exception) {
                 _state.update {
                     it.copy(
@@ -178,12 +258,33 @@ class MemoryViewModel @Inject constructor(
     }
 
     /**
-     * 删除记忆
+     * 删除记忆（根据类型）
      */
     fun deleteMemory(memoryId: String) {
         viewModelScope.launch {
             try {
-                // memoryManager.deleteMemory(memoryId)
+                // 根据 ID 找到对应记忆并删除（这里简化处理，实际可存储类型信息）
+                // 先尝试删除短期记忆
+                try {
+                    memoryRepository.deleteShortTermMemory(memoryId)
+                } catch (e: Exception) { /* ignore */ }
+                
+                // 再尝试删除长期记忆
+                try {
+                    memoryRepository.deleteLongTermMemory(memoryId)
+                } catch (e: Exception) { /* ignore */ }
+                
+                // 尝试删除知识库
+                try {
+                    memoryRepository.deleteKnowledgeBaseMemory(memoryId)
+                } catch (e: Exception) { /* ignore */ }
+                
+                // 尝试删除角色记忆
+                try {
+                    memoryRepository.deletePersonaMemory(memoryId)
+                } catch (e: Exception) { /* ignore */ }
+                
+                // 从 UI 列表移除
                 _state.update { currentState ->
                     currentState.copy(
                         memories = currentState.memories.filter { it.id != memoryId }
@@ -201,7 +302,30 @@ class MemoryViewModel @Inject constructor(
     fun clearMemoryType(type: MemoryType) {
         viewModelScope.launch {
             try {
-                // memoryManager.clearMemoryType(type)
+                when (type) {
+                    MemoryType.SHORT_TERM -> {
+                        // 删除最近的短期记忆
+                        val recent = memoryRepository.getRecentShortTermMemories(100)
+                        recent.forEach { 
+                            memoryRepository.deleteShortTermMemory(it.id)
+                        }
+                    }
+                    MemoryType.LONG_TERM -> {
+                        // 遍历删除长期记忆
+                        memoryRepository.getLongTermMemories().first().forEach {
+                            memoryRepository.deleteLongTermMemory(it.id)
+                        }
+                    }
+                    MemoryType.CORE -> {
+                        // 删除角色记忆
+                        memoryRepository.getPersonaMemories().first().forEach {
+                            memoryRepository.deletePersonaMemory(it.id)
+                        }
+                    }
+                    else -> { /* INSTANT and WORKING are session-scoped, not managed here */ }
+                }
+                
+                // 刷新列表
                 _state.update { currentState ->
                     currentState.copy(
                         memories = currentState.memories.filter { it.type != type }
@@ -221,22 +345,37 @@ class MemoryViewModel @Inject constructor(
     }
 
     /**
-     * 添加测试记忆
+     * 添加测试记忆（演示用）
      */
     fun addTestMemory() {
-        val newMemory = MemoryItem(
-            content = "测试记忆 - ${System.currentTimeMillis()}",
-            type = MemoryType.INSTANT,
-            importance = 3
-        )
-        _state.update { currentState ->
-            currentState.copy(memories = currentState.memories + newMemory)
+        viewModelScope.launch {
+            try {
+                val newMemory = memoryRepository.addShortTermMemory(
+                    content = "测试记忆 - ${System.currentTimeMillis()}",
+                    importance = 0.5f
+                )
+                
+                _state.update { currentState ->
+                    currentState.copy(
+                        memories = currentState.memories + MemoryItem(
+                            id = newMemory.id,
+                            content = newMemory.content,
+                            type = MemoryType.SHORT_TERM,
+                            importance = (newMemory.importance * 10).toInt().coerceIn(1, 10),
+                            createdAt = newMemory.createdAt,
+                            accessCount = newMemory.turnCount
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(error = e.message) }
+            }
         }
     }
 }
 
 /**
- * 记忆界面状态
+ * 记忆界面状态（按要求只有4个字段）
  */
 data class MemoryState(
     val memories: List<MemoryItem> = emptyList(),
