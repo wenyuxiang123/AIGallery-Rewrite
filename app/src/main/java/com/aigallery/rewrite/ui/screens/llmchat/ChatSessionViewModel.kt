@@ -26,6 +26,7 @@ class ChatSessionViewModel @Inject constructor(
     companion object {
         private const val TAG = "ChatSession"
         private const val MAX_MEMORY_CHARS = 500
+        private const val MAX_HISTORY_TURNS = 6  // Keep last 6 messages (3 user + 3 assistant)
         private val memoryConfig = MemoryConfig(shortTermMemoryEnabled = true, shortTermWindowSize = 5, longTermMemoryEnabled = true, longTermRetrievalLimit = 3, personaMemoryEnabled = true)
     }
 
@@ -127,6 +128,7 @@ class ChatSessionViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 memoryRepository.addWorkingMemory(sessionId, "[用户] $message")
+                FileLogger.d(TAG, "sendMessage: stored user msg to working memory, sessionId=$sessionId")
             } catch (e: Exception) { FileLogger.e(TAG, "sendMessage: failed to store working memory", e) }
         }
 
@@ -176,10 +178,11 @@ class ChatSessionViewModel @Inject constructor(
                         s.copy(messages = s.messages.map { if (it.id == aiMessageId) it.copy(content = "") else it })
                     }
                     
-                    // 构建完整提示词
+                    // 构建完整提示词（包含记忆上下文+对话历史）
                     val fullPrompt = buildPrompt(message)
+                    FileLogger.d(TAG, "sendMessage: built prompt, length=${fullPrompt.length}")
                     
-                    // 流式输出过滤：过滤<think>到</think>之间的内容
+                    // 流式输出过滤：过滤<think<param name=""></param>到</think<param name=""></param>之间的内容
                     var tokenBuffer = ""
                     var inThinkingBlock = false
                     
@@ -197,16 +200,16 @@ class ChatSessionViewModel @Inject constructor(
                     ).collect { token ->
                         tokenBuffer += token
                         
-                        // 处理<think>标签
-                        if (tokenBuffer.contains("<think>")) {
+                        // 处理<think<param name=""></param>标签
+                        if (tokenBuffer.contains("<think<param name=""></param>")) {
                             inThinkingBlock = true
-                            tokenBuffer = tokenBuffer.substringAfter("<think>")
+                            tokenBuffer = tokenBuffer.substringAfter("<think<param name=""></param>")
                         }
                         
-                        // 处理</think>标签
-                        if (tokenBuffer.contains("</think>")) {
+                        // 处理</think<param name=""></param>标签
+                        if (tokenBuffer.contains("</think<param name=""></param>")) {
                             inThinkingBlock = false
-                            tokenBuffer = tokenBuffer.substringAfter("</think>")
+                            tokenBuffer = tokenBuffer.substringAfter("</think<param name=""></param>")
                         }
                         
                         // 只在非thinking块时输出
@@ -227,6 +230,17 @@ class ChatSessionViewModel @Inject constructor(
                             lastInferenceMs = inferenceEngine.getInferenceStats().lastInferenceTimeMs,
                             tokensPerSecond = inferenceEngine.getInferenceStats().tokensPerSecond
                         )
+                    }
+
+                    // Store AI response to working memory
+                    val aiResponse = _state.value.messages.find { it.id == aiMessageId }?.content ?: ""
+                    if (aiResponse.isNotBlank()) {
+                        try {
+                            memoryRepository.addWorkingMemory(sessionId, "[助手] ${aiResponse.take(200)}")
+                            FileLogger.d(TAG, "sendMessage: stored AI response to working memory, len=${aiResponse.length}")
+                        } catch (e: Exception) {
+                            FileLogger.e(TAG, "sendMessage: failed to store AI working memory", e)
+                        }
                     }
                 } else {
                     // 超时，模型仍未加载
@@ -257,26 +271,59 @@ class ChatSessionViewModel @Inject constructor(
     }
 
     /**
-     * 构建提示词
+     * 构建完整提示词 - JSON格式多轮对话
+     * 格式: [{"r":"system","c":"记忆上下文"}, {"r":"user","c":"..."}, {"r":"assistant","c":"..."}, ...]
      */
     private suspend fun buildPrompt(userMessage: String): String {
-        // Retrieve relevant memories
+        val messages = mutableListOf<Pair<String, String>>()
+
+        // 1. Retrieve relevant memories
         val memories = try {
-            memoryRepository.retrieveAllRelevantMemories(userMessage, memoryConfig)
-        } catch (e: Exception) { FileLogger.e(TAG, "buildPrompt: memory retrieval failed", e); emptyList() }
-
-        if (memories.isEmpty()) return userMessage
-
-        // Build memory context (limited to MAX_MEMORY_CHARS)
-        val sb = StringBuilder("【相关记忆】\n")
-        for (mem in memories.take(5)) {
-            val line = "- ${mem.content.take(80)}\n"
-            if (sb.length + line.length > MAX_MEMORY_CHARS) break
-            sb.append(line)
+            memoryRepository.retrieveAllRelevantMemories(userMessage, memoryConfig, sessionId)
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "buildPrompt: memory retrieval failed", e)
+            emptyList()
         }
-        sb.append("\n用户消息: $userMessage")
+        FileLogger.d(TAG, "buildPrompt: retrieved ${memories.size} memories")
+
+        // 2. Add memory context as system message if available
+        if (memories.isNotEmpty()) {
+            val memSb = StringBuilder("【相关记忆】\n")
+            for (mem in memories.take(5)) {
+                val line = "- ${mem.content.take(80)}\n"
+                if (memSb.length + line.length > MAX_MEMORY_CHARS) break
+                memSb.append(line)
+            }
+            messages.add("system" to memSb.toString().trimEnd())
+        }
+
+        // 3. Add conversation history (last N completed messages)
+        val history = _state.value.messages
+            .filter { !it.isStreaming && it.content.isNotBlank() }
+            .takeLast(MAX_HISTORY_TURNS)
+
+        for (msg in history) {
+            val role = when (msg.role) {
+                MessageRole.USER -> "user"
+                MessageRole.ASSISTANT -> "assistant"
+                else -> continue
+            }
+            messages.add(role to msg.content.take(300))
+        }
+
+        // 4. Add current user message
+        messages.add("user" to userMessage)
+
+        // 5. Build control-char delimited string: \u0001role\u0002content\u0001role\u0002content...
+        val sb = StringBuilder()
+        for ((role, msgContent) in messages) {
+            sb.append("\u0001$role\u0002$msgContent")
+        }
+
+        FileLogger.d(TAG, "buildPrompt: total messages=${messages.size}, prompt_len=${sb.length}")
         return sb.toString()
     }
+
 
     /**
      * 生成 fallback 回复

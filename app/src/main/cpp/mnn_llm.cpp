@@ -394,7 +394,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
     s->llm->set_config(cfg);
 
     MNN::Transformer::ChatMessages msgs;
-    msgs.push_back(MNN::Transformer::ChatMessage{"system", "你是一个有用的AI助手，请用中文回答问题。"});
+    msgs.push_back(MNN::Transformer::ChatMessage{"system", "你是一个有记忆能力的AI助手。如果提示中包含【相关记忆】和【对话历史】，请参考这些信息连贯地回答用户的问题。请用中文回答。"});
     msgs.push_back(MNN::Transformer::ChatMessage{"user", prompt});
 
     fileLog("nativeGenerate: using ChatMessages format, user_prompt='%s' (len=%zu), maxTokens=%d",
@@ -443,10 +443,34 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
     s->llm->set_config(cfg);
 
     MNN::Transformer::ChatMessages msgs;
-    msgs.push_back(MNN::Transformer::ChatMessage{"system", "你是一个有用的AI助手，请用中文回答问题。"});
-    msgs.push_back(MNN::Transformer::ChatMessage{"user", prompt});
+    msgs.push_back(MNN::Transformer::ChatMessage{"system", "你是一个有记忆能力的AI助手。如果提示中包含【相关记忆】和【对话历史】，请参考这些信息连贯地回答用户的问题。请用中文回答。"});
 
-    fileLog("nativeGenerateStream: using ChatMessages format, user_prompt='%s' (len=%zu)", prompt.c_str(), prompt.length());
+    // Parse multi-turn conversation using control character delimiters
+    // Format: \x01role\x02content\x01role\x02content...
+    // Fallback: treat entire prompt as single user message
+    bool parsedMultiTurn = false;
+    if (!prompt.empty() && prompt[0] == '\x01') {
+        size_t pos = 1; // skip initial \x01
+        while (pos < prompt.size()) {
+            size_t sepPos = prompt.find('\x02', pos);
+            if (sepPos == std::string::npos) break;
+            std::string role = prompt.substr(pos, sepPos - pos);
+            pos = sepPos + 1;
+            size_t nextMsg = prompt.find('\x01', pos);
+            if (nextMsg == std::string::npos) nextMsg = prompt.size();
+            std::string content = prompt.substr(pos, nextMsg - pos);
+            pos = nextMsg + 1;
+            if (!role.empty() && !content.empty()) {
+                msgs.push_back(MNN::Transformer::ChatMessage{role, content});
+                parsedMultiTurn = true;
+            }
+        }
+    }
+    if (!parsedMultiTurn) {
+        msgs.push_back(MNN::Transformer::ChatMessage{"user", prompt});
+    }
+
+    fileLog("nativeGenerateStream: using ChatMessages format, msgs_count=%zu, prompt_len=%zu", msgs.size(), prompt.length());
 
     s->stop_flag.store(false, std::memory_order_relaxed);
 

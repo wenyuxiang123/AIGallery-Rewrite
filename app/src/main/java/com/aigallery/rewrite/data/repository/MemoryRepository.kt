@@ -7,6 +7,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -59,7 +60,7 @@ interface MemoryRepository {
     suspend fun deletePersonaMemory(id: String)
     
     // Unified retrieval - get all relevant memories for context
-    suspend fun retrieveAllRelevantMemories(context: String, config: MemoryConfig): List<MemoryItem>
+    suspend fun retrieveAllRelevantMemories(context: String, config: MemoryConfig, sessionId: String? = null): List<MemoryItem>
     
     // Clear all memories
     suspend fun clearAllMemories()
@@ -216,8 +217,16 @@ class MemoryRepositoryImpl @Inject constructor(
     }
 
     // Unified retrieval
-    override suspend fun retrieveAllRelevantMemories(context: String, config: MemoryConfig): List<MemoryItem> {
+    override suspend fun retrieveAllRelevantMemories(context: String, config: MemoryConfig, sessionId: String?): List<MemoryItem> {
         val result = mutableListOf<MemoryItem>()
+        
+        // Get working memories from current session (most immediate context)
+        if (sessionId != null) {
+            try {
+                val working = workingMemoryDao.getWorkingMemories(sessionId).first()
+                result.addAll(working.map { it.toDomain() })
+            } catch (e: Exception) { /* working memory retrieval is optional */ }
+        }
         
         // Get short-term memories (recent N turns)
         if (config.shortTermMemoryEnabled) {
