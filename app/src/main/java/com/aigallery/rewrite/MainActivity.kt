@@ -7,8 +7,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import kotlinx.coroutines.launch
@@ -75,7 +73,7 @@ private fun MainScreen() {
                     // 导航到对应页面
                     navController.navigate(screen.route) {
                         // 如果是子页面（如 ChatSession），不 popUpTo
-                        val isMainScreen = Screen.drawerItems.any { it.route == screen.route }
+                        val isMainScreen = screen.route in listOf("llm_chat", "model_manager", "memory", "custom_tasks", "single_turn", "settings", "about")
                         if (isMainScreen) {
                             popUpTo(navController.graph.findStartDestination().id) {
                                 saveState = true
@@ -140,17 +138,65 @@ private fun DrawerContent(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // 导航项列表
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth()
+        // 导航项列表 - 直接用Column，不使用LazyColumn避免NPE
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight()
         ) {
-            items(count = Screen.drawerItems.size, key = { index -> Screen.drawerItems[index].route }) { index ->
-                val screen = Screen.drawerItems[index]
+            Screen.LLMChat.let { screen ->
                 DrawerItem(
-                    screen = screen,
-                    isSelected = currentRoute == screen.route ||
-                        // 处理 ChatSession 子页面的高亮
-                        (screen == Screen.LLMChat && currentRoute?.startsWith("chat_session") == true),
+                    title = "AI对话",
+                    icon = screen.selectedIcon,
+                    isSelected = currentRoute == screen.route || currentRoute?.startsWith("chat_session") == true,
+                    onClick = { onItemClick(screen) }
+                )
+            }
+            Screen.ModelManager.let { screen ->
+                DrawerItem(
+                    title = "模型管理",
+                    icon = screen.selectedIcon,
+                    isSelected = currentRoute == screen.route,
+                    onClick = { onItemClick(screen) }
+                )
+            }
+            Screen.Memory.let { screen ->
+                DrawerItem(
+                    title = "记忆中心",
+                    icon = screen.selectedIcon,
+                    isSelected = currentRoute == screen.route,
+                    onClick = { onItemClick(screen) }
+                )
+            }
+            Screen.CustomTasks.let { screen ->
+                DrawerItem(
+                    title = "自定义任务",
+                    icon = screen.selectedIcon,
+                    isSelected = currentRoute == screen.route,
+                    onClick = { onItemClick(screen) }
+                )
+            }
+            Screen.SingleTurn.let { screen ->
+                DrawerItem(
+                    title = "单轮任务",
+                    icon = screen.selectedIcon,
+                    isSelected = currentRoute == screen.route,
+                    onClick = { onItemClick(screen) }
+                )
+            }
+            Screen.Settings.let { screen ->
+                DrawerItem(
+                    title = "设置",
+                    icon = screen.selectedIcon,
+                    isSelected = currentRoute == screen.route,
+                    onClick = { onItemClick(screen) }
+                )
+            }
+            Screen.About.let { screen ->
+                DrawerItem(
+                    title = "关于",
+                    icon = screen.selectedIcon,
+                    isSelected = currentRoute == screen.route,
                     onClick = { onItemClick(screen) }
                 )
             }
@@ -160,7 +206,8 @@ private fun DrawerContent(
 
 @Composable
 private fun DrawerItem(
-    screen: Screen,
+    title: String,
+    icon: ImageVector,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
@@ -186,14 +233,14 @@ private fun DrawerItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = if (isSelected) screen.selectedIcon else screen.unselectedIcon,
-            contentDescription = screen.title,
+            imageVector = icon,
+            contentDescription = title,
             tint = contentColor,
             modifier = Modifier.size(24.dp)
         )
         Spacer(modifier = Modifier.width(16.dp))
         Text(
-            text = screen.title,
+            text = title,
             style = MaterialTheme.typography.bodyLarge,
             color = contentColor,
             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
