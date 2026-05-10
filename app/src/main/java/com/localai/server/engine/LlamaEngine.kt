@@ -306,6 +306,18 @@ class LlamaEngine private constructor(
 
     external fun nativeGetLastError(): String
     
+    /**
+     * PH0: 设置运行时硬件加速配置
+     * 通过 MNN RuntimeManager API 动态调整后端、量化模式等
+     * 注意：native 层需要后续实现此方法，当前为预留接口
+     */
+    private external fun nativeSetRuntimeConfig(
+        backend: String,
+        attentionMode: Int,
+        precision: String,
+        openclCachePath: String
+    ): Boolean
+    
     // ==================== Kotlin 封装方法 ====================
     
     /**
@@ -569,6 +581,44 @@ class LlamaEngine private constructor(
             nativeGetContextSize()
         } catch (e: Throwable) {
             0
+        }
+    }
+    
+    /**
+     * PH0: 应用运行时硬件加速配置
+     * 在 loadModel 成功后调用，配置推理后端和量化模式
+     * 
+     * @param backend "cpu" | "opencl" | "auto"
+     * @param attentionMode 8=FA不量化, 10=FA+KV-INT8, 14=FA+KV-TQ4
+     * @param precision "low"(FP16) | "normal" | "high"
+     * @param openclCachePath OpenCL AutoTuning 缓存路径
+     */
+    fun applyRuntimeConfig(
+        backend: String,
+        attentionMode: Int,
+        precision: String,
+        openclCachePath: String?
+    ) {
+        FileLogger.d(TAG, "applyRuntimeConfig: backend=$backend, attentionMode=$attentionMode, precision=$precision")
+        
+        if (!_isModelLoaded.value) {
+            FileLogger.w(TAG, "applyRuntimeConfig: model not loaded, skipping")
+            return
+        }
+        
+        try {
+            val result = nativeSetRuntimeConfig(
+                backend,
+                attentionMode,
+                precision,
+                openclCachePath ?: ""
+            )
+            FileLogger.i(TAG, "applyRuntimeConfig: result=$result")
+        } catch (e: UnsatisfiedLinkError) {
+            // native 层尚未实现此方法，不影响正常运行
+            FileLogger.w(TAG, "applyRuntimeConfig: nativeSetRuntimeConfig not available, runtime config skipped (will be applied when native impl is ready)")
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "applyRuntimeConfig: failed", e)
         }
     }
     
