@@ -13,6 +13,9 @@ import com.aigallery.rewrite.devicecontrol.DeviceControlManager
 import com.aigallery.rewrite.devicecontrol.DeviceControlService
 import com.aigallery.rewrite.inference.MnnInferenceEngine
 import com.aigallery.rewrite.tool.ToolRegistry
+import com.aigallery.rewrite.context.ContextManager
+import com.aigallery.rewrite.context.MemoryCompressor
+import com.aigallery.rewrite.context.GSSCPromptBuilder
 import com.aigallery.rewrite.tool.CalculatorTool
 import com.aigallery.rewrite.tool.DateTimeTool
 import com.aigallery.rewrite.tool.WebSearchTool
