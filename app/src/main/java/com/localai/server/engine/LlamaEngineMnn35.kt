@@ -2,11 +2,19 @@ package com.localai.server.engine
 
 import android.content.Context
 import com.aigallery.rewrite.util.FileLogger
+import com.aigallery.rewrite.inference.InferenceStats
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
+
+/**
+ * Token 回调接口，用于流式输出
+ */
+interface TokenCallback {
+    fun onToken(token: String)
+}
 
 /**
  * MNN LLM 推理引擎 JNI 桥接类 - MNN 3.5.0 兼容版本
@@ -106,7 +114,7 @@ class LlamaEngineMnn35 private constructor(
                 
             } catch (e: Throwable) {
                 val errorMsg = "loadLibraries failed: ${e.message}"
-                FileLogger.e(TAG, errorMsg, e)
+                FileLogger.e(TAG, errorMsg)
                 libraryLoadError = errorMsg
                 librariesLoaded = false
                 return false
@@ -315,7 +323,7 @@ class LlamaEngineMnn35 private constructor(
             
         } catch (e: Throwable) {
             val errorMsg = "loadModel exception: ${e.message}"
-            FileLogger.e(TAG, errorMsg, e)
+            FileLogger.e(TAG, errorMsg)
             _lastError.value = errorMsg
             return false
         }
@@ -336,7 +344,7 @@ class LlamaEngineMnn35 private constructor(
             _loadedModelPath = null
             FileLogger.i(TAG, "unloadModel: success")
         } catch (e: Throwable) {
-            FileLogger.e(TAG, "unloadModel failed", e)
+            FileLogger.e(TAG, "unloadModel failed")
         }
     }
     
@@ -372,15 +380,17 @@ class LlamaEngineMnn35 private constructor(
             
             _inferenceStats.value = InferenceStats(
                 lastInferenceTimeMs = elapsed,
-                tokensGenerated = generatedTokens,
-                tokensPerSecond = tokPerSec
+                tokensPerSecond = tokPerSec,
+                totalInferences = 1,
+                totalTokensGenerated = generatedTokens.toLong(),
+                avgTokensPerSecond = tokPerSec
             )
             
             FileLogger.d(TAG, "generate: completed in ${elapsed}ms, $generatedTokens tokens, $tokPerSec tok/s")
             return result
             
         } catch (e: Throwable) {
-            FileLogger.e(TAG, "generate failed", e)
+            FileLogger.e(TAG, "generate failed")
             _lastError.value = e.message
             return ""
         }
@@ -423,14 +433,16 @@ class LlamaEngineMnn35 private constructor(
                 
                 _inferenceStats.value = InferenceStats(
                     lastInferenceTimeMs = elapsed,
-                    tokensGenerated = totalTokens,
-                    tokensPerSecond = tokPerSec
+                    tokensPerSecond = tokPerSec,
+                    totalInferences = 1,
+                    totalTokensGenerated = totalTokens.toLong(),
+                    avgTokensPerSecond = tokPerSec
                 )
                 
                 FileLogger.d(TAG, "generateStream: completed in ${elapsed}ms, $totalTokens tokens, $tokPerSec tok/s")
                 
             } catch (e: Throwable) {
-                FileLogger.e(TAG, "generateStream failed", e)
+                FileLogger.e(TAG, "generateStream failed")
                 _lastError.value = e.message
                 emit("生成失败: ${e.message}")
             }
@@ -450,7 +462,7 @@ class LlamaEngineMnn35 private constructor(
                 false
             }
         } catch (e: Throwable) {
-            FileLogger.e(TAG, "setSystemPrompt failed", e)
+            FileLogger.e(TAG, "setSystemPrompt failed")
             false
         }
     }
@@ -465,7 +477,7 @@ class LlamaEngineMnn35 private constructor(
                 FileLogger.d(TAG, "resetConversation: success")
             }
         } catch (e: Throwable) {
-            FileLogger.e(TAG, "resetConversation failed", e)
+            FileLogger.e(TAG, "resetConversation failed")
         }
     }
     
