@@ -16,19 +16,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ChatMessageEntity::class,
         ChatMessageFts::class,
         ChatSessionEntity::class,
-        // Memory entities
+        // Memory entities - only one MemoryFts needed for FTS search
         MemoryEntity::class,
         MemoryFts::class,
         WorkingMemoryEntity::class,
-        MemoryFts::class,
         ShortTermMemoryEntity::class,
-        MemoryFts::class,
         LongTermMemoryEntity::class,
-        MemoryFts::class,
         KnowledgeBaseMemoryEntity::class,
-        MemoryFts::class,
         PersonaMemoryEntity::class,
-        MemoryFts::class,
         // Task entities
         CustomSkillEntity::class,
         TaskTemplateEntity::class,
@@ -65,14 +60,13 @@ abstract class AIGalleryDatabase : RoomDatabase() {
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // Create FTS5 virtual table for chat messages
-                db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS `chat_messages_fts` USING FTS4(`content`, content=`chat_messages`)")
+                db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS chat_messages_fts USING FTS5(`content`, content=`chat_messages`)")
                 // Create FTS5 virtual table for memories
-                db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS `memories_fts` USING FTS4(`content`, `tags`, content=`memories`)")
+                db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING FTS5(`content`, `tags`, content=`memories`)")
                 // Populate FTS tables with existing data
-                db.execSQL("INSERT INTO `chat_messages_fts`(`content`) SELECT `content` FROM `chat_messages`")
-                db.execSQL("INSERT INTO `memories_fts`(`content`, `tags`) SELECT `content`, `tags` FROM `memories`")
+                db.execSQL("INSERT INTO chat_messages_fts(`content`) SELECT `content` FROM `chat_messages`")
+                db.execSQL("INSERT INTO memories_fts(`content`, `tags`) SELECT `content`, `tags` FROM `memories`")
             }
         }
     }
-
 }
