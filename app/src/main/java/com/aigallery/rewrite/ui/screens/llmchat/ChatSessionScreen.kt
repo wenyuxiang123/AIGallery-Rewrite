@@ -124,15 +124,18 @@ fun ChatSessionScreen(
         }
     }
 
-    // 模型选择对话框
+    // 模型管理面板
     if (showModelSelector) {
-        ModelSelectionDialog(
-            selectedModel = state.selectedModel,
-            availableModels = state.availableModels,
+        ModelManagementSheet(
+            state = state,
+            engineState = engineState,
             onModelSelected = { model ->
                 viewModel.selectModel(model)
                 showModelSelector = false
             },
+            onDownload = { modelId -> viewModel.downloadModel(modelId) },
+            onCancelDownload = { modelId -> viewModel.cancelDownload(modelId) },
+            onDelete = { modelId -> viewModel.deleteModel(modelId) },
             onDismiss = { showModelSelector = false }
         )
     }
@@ -479,80 +482,157 @@ private fun BottomInputBar(
     }
 }
 
-
 /**
- * 模型选择对话框
+ * 模型管理面板（底部弹出式）
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ModelSelectionDialog(
-    selectedModel: AIModel?,
-    availableModels: List<AIModel>,
+private fun ModelManagementSheet(
+    state: ChatSessionState,
+    engineState: EngineState,
     onModelSelected: (AIModel) -> Unit,
+    onDownload: (String) -> Unit,
+    onCancelDownload: (String) -> Unit,
+    onDelete: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("选择模型") },
-        text = {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Text(
+                text = "模型管理",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            
             LazyColumn(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (availableModels.isEmpty()) {
-                    item {
-                        Text(
-                            text = "暂无可用模型，请先在模型管理页面下载模型",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                } else {
-                    items(availableModels) { model ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onModelSelected(model) },
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (selectedModel?.id == model.id)
-                                    MaterialTheme.colorScheme.primaryContainer
-                                else MaterialTheme.colorScheme.surfaceVariant
-                            )
+                items(state.allModels) { model ->
+                    ModelCard(
+                        model = model,
+                        isCurrentModel = engineState.loadedModelName?.contains(model.id, ignoreCase = true) == true,
+                        downloadProgress = state.downloadProgress[model.id] ?: 0f,
+                        onSelect = { onModelSelected(model) },
+                        onDownload = { onDownload(model.id) },
+                        onCancelDownload = { onCancelDownload(model.id) },
+                        onDelete = { onDelete(model.id) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 模型卡片组件
+ */
+@Composable
+private fun ModelCard(
+    model: AIModel,
+    isCurrentModel: Boolean,
+    downloadProgress: Float,
+    onSelect: () -> Unit,
+    onDownload: () -> Unit,
+    onCancelDownload: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isCurrentModel) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = model.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (isCurrentModel) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(4.dp)
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = model.name,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "${model.size} | ${model.parameters}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                if (selectedModel?.id == model.id) {
-                                    Icon(
-                                        Icons.Default.Check,
-                                        contentDescription = "已选择",
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
+                            Text(
+                                text = "当前",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
                         }
                     }
                 }
+                Text(
+                    text = "${model.size} | ${model.parameters} | ${model.quantization}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = model.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+                
+                if (model.status == ModelStatus.DOWNLOADING) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LinearProgressIndicator(
+                        progress = { downloadProgress },
+                        modifier = Modifier.fillMaxWidth().height(4.dp),
+                    )
+                    Text(
+                        text = "${(downloadProgress * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("关闭")
+            
+            when (model.status) {
+                ModelStatus.NOT_DOWNLOADED -> {
+                    TextButton(onClick = onDownload) {
+                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("下载")
+                    }
+                }
+                ModelStatus.DOWNLOADING -> {
+                    TextButton(onClick = onCancelDownload) {
+                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("取消")
+                    }
+                }
+                ModelStatus.DOWNLOADED -> {
+                    if (!isCurrentModel) {
+                        TextButton(onClick = onSelect) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("加载")
+                        }
+                    }
+                    IconButton(onClick = onDelete) {
+                        Icon(Icons.Default.DeleteOutline, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
+                    }
+                }
+                else -> {}
             }
         }
-    )
+    }
 }
