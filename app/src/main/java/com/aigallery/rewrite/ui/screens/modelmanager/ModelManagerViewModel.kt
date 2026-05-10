@@ -346,8 +346,13 @@ class ModelManagerViewModel @Inject constructor(
                         )
                     }
                     // 下载完成后自动加载模型
-                    FileLogger.d(TAG, "downloadMnnModel: auto-loading model ${model.id}")
-                    loadModel(model.id)
+                    // 如果引擎正被占用（如聊天页面正在使用），跳过自动加载
+                    if (inferenceEngine.engineLock.isLocked) {
+                        FileLogger.d(TAG, "downloadMnnModel: engine is busy, skipping auto-load for ${model.id}")
+                    } else {
+                        FileLogger.d(TAG, "downloadMnnModel: auto-loading model ${model.id}")
+                        loadModel(model.id)
+                    }
                 },
                 onFailure = { error ->
                     FileLogger.e(TAG, "downloadMnnModel: ${model.id} failed with error: ${error.message}", error)
