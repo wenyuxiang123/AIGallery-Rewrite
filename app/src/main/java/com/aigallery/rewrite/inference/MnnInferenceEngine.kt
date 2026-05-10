@@ -29,23 +29,24 @@ class MnnInferenceEngine(
     override val name: String = "MNN-Inference-Engine"
     override val version: String = "1.0"
     override val isInitialized: Boolean
-        get() = llamaEngine?.isModelLoaded?.value == true
+        get() {
+            val engine = llamaEngine
+            return engine != null && engine.isModelLoaded.value == true
+        }
     
     override suspend fun initialize(modelPath: String, config: InferenceConfig): Boolean {
         FileLogger.d(TAG, "initialize: path=$modelPath, config.backend=${config.backend}")
         this.modelPath = modelPath
         
         // Initialize LlamaEngine singleton
-        llamaEngine = LlamaEngine.initialize(context)
-        
-        // Set token callback for streaming
-        llamaEngine.setTokenCallback(null)  // Will be set per-request in inferStream
+        val engine = LlamaEngine.initialize(context)
+        llamaEngine = engine
         
         // Load model with runtime config
         val effectiveBackend = config.backend.ifBlank { "cpu" }
         val openclCache = config.openclCachePath ?: File(context.cacheDir, "opencl_cache").absolutePath
         
-        return llamaEngine?.loadModel(
+        return engine.loadModel(
             path = modelPath,
             nCtx = config.contextWindow,
             nThreads = if (config.numThreads > 0) config.numThreads else 0,
@@ -53,7 +54,7 @@ class MnnInferenceEngine(
             attentionMode = config.attentionMode,
             precision = config.precision,
             openclCachePath = openclCache
-        ) ?: false
+        )
     }
     
     override suspend fun infer(
@@ -61,8 +62,9 @@ class MnnInferenceEngine(
         config: InferenceConfig
     ): InferenceResult {
         FileLogger.d(TAG, "infer: prompt length=${prompt.length}")
+        val engine = llamaEngine
         return try {
-            val result = llamaEngine?.generate(
+            val result = engine?.generate(
                 prompt = prompt,
                 maxTokens = config.maxLength,
                 temperature = config.temperature,
@@ -72,9 +74,9 @@ class MnnInferenceEngine(
             
             InferenceResult(
                 text = result,
-                inferenceTimeMs = llamaEngine?.inferenceState?.value?.lastInferenceTimeMs ?: 0,
+                inferenceTimeMs = engine?.inferenceState?.value?.lastInferenceTimeMs ?: 0,
                 tokenCount = result.length / 4,
-                tokensPerSecond = llamaEngine?.inferenceState?.value?.tokensPerSecond ?: 0f,
+                tokensPerSecond = engine?.inferenceState?.value?.tokensPerSecond ?: 0f,
                 success = result.isNotEmpty(),
                 errorMessage = if (result.isEmpty()) "Empty response" else null
             )
@@ -97,12 +99,6 @@ class MnnInferenceEngine(
     ): Flow<String> = flow {
         FileLogger.d(TAG, "inferStream: prompt length=${prompt.length}")
         
-        llamaEngine?.setTokenCallback(object : com.localai.server.engine.TokenCallback {
-            override fun onToken(token: String) {
-                // Tokens are emitted via flow
-            }
-        })
-        
         try {
             llamaEngine?.generateStream(
                 prompt = prompt,
@@ -116,8 +112,6 @@ class MnnInferenceEngine(
         } catch (e: Exception) {
             FileLogger.e(TAG, "inferStream failed", e)
             emit("[Error: ${e.message}]")
-        } finally {
-            llamaEngine?.setTokenCallback(null)
         }
     }.flowOn(Dispatchers.IO)
     
@@ -170,14 +164,16 @@ class MnnInferenceEngine(
     
     override suspend fun release() {
         FileLogger.d(TAG, "release")
-        llamaEngine?.setTokenCallback(null)
         llamaEngine?.unloadModel()
         llamaEngine = null
     }
     
     override fun getSupportedModelTypes(): List<String> = listOf("mnn", "onnx")
     
-    override fun getMemoryUsageMB(): Float = llamaEngine?.getMemoryUsageMB() ?: 0f
+    /**
+     * Get memory usage in MB
+     */
+    fun getMemoryUsageMB(): Float = llamaEngine?.getMemoryUsageMB() ?: 0f
     
     /**
      * Apply runtime config changes (e.g., switch backend)
