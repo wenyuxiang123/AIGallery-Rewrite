@@ -348,14 +348,14 @@ class ChatSessionViewModel @Inject constructor(
                         // 检测 thinking block
                         if (buffer.contains("<think>")) {
                             inThinkingBlock = true
-                            thinkingBuffer = buffer.substringAfter("<think>")
+                            thinkingBuffer = buffer.toString().substringAfter("<think>")
                         }
                         
                         if (inThinkingBlock) {
                             thinkingBuffer += token
-                            if (thinkingBuffer.contains("</think>")) {
+                            if (thinkingBuffer.toString().contains("</think>")) {
                                 // 去掉 thinking block，只保留最终回复
-                                val cleanContent = thinkingBuffer.substringBefore("</think>")
+                                val cleanContent = thinkingBuffer.toString().substringBefore("</think>")
                                 buffer.clear()
                                 buffer.append(cleanContent)
                                 inThinkingBlock = false
