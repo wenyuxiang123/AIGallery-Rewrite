@@ -11,6 +11,7 @@ import com.aigallery.rewrite.domain.model.AIModel
 import com.aigallery.rewrite.domain.model.MessageRole
 import com.aigallery.rewrite.domain.model.ModelStatus
 import com.aigallery.rewrite.domain.model.ModelCatalog
+import com.aigallery.rewrite.domain.model.ModelTier
 import com.aigallery.rewrite.data.repository.MemoryRepository
 import com.aigallery.rewrite.download.MnnModelDownloader
 import com.aigallery.rewrite.download.MnnDownloadStatus
@@ -19,6 +20,7 @@ import com.aigallery.rewrite.inference.InferenceConfig
 import com.aigallery.rewrite.inference.MnnInferenceEngine
 import com.aigallery.rewrite.util.FileLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.io.File
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -584,6 +586,28 @@ class ChatSessionViewModel @Inject constructor(
     }
 
     /**
+     * 选择模型档位
+     */
+    fun selectTier(tier: ModelTier) {
+        FileLogger.d(TAG, "selectTier: $tier")
+        _state.update { it.copy(selectedTier = tier) }
+        
+        // 自动选择该档位对应的模型
+        val tierModel = ModelCatalog.supportedModels.find { it.tier == tier }
+        if (tierModel != null) {
+            selectModel(tierModel)
+        }
+    }
+    
+    /**
+     * 切换推测解码
+     */
+    fun toggleSpeculativeDecoding(enabled: Boolean) {
+        FileLogger.d(TAG, "toggleSpeculativeDecoding: $enabled")
+        _state.update { it.copy(speculativeDecodingEnabled = enabled) }
+    }
+    
+    /**
      * 清空聊天
      */
     fun clearChat() {
@@ -659,7 +683,15 @@ class ChatSessionViewModel @Inject constructor(
                     inferenceEngine.release()
                 }
                 
-                // 加载新模型
+                // PH0: 根据模型档位配置硬件加速参数
+                val tier = model.tier
+                val attentionMode = when (tier) {
+                    ModelTier.MAXIMUM -> 14  // 4B+ 用 KV-TQ4
+                    else -> 10               // 其他用 KV-INT8
+                }
+                val backend = if (inferenceEngine.isOpenCLAvailable()) "opencl" else "cpu"
+                val openclCache = File(context.filesDir, "mnn_opencl_cache").absolutePath
+                
                 val success = inferenceEngine.initialize(
                     modelPath = modelPath,
                     config = InferenceConfig(
@@ -667,8 +699,12 @@ class ChatSessionViewModel @Inject constructor(
                         temperature = 0.7f,
                         topK = 40,
                         topP = 0.9f,
-                        numThreads = 0,
-                        contextWindow = 2048
+                        numThreads = 0,  // 0=自动检测
+                        contextWindow = 2048,
+                        backend = backend,
+                        attentionMode = attentionMode,
+                        precision = "low",
+                        openclCachePath = openclCache
                     )
                 )
                 
@@ -831,9 +867,11 @@ data class ChatSessionState(
     val isGenerating: Boolean = false,
     val sessionId: String = "",
     val selectedModel: AIModel? = null,
+    val selectedTier: ModelTier = ModelTier.RECOMMENDED,  // PH0: 当前选中档位
     val availableModels: List<AIModel> = emptyList(),
-    val allModels: List<AIModel> = emptyList(),  // 新增：所有模型（用于模型管理面板）
-    val downloadProgress: Map<String, Float> = emptyMap()  // 新增：下载进度
+    val allModels: List<AIModel> = emptyList(),
+    val downloadProgress: Map<String, Float> = emptyMap(),
+    val speculativeDecodingEnabled: Boolean = true  // PH0: 推测解码默认开启
 )
 
 /**
