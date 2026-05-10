@@ -1,6 +1,7 @@
 package com.aigallery.rewrite.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.Fts4
 import androidx.room.PrimaryKey
 
 /**
