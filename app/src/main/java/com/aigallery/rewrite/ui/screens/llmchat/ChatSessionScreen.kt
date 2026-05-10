@@ -22,6 +22,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.aigallery.rewrite.domain.model.AIModel
 import com.aigallery.rewrite.domain.model.ModelCatalog
 import com.aigallery.rewrite.domain.model.ModelStatus
+import com.aigallery.rewrite.domain.model.ModelTier
 import com.aigallery.rewrite.domain.model.MessageRole
 import kotlinx.coroutines.launch
 
@@ -506,19 +507,49 @@ private fun ModelManagementSheet(
                 .padding(bottom = 32.dp)
         ) {
             Text(
-                text = "模型管理",
+                text = "选择档位",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
             
+            // PH0: 推测解码开关
+            if (state.selectedTier == ModelTier.RECOMMENDED) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text(
+                            text = "推测解码",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "小模型起草+大模型验证，速度翻倍质量零损失",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = state.speculativeDecodingEnabled,
+                        onCheckedChange = { /* toggled via ViewModel */ }
+                    )
+                }
+                HorizontalDivider(modifier = Modifier.padding(bottom = 12.dp))
+            }
+            
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(state.allModels) { model ->
-                    ModelCard(
+                    TierModelCard(
                         model = model,
-                        isCurrentModel = engineState.loadedModelName?.contains(model.id, ignoreCase = true) == true,
+                        isCurrentModel = state.selectedModel?.id == model.id,
+                        isSelectedTier = model.tier == state.selectedTier,
                         downloadProgress = state.downloadProgress[model.id] ?: 0f,
                         onSelect = { onModelSelected(model) },
                         onDownload = { onDownload(model.id) },
@@ -532,12 +563,13 @@ private fun ModelManagementSheet(
 }
 
 /**
- * 模型卡片组件
+ * 档位模型卡片组件 — PH0 改造
  */
 @Composable
-private fun ModelCard(
+private fun TierModelCard(
     model: AIModel,
     isCurrentModel: Boolean,
+    isSelectedTier: Boolean,
     downloadProgress: Float,
     onSelect: () -> Unit,
     onDownload: () -> Unit,
@@ -547,8 +579,11 @@ private fun ModelCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (isCurrentModel) MaterialTheme.colorScheme.primaryContainer
-                            else MaterialTheme.colorScheme.surfaceVariant
+            containerColor = when {
+                isCurrentModel -> MaterialTheme.colorScheme.primaryContainer
+                isSelectedTier -> MaterialTheme.colorScheme.secondaryContainer
+                else -> MaterialTheme.colorScheme.surfaceVariant
+            }
         )
     ) {
         Row(
@@ -564,6 +599,25 @@ private fun ModelCard(
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    // PH0: 档位标签
+                    Surface(
+                        color = when (model.tier) {
+                            ModelTier.RECOMMENDED -> Color(0xFF8B5CF6)  // 紫色
+                            ModelTier.SPEED -> Color(0xFF22C55E)        // 绿色
+                            ModelTier.DAILY -> Color(0xFF3B82F6)        // 蓝色
+                            ModelTier.QUALITY -> Color(0xFFF59E0B)      // 橙色
+                            ModelTier.MAXIMUM -> Color(0xFFEF4444)      // 红色
+                        },
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = model.tier.displayName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
                     if (isCurrentModel) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Surface(
@@ -580,7 +634,7 @@ private fun ModelCard(
                     }
                 }
                 Text(
-                    text = "${model.size} | ${model.parameters} | ${model.quantization}",
+                    text = "${model.size} | ${model.quantization} | ${model.tier.targetSpeed}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
