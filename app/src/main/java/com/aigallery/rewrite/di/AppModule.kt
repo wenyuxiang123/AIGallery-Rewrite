@@ -12,6 +12,10 @@ import com.aigallery.rewrite.data.repository.MemoryRepositoryImpl
 import com.aigallery.rewrite.devicecontrol.DeviceControlManager
 import com.aigallery.rewrite.devicecontrol.DeviceControlService
 import com.aigallery.rewrite.inference.MnnInferenceEngine
+import com.aigallery.rewrite.tool.ToolRegistry
+import com.aigallery.rewrite.tool.CalculatorTool
+import com.aigallery.rewrite.tool.DateTimeTool
+import com.aigallery.rewrite.tool.WebSearchTool
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import dagger.Module
@@ -176,5 +180,18 @@ object AppModule {
     @Singleton
     fun provideMnnInferenceEngine(@ApplicationContext context: Context): MnnInferenceEngine {
         return MnnInferenceEngine(context)
+    }
+
+    // Tool Registry (P1: Tool System)
+    @Provides
+    @Singleton
+    fun provideToolRegistry(): ToolRegistry {
+        val registry = ToolRegistry()
+        registry.registerAll(
+            CalculatorTool(),
+            DateTimeTool(),
+            WebSearchTool()
+        )
+        return registry
     }
 }
