@@ -142,6 +142,9 @@ class LlamaEngineMnn35 private constructor(
     private val _inferenceStats = MutableStateFlow(InferenceStats())
     val inferenceStats: StateFlow<InferenceStats> = _inferenceStats.asStateFlow()
     
+    // 已加载模型的路径（用于读取config.json）
+    private var _loadedModelPath: String? = null
+    
     // Token 回调（用于流式输出）
     private var tokenCallback: TokenCallback? = null
     
@@ -293,7 +296,7 @@ class LlamaEngineMnn35 private constructor(
             }
             
             // 设置线程数
-            nativeSetConfig(llmHandle, """{"num_threads":$nThreads}""")
+            nativeSetConfig(llmHandle, "{\"num_threads\":$nThreads}")
             
             // 加载模型
             val success = nativeLoad(llmHandle)
@@ -301,6 +304,7 @@ class LlamaEngineMnn35 private constructor(
             if (success) {
                 _isModelLoaded.value = true
                 _loadedModelName.value = modelDir.name
+                _loadedModelPath = path  // 保存路径供后续使用
                 FileLogger.i(TAG, "loadModel: success, model=${_loadedModelName.value}")
             } else {
                 _lastError.value = "Model load failed"
@@ -329,6 +333,7 @@ class LlamaEngineMnn35 private constructor(
             }
             _isModelLoaded.value = false
             _loadedModelName.value = null
+            _loadedModelPath = null
             FileLogger.i(TAG, "unloadModel: success")
         } catch (e: Throwable) {
             FileLogger.e(TAG, "unloadModel failed", e)
@@ -357,14 +362,7 @@ class LlamaEngineMnn35 private constructor(
         try {
             // MNN 3.5.0 不直接支持 temperature/topK/topP 参数
             // 需要通过 set_config 设置采样参数
-            val configJson = """
-                {
-                    "temperature": $temperature,
-                    "top_k": $topK,
-                    "top_p": $topP
-                }
-            """.trimIndent()
-            nativeSetConfig(llmHandle, configJson)
+            nativeSetConfig(llmHandle, "{\"temperature\":$temperature,\"top_k\":$topK,\"top_p\":$topP}")
             
             val result = nativeResponse(llmHandle, prompt, maxTokens, null)
             
@@ -412,14 +410,7 @@ class LlamaEngineMnn35 private constructor(
             
             try {
                 // 设置采样参数
-                val configJson = """
-                    {
-                        "temperature": $temperature,
-                        "top_k": $topK,
-                        "top_p": $topP
-                    }
-                """.trimIndent()
-                nativeSetConfig(llmHandle, configJson)
+                nativeSetConfig(llmHandle, "{\"temperature\":$temperature,\"top_k\":$topK,\"top_p\":$topP}")
                 
                 // 调用流式推理
                 nativeResponseStreaming(llmHandle, prompt, maxTokens, null)
@@ -452,7 +443,8 @@ class LlamaEngineMnn35 private constructor(
     fun setSystemPrompt(systemPrompt: String): Boolean {
         return try {
             if (llmHandle != 0L) {
-                nativeSetConfig(llmHandle, """{"system_prompt":"${systemPrompt.replace("\"", "\\\"")}"}""")
+                val escapedPrompt = systemPrompt.replace("\"", "\\\"")
+                nativeSetConfig(llmHandle, "{\"system_prompt\":\"$escapedPrompt\"}")
                 true
             } else {
                 false
@@ -478,13 +470,18 @@ class LlamaEngineMnn35 private constructor(
     }
     
     /**
-     * 获取内存使用（MB）
-     * 注意：MNN 3.5.0 可能不直接支持此方法
+     * 获取内存使用量（MB）
+     * 通过 /proc/self/status 读取 VmRSS
      */
     fun getMemoryUsageMB(): Float {
-        // MNN 3.5.0 SDK 版本可能需要其他方式获取内存使用
         return try {
-            0f // 占位
+            val lines = File("/proc/self/status").readLines()
+            val vmRss = lines.firstOrNull { it.startsWith("VmRSS:") }
+                ?.split(Regex("\\s+"))
+                ?.getOrNull(1)
+                ?.toLongOrNull() ?: 0L
+            // VmRSS is in kB, convert to MB
+            vmRss / 1024f
         } catch (e: Throwable) {
             0f
         }
@@ -492,13 +489,20 @@ class LlamaEngineMnn35 private constructor(
     
     /**
      * 获取上下文大小
+     * 从模型 config.json 读取 n_ctx，默认 2048
      */
     fun getContextSize(): Int {
-        // MNN 3.5.0 可能从配置读取
         return try {
-            0 // 占位
+            val modelPath = _loadedModelPath
+            if (modelPath != null) {
+                val configFile = File(modelPath, "config.json")
+                if (configFile.exists()) {
+                    val json = org.json.JSONObject(configFile.readText())
+                    json.optInt("n_ctx", json.optInt("context_length", 2048))
+                } else 2048
+            } else 2048
         } catch (e: Throwable) {
-            0
+            2048
         }
     }
     
