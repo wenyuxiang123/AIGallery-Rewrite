@@ -82,14 +82,29 @@ data class InferenceConfig(
     val repeatPenalty: Float = 1.2f,
     /** 使用 GPU 加速 */
     val useGPU: Boolean = true,
-    /** 线程数 */
+    /** 线程数 (0=自动检测) */
     val numThreads: Int = 0,
     /** 上下文窗口大小 */
     val contextWindow: Int = 4096,
     /** 停止词列表 */
     val stopWords: List<String> = emptyList(),
     /** 启用 Thinking 模式（Chain-of-Thought） */
-    val enableThinking: Boolean = false
+    val enableThinking: Boolean = false,
+    // ===== PH0 硬件加速新增字段 =====
+    /** 推理后端: "cpu" | "opencl" | "auto" */
+    val backend: String = "cpu",
+    /** Attention 量化模式: 8=FA不量化, 10=FA+KV-INT8(推荐), 14=FA+KV-TQ4(4B+模型) */
+    val attentionMode: Int = 10,
+    /** 计算精度: "low"(FP16,GPU推荐) | "normal" | "high" */
+    val precision: String = "low",
+    /** OpenCL AutoTuning 缓存路径 */
+    val openclCachePath: String? = null,
+    /** 推测解码开关（核心卖点） */
+    val enableSpeculativeDecoding: Boolean = false,
+    /** 推测解码起草模型路径 */
+    val draftModelPath: String? = null,
+    /** 每次推测token数 */
+    val speculativeLength: Int = 5
 )
 
 /**
