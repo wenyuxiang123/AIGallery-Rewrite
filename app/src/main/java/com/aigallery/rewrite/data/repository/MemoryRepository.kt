@@ -1,6 +1,7 @@
 package com.aigallery.rewrite.data.repository
 
 import com.aigallery.rewrite.data.local.dao.*
+import com.aigallery.rewrite.util.FileLogger
 import com.aigallery.rewrite.data.local.entity.*
 import com.aigallery.rewrite.domain.model.*
 import com.google.gson.Gson
@@ -133,7 +134,13 @@ class MemoryRepositoryImpl @Inject constructor(
     }
 
     override suspend fun searchLongTermMemories(query: String): List<LongTermMemory> {
-        return longTermMemoryDao.searchMemories(query).map { it.toDomain() }
+        // P2: Try FTS5 search first, fall back to LIKE if FTS5 fails
+        return try {
+            longTermMemoryDao.searchMemoriesFts(query).map { it.toDomain() }
+        } catch (e: Exception) {
+            FileLogger.w("MemoryRepo", "FTS5 search failed, falling back to LIKE: ${e.message}")
+            longTermMemoryDao.searchMemories(query).map { it.toDomain() }
+        }
     }
 
     override suspend fun addLongTermMemory(content: String, tags: List<String>): LongTermMemory {
