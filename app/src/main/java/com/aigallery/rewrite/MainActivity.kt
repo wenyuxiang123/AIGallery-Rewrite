@@ -152,14 +152,6 @@ private fun DrawerContent(
                     onClick = { onItemClick(screen) }
                 )
             }
-            Screen.ModelManager.let { screen ->
-                DrawerItem(
-                    title = "模型管理",
-                    icon = screen.selectedIcon,
-                    isSelected = currentRoute == screen.route,
-                    onClick = { onItemClick(screen) }
-                )
-            }
             Screen.Memory.let { screen ->
                 DrawerItem(
                     title = "记忆中心",
