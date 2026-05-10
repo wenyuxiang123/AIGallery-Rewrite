@@ -19,6 +19,12 @@ import com.aigallery.rewrite.tool.WebSearchTool
 import com.aigallery.rewrite.tool.ReadFileTool
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.aigallery.rewrite.context.ContextManager
+import com.aigallery.rewrite.context.MemoryCompressor
+import com.aigallery.rewrite.context.GSSCPromptBuilder
+import com.aigallery.rewrite.skill.SkillRegistry
+import com.aigallery.rewrite.trace.AgentTraceLogger
+import com.aigallery.rewrite.context.ReflectionChecker
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -195,5 +201,42 @@ object AppModule {
         )
         registry.registerExternalTools(okHttpClient, context.filesDir.absolutePath)
         return registry
+    }
+
+    // Context & Prompt builders (P1/P2)
+    @Provides
+    @Singleton
+    fun provideContextManager(): ContextManager {
+        return ContextManager()
+    }
+
+    @Provides
+    @Singleton
+    fun provideMemoryCompressor(inferenceEngine: MnnInferenceEngine): MemoryCompressor {
+        return MemoryCompressor(inferenceEngine)
+    }
+
+    @Provides
+    @Singleton
+    fun provideGSSCPromptBuilder(toolRegistry: ToolRegistry): GSSCPromptBuilder {
+        return GSSCPromptBuilder(toolRegistry)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSkillRegistry(@ApplicationContext context: Context): SkillRegistry {
+        return SkillRegistry(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAgentTraceLogger(): AgentTraceLogger {
+        return AgentTraceLogger()
+    }
+
+    @Provides
+    @Singleton
+    fun provideReflectionChecker(inferenceEngine: MnnInferenceEngine): ReflectionChecker {
+        return ReflectionChecker(inferenceEngine)
     }
 }
