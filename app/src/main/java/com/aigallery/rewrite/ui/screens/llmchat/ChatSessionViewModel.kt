@@ -455,9 +455,9 @@ class ChatSessionViewModel @Inject constructor(
         // P3: Reflection 检查
         if (finalResponse != null && _state.value.selectedTier == ModelTier.QUALITY || _state.value.selectedTier == ModelTier.MAXIMUM) {
             viewModelScope.launch {
-                val reflection = reflectionChecker.check(finalResponse)
-                if (reflection.needsImprovement) {
-                    FileLogger.d(TAG, "generateResponse: reflection flagged improvement needed: ${reflection.reason}")
+                val reflection = reflectionChecker.check(finalResponse, userMessage)
+                if (!reflection.isAcceptable) {
+                    FileLogger.d(TAG, "generateResponse: reflection flagged issues: ${reflection.issues}")
                     // 可以在这里自动触发重新生成
                 }
             }
