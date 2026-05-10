@@ -24,7 +24,7 @@ class ReadFileTool(
         private const val MAX_CONTENT_LENGTH = 3000  // Max chars to return
     }
 
-    override fun getParameters(): JSONObject {
+    override fun getParametersSchema(): JSONObject {
         return JSONObject().apply {
             put("type", "object")
             put("properties", JSONObject().apply {
@@ -37,19 +37,17 @@ class ReadFileTool(
         }
     }
 
-    override suspend fun run(params: Map<String, Any?>): ToolResponse {
-        val relativePath = params["path"]?.toString() ?: return ToolResponse(
-            success = false,
-            content = "",
-            error = "缺少 path 参数"
+    override suspend fun execute(params: Map<String, Any>): ToolResponse {
+        val relativePath = params["path"]?.toString() ?: return ToolResponse.failure(
+            error = "缺少 path 参数",
+            toolName = name
         )
 
         // Security: prevent path traversal
         if (relativePath.contains("..") || relativePath.startsWith("/")) {
-            return ToolResponse(
-                success = false,
-                content = "",
-                error = "路径不允许包含 .. 或以 / 开头"
+            return ToolResponse.failure(
+                error = "路径不允许包含 .. 或以 / 开头",
+                toolName = name
             )
         }
 
@@ -58,26 +56,25 @@ class ReadFileTool(
             val file = File(baseDir, relativePath)
             
             if (!file.exists()) {
-                return ToolResponse(
-                    success = false,
-                    content = "",
-                    error = "文件不存在: $relativePath"
+                return ToolResponse.failure(
+                    error = "文件不存在: $relativePath",
+                    toolName = name
                 )
             }
             
             if (file.length() > MAX_FILE_SIZE) {
-                return ToolResponse(
-                    success = true,
+                return ToolResponse.success(
                     content = "[文件过大 (${file.length()} bytes)，只返回前${MAX_CONTENT_LENGTH}字符]\n" +
-                              file.readText(Charsets.UTF_8).take(MAX_CONTENT_LENGTH)
+                              file.readText(Charsets.UTF_8).take(MAX_CONTENT_LENGTH),
+                    toolName = name
                 )
             }
 
             val content = file.readText(Charsets.UTF_8).take(MAX_CONTENT_LENGTH)
-            ToolResponse(success = true, content = content)
+            ToolResponse.success(content = content, toolName = name)
         } catch (e: Exception) {
-            FileLogger.e(TAG, "run: failed for path=$relativePath", e)
-            ToolResponse(success = false, content = "", error = "读取失败: ${e.message}")
+            FileLogger.e(TAG, "execute: failed for path=$relativePath", e)
+            ToolResponse.failure(error = "读取失败: ${e.message}", toolName = name)
         }
     }
 }
