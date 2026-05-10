@@ -30,7 +30,7 @@ class SpeculativeDecoder(
         private const val MIN_RESPONSE_LENGTH = 10
         private const val REPETITION_THRESHOLD = 0.4f
     }
-
+    
     data class SpecResult(
         val acceptedTokens: List<String>,
         val bonusToken: String? = null,
@@ -39,9 +39,9 @@ class SpeculativeDecoder(
         val acceptanceRate: Float = 0f,
         val usedDraftEngine: Boolean = false
     )
-
+    
     fun isReady(): Boolean = draftEngine.isInitialized || targetEngine.isInitialized
-
+    
     /**
      * Cascade decode stream
      * 
@@ -76,7 +76,7 @@ class SpeculativeDecoder(
             }
         }
     }.flowOn(Dispatchers.IO)
-
+    
     /**
      * Cascade strategy: draft generates, quality check, escalate if needed
      */
@@ -97,7 +97,7 @@ class SpeculativeDecoder(
                 emit(token)  // Stream draft tokens immediately for responsiveness
             }
         } catch (e: Exception) {
-            FileLogger.w(TAG, "emitCascade: draft engine failed, falling back to target", e)
+            FileLogger.e(TAG, "emitCascade: draft engine failed, falling back to target", e)
             targetEngine.inferStream(prompt, config).collect { emit(it) }
             return
         }
@@ -117,7 +117,7 @@ class SpeculativeDecoder(
         }
         // Otherwise draft output is already streamed, we're done
     }
-
+    
     /**
      * Assess draft response quality using heuristic checks
      * Returns 0.0-1.0 score
@@ -167,14 +167,14 @@ class SpeculativeDecoder(
         if (consecutiveNonSpace > 50) count++
         return count
     }
-
+    
     fun getCombinedMemoryMB(): Float {
         return draftEngine.getMemoryUsageMB() + targetEngine.getMemoryUsageMB()
     }
-
+    
     suspend fun release() {
         FileLogger.d(TAG, "release: releasing both engines")
-        try { draftEngine.release() } catch (e: Exception) { FileLogger.w(TAG, "release: draft engine release failed", e) }
-        try { targetEngine.release() } catch (e: Exception) { FileLogger.w(TAG, "release: target engine release failed", e) }
+        try { draftEngine.release() } catch (e: Exception) { FileLogger.e(TAG, "release: draft engine release failed", e) }
+        try { targetEngine.release() } catch (e: Exception) { FileLogger.e(TAG, "release: target engine release failed", e) }
     }
 }
