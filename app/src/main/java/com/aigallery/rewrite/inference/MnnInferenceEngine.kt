@@ -29,11 +29,15 @@ class MnnInferenceEngine(
         private const val PREFS_NAME = "mnn_inference_engine"
         private const val KEY_LAST_MODEL_PATH = "last_model_path"
         private const val KEY_LAST_MODEL_CONFIG = "last_model_config"
+        private const val KEY_LAST_ATTENTION_MODE = "last_attention_mode"
+        private const val KEY_LAST_BACKEND = "last_backend"
         
         // 默认配置
         const val DEFAULT_MAX_TOKENS = 512
         const val DEFAULT_CONTEXT_LENGTH = 2048
-        const val DEFAULT_THREADS = 0  // 骁龙778G+ 8核，4线程最优
+        const val DEFAULT_THREADS = 0  // 0=自动检测最优线程数
+        const val DEFAULT_ATTENTION_MODE = 10  // FA + KV-INT8
+        const val DEFAULT_BACKEND = "cpu"
     }
     
     // 操作锁，防止并发 initialize/release
@@ -109,11 +113,16 @@ class MnnInferenceEngine(
                 // 2. 初始化 LlamaEngine
                 llamaEngine = LlamaEngine.getInstance(context)
                 
-                // 3. 计算最优线程数
-                val nThreads = config.numThreads.takeIf { it > 0 } ?: DEFAULT_THREADS
+                // 3. 动态计算最优线程数（PH0-A: CPU多核优化）
+                val availableProcessors = Runtime.getRuntime().availableProcessors()
+                val nThreads = config.numThreads.takeIf { it > 0 } ?: when {
+                    availableProcessors >= 8 -> 6  // 8核设备：6大核+留2小核给UI
+                    availableProcessors >= 4 -> 4  // 4核设备
+                    else -> 2
+                }
                 val nCtx = config.contextWindow.takeIf { it > 0 } ?: DEFAULT_CONTEXT_LENGTH
                 
-                FileLogger.d(TAG, "initialize: nThreads=$nThreads, nCtx=$nCtx")
+                FileLogger.d(TAG, "initialize: nThreads=$nThreads (cores=$availableProcessors), nCtx=$nCtx, backend=${config.backend}, attentionMode=${config.attentionMode}")
                 
                 // 4. 加载模型
                 val success = llamaEngine?.loadModel(
@@ -126,6 +135,19 @@ class MnnInferenceEngine(
                     val modelName = llamaEngine?.loadedModelName?.value ?: "unknown"
                     val memoryMB = llamaEngine?.getMemoryUsageMB() ?: 0f
                     FileLogger.i(TAG, "initialize: success, model=$modelName, memory=${memoryMB}MB")
+                    
+                    // PH0: 应用运行时硬件加速配置
+                    try {
+                        llamaEngine?.applyRuntimeConfig(
+                            backend = config.backend,
+                            attentionMode = config.attentionMode,
+                            precision = config.precision,
+                            openclCachePath = config.openclCachePath
+                        )
+                        FileLogger.i(TAG, "initialize: runtime config applied, backend=${config.backend}, attentionMode=${config.attentionMode}")
+                    } catch (e: Throwable) {
+                        FileLogger.w(TAG, "initialize: runtime config failed (non-fatal)", e)
+                    }
                     
                     // 5. 保存模型路径到 SharedPreferences，以便下次自动恢复
                     saveModelPath(modelPath, config)
@@ -442,5 +464,50 @@ class MnnInferenceEngine(
      */
     fun resetConversation() {
         llamaEngine?.resetConversation()
+    }
+    
+    // ===== PH0: 设备信息检测 =====
+    
+    /**
+     * 获取设备 CPU 核心数
+     */
+    fun getAvailableProcessors(): Int = Runtime.getRuntime().availableProcessors()
+    
+    /**
+     * 获取推荐的推理线程数
+     * 778G(8核) → 6线程（用大核，留小核给UI）
+     */
+    fun getRecommendedThreads(): Int {
+        val cores = getAvailableProcessors()
+        return when {
+            cores >= 8 -> 6
+            cores >= 4 -> 4
+            else -> 2
+        }
+    }
+    
+    /**
+     * 检测设备是否支持 OpenCL GPU
+     */
+    fun isOpenCLAvailable(): Boolean {
+        val openCLPaths = listOf(
+            "/system/vendor/lib64/libOpenCL.so",
+            "/system/vendor/lib/libOpenCL.so",
+            "/system/lib64/libOpenCL.so"
+        )
+        return openCLPaths.any { java.io.File(it).exists() }
+    }
+    
+    /**
+     * 检测设备总内存（MB）
+     */
+    fun getDeviceTotalMemoryMB(): Long {
+        return try {
+            val stat = java.io.File("/proc/meminfo").readLines()
+            val memTotal = stat.firstOrNull { it.startsWith("MemTotal:") }
+            memTotal?.split("\s+".toRegex())?.get(1)?.toLongOrNull()?.div(1024) ?: 0L
+        } catch (e: Exception) {
+            0L
+        }
     }
 }
