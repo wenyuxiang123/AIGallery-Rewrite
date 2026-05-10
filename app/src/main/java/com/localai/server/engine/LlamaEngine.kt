@@ -91,7 +91,7 @@ class LlamaEngine private constructor(
         /**
          * 预加载 QNN/NPU 支持
          */
-        private fun tryLoadQNN() {
+        private fun tryLoadQNN(appContext: android.content.Context) {
             // FastRPC + QNN (QNN native libs pulled by liblocalai-jni)
             // Step 1: FastRPC (required for QNN/NPU)
             try {
@@ -116,11 +116,11 @@ class LlamaEngine private constructor(
             // Step 3: Deploy QNN V68Skel from assets to cache (DSP6 bin, cannot use System.loadLibrary)
             if (qnnAvailable) {
                 try {
-                    val skelDir = File(context.cacheDir, "qnn")
+                    val skelDir = File(appContext.cacheDir, "qnn")
                     skelDir.mkdirs()
                     val skelFile = File(skelDir, "libQnnHtpV68Skel.so")
                     if (!skelFile.exists()) {
-                        context.assets.open("qnn/libQnnHtpV68Skel.so").use { input ->
+                        appContext.assets.open("qnn/libQnnHtpV68Skel.so").use { input ->
                             skelFile.outputStream().use { output -> input.copyTo(output) }
                         }
                     }
@@ -575,7 +575,7 @@ class LlamaEngine private constructor(
     
     // =============== P3: Enhanced interface methods implementations ===============
     
-    override fun estimateTokens(text: String): Int {
+    fun estimateTokens(text: String): Int {
         var tokens = 0
         for (char in text) {
             tokens += if (char.code > 0x4E00) 1 else 0  // CJK = 1 token each
@@ -585,11 +585,11 @@ class LlamaEngine private constructor(
         return tokens
     }
     
-    override fun supportsToolCalling(): Boolean = false   // MNN parses tool calls from text
+    fun supportsToolCalling(): Boolean = false   // MNN parses tool calls from text
     
-    override fun supportsThinking(): Boolean = true   // Qwen 3.5 supports thinking mode
+    fun supportsThinking(): Boolean = true   // Qwen 3.5 supports thinking mode
     
-    override fun getInferenceStats(): InferenceStats {
+    fun getInferenceStats(): InferenceStats {
         return _inferenceStats.value
     }
 }
