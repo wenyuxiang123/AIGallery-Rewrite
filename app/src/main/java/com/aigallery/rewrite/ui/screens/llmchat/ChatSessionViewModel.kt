@@ -17,6 +17,9 @@ import com.aigallery.rewrite.tool.ToolRegistry
 import com.aigallery.rewrite.tool.ToolCall
 import com.aigallery.rewrite.tool.ToolResponse
 import com.aigallery.rewrite.inference.SpeculativeDecoder
+import com.aigallery.rewrite.context.ContextManager
+import com.aigallery.rewrite.context.MemoryCompressor
+import com.aigallery.rewrite.context.GSSCPromptBuilder
 import com.aigallery.rewrite.download.MnnModelDownloader
 import com.aigallery.rewrite.download.MnnDownloadStatus
 import com.aigallery.rewrite.domain.model.MemoryConfig
@@ -41,6 +44,9 @@ class ChatSessionViewModel @Inject constructor(
     private val chatSessionDao: ChatSessionDao,
     private val mnnDownloader: MnnModelDownloader,
     private val toolRegistry: ToolRegistry,
+    private val contextManager: ContextManager,
+    private val memoryCompressor: MemoryCompressor,
+    private val gsscPromptBuilder: GSSCPromptBuilder,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -476,26 +482,28 @@ class ChatSessionViewModel @Inject constructor(
      * 只注入跨 session 的记忆（short-term, long-term, knowledge base, persona）
      * 不注入 working memory（因为对话历史已经包含了当前 session）
      */
+    /**
+     * P2: Build prompt using ContextManager + GSSCPromptBuilder
+     * Replaces fixed MAX_HISTORY_TURNS with token-budget-driven context selection
+     * Uses GSSC framework for dynamic system prompt construction
+     */
     private suspend fun buildPrompt(userMessage: String): String {
-        val messages = mutableListOf<Pair<String, String>>()
-
-        // 1. Retrieve cross-session memories ONLY (short-term, long-term, knowledge base, persona)
-        // Working memory is NOT included because conversation history already contains current session content
+        // 1. Retrieve cross-session memories (same as before, but now with FTS5)
         val memoryStrings = mutableListOf<String>()
         
         try {
-            // Get short-term memories (recent N turns)
+            // Short-term memories
             val shortTerm = memoryRepository.getRecentShortTermMemories(memoryConfig.shortTermWindowSize)
             memoryStrings.addAll(shortTerm.map { it.content })
             
-            // Get long-term memories (semantic search)
+            // Long-term memories (now uses FTS5)
             if (memoryConfig.longTermMemoryEnabled) {
                 val longTerm = memoryRepository.searchLongTermMemories(userMessage)
                     .take(memoryConfig.longTermRetrievalLimit)
                 memoryStrings.addAll(longTerm.map { it.content })
             }
             
-            // Get persona memories
+            // Persona memories
             if (memoryConfig.personaMemoryEnabled) {
                 val personas = memoryRepository.getPersonaMemoriesSync()
                 memoryStrings.addAll(personas.map { it.content })
@@ -504,51 +512,62 @@ class ChatSessionViewModel @Inject constructor(
             FileLogger.e(TAG, "buildPrompt: memory retrieval failed", e)
         }
         
-        FileLogger.d(TAG, "buildPrompt: retrieved ${memoryStrings.size} cross-session memories (excluded working memory)")
-
-        // 2. Add memory context as a simple system instruction (not as separate messages)
-        val memoryContext = if (memoryStrings.isNotEmpty()) {
-            val memSb = StringBuilder("【背景】\n")
-            for (mem in memoryStrings.take(3)) {
-                val line = "${mem.take(100)}\n"
-                if (memSb.length + line.length > 300) break
-                memSb.append(line)
-            }
-            memSb.toString().trimEnd()
-        } else {
-            ""
-        }
-
-        // 3. Add conversation history (last N completed messages)
+        // 2. Build GSSC dynamic system prompt
+        val tierName = _state.value.selectedTier.name.lowercase()
+        val hasToolHistory = _state.value.toolSteps.isNotEmpty()
+        val systemPrompt = gsscPromptBuilder.buildPrompt(
+            userMessage = userMessage,
+            sessionMemories = memoryStrings,
+            hasToolHistory = hasToolHistory,
+            modelTier = tierName
+        )
+        
+        // 3. Get non-streaming history
         val history = _state.value.messages
             .filter { !it.isStreaming && it.content.isNotBlank() }
-            .takeLast(MAX_HISTORY_TURNS)
-
-        // 4. Build message list with simplified format
-        if (memoryContext.isNotEmpty()) {
-            messages.add("system" to memoryContext)
-        }
-
-        for (msg in history) {
-            val role = when (msg.role) {
-                MessageRole.USER -> "user"
-                MessageRole.ASSISTANT -> "assistant"
-                else -> continue
+        
+        // 4. Use ContextManager to build context within token budget
+        val prompt = contextManager.buildContext(
+            systemPrompt = systemPrompt,
+            memories = memoryStrings,
+            history = history,
+            currentUserMessage = userMessage
+        )
+        
+        FileLogger.d(TAG, "buildPrompt: GSSC+ContextManager prompt_len=${prompt.length}")
+        return prompt
+    }
+    
+    /**
+     * P2: Compress old conversation history when token budget is exceeded
+     * Called after each inference completes
+     */
+    private suspend fun compressOldMessages() {
+        try {
+            val messages = _state.value.messages.filter { !it.isStreaming && it.content.isNotBlank() }
+            if (!memoryCompressor.needsCompression(messages, maxTokens = 1500)) {
+                return
             }
-            messages.add(role to msg.content.take(300))
+            
+            // Compress messages older than the most recent 4 turns
+            val recentCount = 4  // Keep last 4 messages
+            if (messages.size <= recentCount) return
+            
+            val oldMessages = messages.dropLast(recentCount)
+            if (oldMessages.isEmpty()) return
+            
+            val summary = memoryCompressor.compress(oldMessages)
+            if (summary.isNotBlank()) {
+                // Store summary in short-term memory for future context
+                memoryRepository.addShortTermMemory(
+                    content = "[对话摘要] $summary",
+                    importance = 0.7f
+                )
+                FileLogger.d(TAG, "compressOldMessages: stored summary (${summary.length} chars) from ${oldMessages.size} old messages")
+            }
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "compressOldMessages: failed", e)
         }
-
-        // 5. Add current user message
-        messages.add("user" to userMessage)
-
-        // 6. Build control-char delimited string: \u0001role\u0002content\u0001role\u0002content...
-        val sb = StringBuilder()
-        for ((role, msgContent) in messages) {
-            sb.append("\u0001$role\u0002$msgContent")
-        }
-
-        FileLogger.d(TAG, "buildPrompt: total messages=${messages.size}, prompt_len=${sb.length}")
-        return sb.toString()
     }
 
 
@@ -656,6 +675,9 @@ class ChatSessionViewModel @Inject constructor(
         // Clear tool steps after completion
         _state.update { it.copy(toolSteps = emptyList()) }
         markStreamingComplete(assistantMsgId)
+        
+        // P2: Compress old messages after inference completes
+        compressOldMessages()
     }
     
     /**
