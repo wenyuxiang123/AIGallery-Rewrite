@@ -9,6 +9,7 @@ import com.aigallery.rewrite.data.local.entity.ChatMessageEntity
 import com.aigallery.rewrite.data.local.entity.ChatSessionEntity
 import com.aigallery.rewrite.domain.model.AIModel
 import com.aigallery.rewrite.domain.model.MessageRole
+import com.aigallery.rewrite.domain.model.ModelStatus
 import com.aigallery.rewrite.domain.model.ModelCatalog
 import com.aigallery.rewrite.data.repository.MemoryRepository
 import com.aigallery.rewrite.download.MnnModelDownloader
