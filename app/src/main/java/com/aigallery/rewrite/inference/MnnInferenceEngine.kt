@@ -1,22 +1,19 @@
 package com.aigallery.rewrite.inference
 
 import android.content.Context
-import android.content.SharedPreferences
 import com.aigallery.rewrite.util.FileLogger
-import com.localai.server.engine.InferenceStats
 import com.localai.server.engine.LlamaEngine
 import kotlinx.coroutines.Dispatchers
-import java.util.concurrent.locks.ReentrantLock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
- * MNN 推理引擎实现
- * 
- * 基于 Mobile AI Server v4.0-MNN 的 liblocalai-jni.so native 库
- * 提供本地 LLM 推理能力
+ * MNN Inference Engine - wraps LlamaEngine with Android-friendly interface
  */
 class MnnInferenceEngine(
     private val context: Context
@@ -24,604 +21,174 @@ class MnnInferenceEngine(
     
     companion object {
         private const val TAG = "MnnInferenceEngine"
-        
-        // SharedPreferences keys
-        private const val PREFS_NAME = "mnn_inference_engine"
-        private const val KEY_LAST_MODEL_PATH = "last_model_path"
-        private const val KEY_LAST_MODEL_CONFIG = "last_model_config"
-        private const val KEY_LAST_ATTENTION_MODE = "last_attention_mode"
-        private const val KEY_LAST_BACKEND = "last_backend"
-        
-        // 默认配置
-        const val DEFAULT_MAX_TOKENS = 512
-        const val DEFAULT_CONTEXT_LENGTH = 2048
-        const val DEFAULT_THREADS = 0  // 0=自动检测最优线程数
-        const val DEFAULT_ATTENTION_MODE = 10  // FA + KV-INT8
-        const val DEFAULT_BACKEND = "cpu"
     }
     
-    // 操作锁，防止并发 initialize/release
-    val engineLock = ReentrantLock()
-    
-    // MNN 引擎实例
     private var llamaEngine: LlamaEngine? = null
+    private var modelPath: String? = null
     
-    // 库加载状态
-    private var librariesLoaded = false
-    private var libraryLoadAttempted = false
-    
-    // 最后加载的模型路径（内存缓存，用于 autoRestore）
-    private var lastModelPath: String? = null
-    
-    // SharedPreferences
-    private val prefs: SharedPreferences by lazy {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    }
-    
-    override val name: String = "MNN Inference Engine"
-    override val version: String = "4.0.0"
-    
+    override val name: String = "MNN-Inference-Engine"
+    override val version: String = "1.0"
     override val isInitialized: Boolean
-        get() = librariesLoaded && llamaEngine?.isModelLoaded?.value == true
-    
-    /**
-     * 尝试加载 native 库
-     * @return 是否加载成功
-     */
-    private fun ensureLibrariesLoaded(): Boolean {
-        if (libraryLoadAttempted) {
-            return librariesLoaded
-        }
-        
-        libraryLoadAttempted = true
-        
-        FileLogger.d(TAG, "ensureLibrariesLoaded: loading MNN libraries...")
-        
-        // 检查 native 库文件是否存在
-        val jniDir = context.getDir("jniLibs", Context.MODE_PRIVATE)
-        val arm64Dir = java.io.File(jniDir, "arm64-v8a")
-        if (!arm64Dir.exists()) {
-            // 使用 APK 内置的库
-            FileLogger.d(TAG, "ensureLibrariesLoaded: using APK bundled libraries")
-        }
-        
-        val success = LlamaEngine.loadLibraries(context)
-        librariesLoaded = success
-        
-        if (success) {
-            FileLogger.i(TAG, "ensureLibrariesLoaded: success")
-        } else {
-            val error = LlamaEngine.getLibraryLoadError()
-            FileLogger.e(TAG, "ensureLibrariesLoaded: failed - $error")
-        }
-        
-        return success
-    }
+        get() = llamaEngine?.isModelLoaded?.value == true
     
     override suspend fun initialize(modelPath: String, config: InferenceConfig): Boolean {
-        FileLogger.d(TAG, "initialize: modelPath=$modelPath, config=$config")
+        FileLogger.d(TAG, "initialize: path=$modelPath, config.backend=${config.backend}")
+        this.modelPath = modelPath
         
-        return withContext(Dispatchers.IO) {
-            engineLock.lock()
-            try {
-                // 1. 加载 native 库
-                if (!ensureLibrariesLoaded()) {
-                    FileLogger.e(TAG, "initialize: failed to load native libraries")
-                    return@withContext false
-                }
-                
-                // 2. 初始化 LlamaEngine
-                llamaEngine = LlamaEngine.getInstance(context)
-                
-                // 3. 动态计算最优线程数（PH0-A: CPU多核优化）
-                val availableProcessors = Runtime.getRuntime().availableProcessors()
-                val nThreads = config.numThreads.takeIf { it > 0 } ?: when {
-                    availableProcessors >= 8 -> 6  // 8核设备：6大核+留2小核给UI
-                    availableProcessors >= 4 -> 4  // 4核设备
-                    else -> 2
-                }
-                val nCtx = config.contextWindow.takeIf { it > 0 } ?: DEFAULT_CONTEXT_LENGTH
-                
-                FileLogger.d(TAG, "initialize: nThreads=$nThreads (cores=$availableProcessors), nCtx=$nCtx, backend=${config.backend}, attentionMode=${config.attentionMode}")
-                
-                // 4. 加载模型
-                val success = llamaEngine?.loadModel(
-                    path = modelPath,
-                    nCtx = nCtx,
-                    nThreads = nThreads
-                ) ?: false
-                
-                if (success) {
-                    val modelName = llamaEngine?.loadedModelName?.value ?: "unknown"
-                    val memoryMB = llamaEngine?.getMemoryUsageMB() ?: 0f
-                    FileLogger.i(TAG, "initialize: success, model=$modelName, memory=${memoryMB}MB")
-                    
-                    // PH0/P2: 应用运行时硬件加速配置（带优雅降级）
-                    val effectiveBackend = if (config.backend == "opencl" || config.backend == "auto") {
-                        if (isOpenCLAvailable()) {
-                            FileLogger.i(TAG, "initialize: OpenCL available, using GPU backend")
-                            "opencl"
-                        } else {
-                            FileLogger.w(TAG, "initialize: OpenCL not available, falling back to CPU")
-                            "cpu"
-                        }
-                    } else {
-                        config.backend
-                    }
-                    
-                    try {
-                        val openclCache = config.openclCachePath ?: getOpenCLCacheDir()
-                        llamaEngine?.applyRuntimeConfig(
-                            backend = effectiveBackend,
-                            attentionMode = config.attentionMode,
-                            precision = config.precision,
-                            openclCachePath = openclCache
-                        )
-                        FileLogger.i(TAG, "initialize: runtime config applied, backend=$effectiveBackend, attentionMode=${config.attentionMode}")
-                    } catch (e: Throwable) {
-                        // Graceful degradation: if GPU config fails, fall back to CPU
-                        FileLogger.w(TAG, "initialize: runtime config failed, trying CPU fallback", e)
-                        try {
-                            llamaEngine?.applyRuntimeConfig(
-                                backend = "cpu",
-                                attentionMode = config.attentionMode,
-                                precision = "normal",
-                                openclCachePath = null
-                            )
-                            FileLogger.i(TAG, "initialize: CPU fallback applied successfully")
-                        } catch (e2: Throwable) {
-                            FileLogger.w(TAG, "initialize: CPU fallback also failed (non-fatal)", e2)
-                        }
-                    }
-                    
-                    // 5. 保存模型路径到 SharedPreferences，以便下次自动恢复
-                    saveModelPath(modelPath, config)
-                    lastModelPath = modelPath
-                } else {
-                    val error = llamaEngine?.lastError?.value ?: "unknown"
-                    FileLogger.e(TAG, "initialize: model load failed, error=$error")
-                }
-                
-                return@withContext success
-                
-            } catch (e: Throwable) {
-                FileLogger.e(TAG, "initialize: exception", e)
-                return@withContext false
-            } finally {
-                engineLock.unlock()
-            }
-        }
+        // Initialize LlamaEngine singleton
+        llamaEngine = LlamaEngine.initialize(context)
+        
+        // Set token callback for streaming
+        llamaEngine.setTokenCallback(null)  // Will be set per-request in inferStream
+        
+        // Load model with runtime config
+        val effectiveBackend = config.backend.ifBlank { "cpu" }
+        val openclCache = config.openclCachePath ?: File(context.cacheDir, "opencl_cache").absolutePath
+        
+        return llamaEngine?.loadModel(
+            path = modelPath,
+            nCtx = config.contextWindow,
+            nThreads = if (config.numThreads > 0) config.numThreads else 0,
+            backend = effectiveBackend,
+            attentionMode = config.attentionMode,
+            precision = config.precision,
+            openclCachePath = openclCache
+        ) ?: false
     }
     
-    /**
-     * 保存模型路径和配置到 SharedPreferences
-     */
-    private fun saveModelPath(modelPath: String, config: InferenceConfig) {
-        try {
-            prefs.edit()
-                .putString(KEY_LAST_MODEL_PATH, modelPath)
-                .putString(KEY_LAST_MODEL_CONFIG, config.toString())
-                .apply()
-            FileLogger.d(TAG, "saveModelPath: saved $modelPath")
-        } catch (e: Exception) {
-            FileLogger.e(TAG, "saveModelPath: failed to save", e)
-        }
-    }
-    
-    /**
-     * 获取上次加载的模型路径
-     */
-    private fun getLastModelPath(): String? {
-        return prefs.getString(KEY_LAST_MODEL_PATH, null)
-    }
-    
-    /**
-     * 清除保存的模型路径
-     */
-    private fun clearSavedModelPath() {
-        prefs.edit()
-            .remove(KEY_LAST_MODEL_PATH)
-            .remove(KEY_LAST_MODEL_CONFIG)
-            .apply()
-        FileLogger.d(TAG, "clearSavedModelPath: cleared")
-    }
-    
-    /**
-     * 扫描已下载的MNN模型目录
-     * 在SharedPreferences中没有保存路径时作为fallback
-     */
-    private fun scanForDownloadedModel(): String? {
-        val modelsDir = java.io.File(context.getDir("models", android.content.Context.MODE_PRIVATE), "mnn")
-        if (!modelsDir.exists() || !modelsDir.isDirectory) {
-            FileLogger.d(TAG, "scanForDownloadedModel: models dir not found: ${modelsDir.absolutePath}")
-            // Also check the download directory used by MnnModelDownloader
-            val altDir = java.io.File(context.getExternalFilesDir(null), "models")
-            if (altDir.exists() && altDir.isDirectory) {
-                return scanModelDir(altDir)
-            }
-            return null
-        }
-        return scanModelDir(modelsDir)
-    }
-    
-    private fun scanModelDir(dir: java.io.File): String? {
-        val subDirs = dir.listFiles()?.filter { it.isDirectory } ?: return null
-        for (subDir in subDirs) {
-            val hasLlmMnn = java.io.File(subDir, "llm.mnn").exists()
-            val hasConfig = java.io.File(subDir, "config.json").exists() || java.io.File(subDir, "llm_config.json").exists()
-            if (hasLlmMnn && hasConfig) {
-                FileLogger.i(TAG, "scanModelDir: found valid model at ${subDir.absolutePath}")
-                return subDir.absolutePath
-            }
-        }
-        return null
-    }
-    
-    /**
-     * 自动恢复上次加载的模型
-     * 
-     * 在 APP 重启后调用此方法，可以自动加载上次使用的模型。
-     * 如果之前没有加载过任何模型，或者模型文件已不存在，则返回 false。
-     * 
-     * @return 是否恢复成功
-     */
-    suspend fun autoRestore(): Boolean {
-        FileLogger.d(TAG, "autoRestore: checking for previously loaded model...")
-        
-        // 如果引擎已经初始化，不需要恢复
-        if (isInitialized) {
-            FileLogger.d(TAG, "autoRestore: engine already initialized, skip")
-            return true
-        }
-        
-        var savedPath = getLastModelPath()
-        if (savedPath == null) {
-            // Fallback: 扫描已下载的模型目录
-            FileLogger.d(TAG, "autoRestore: no saved model path, scanning model directories...")
-            savedPath = scanForDownloadedModel()
-            if (savedPath == null) {
-                FileLogger.d(TAG, "autoRestore: no downloaded model found")
-                return false
-            }
-            FileLogger.i(TAG, "autoRestore: found downloaded model at $savedPath")
-        }
-        
-        // 检查模型文件是否存在
-        val modelDir = java.io.File(savedPath)
-        if (!modelDir.exists() || !modelDir.isDirectory) {
-            FileLogger.w(TAG, "autoRestore: saved model path no longer exists: $savedPath")
-            clearSavedModelPath()
-            return false
-        }
-        
-        // 检查必需文件是否存在
-        val requiredFiles = listOf("config.json", "llm_config.json", "llm.mnn", "llm.mnn.weight", "llm.mnn.json", "tokenizer.txt")
-        val missingFiles = requiredFiles.filter { !java.io.File(modelDir, it).exists() }
-        if (missingFiles.isNotEmpty()) {
-            FileLogger.w(TAG, "autoRestore: model files missing: $missingFiles")
-            clearSavedModelPath()
-            return false
-        }
-        
-        FileLogger.i(TAG, "autoRestore: found saved model at $savedPath, attempting to load...")
-        
-        // 使用默认配置恢复加载
-        val config = InferenceConfig(
-            maxLength = DEFAULT_MAX_TOKENS,
-            temperature = 0.7f,
-            topK = 40,
-            topP = 0.9f,
-            numThreads = DEFAULT_THREADS,
-            contextWindow = DEFAULT_CONTEXT_LENGTH
-        )
-        
-        val success = initialize(savedPath, config)
-        if (success) {
-            FileLogger.i(TAG, "autoRestore: successfully restored model from $savedPath")
-        } else {
-            FileLogger.e(TAG, "autoRestore: failed to restore model from $savedPath")
-            clearSavedModelPath()
-        }
-        
-        return success
-    }
-    
-    override suspend fun infer(prompt: String, config: InferenceConfig): InferenceResult {
-        val startTime = System.currentTimeMillis()
+    override suspend fun infer(
+        prompt: String,
+        config: InferenceConfig
+    ): InferenceResult {
         FileLogger.d(TAG, "infer: prompt length=${prompt.length}")
-        
-        return withContext(Dispatchers.IO) {
-            try {
-                val engine = llamaEngine
-                    ?: throw IllegalStateException("Engine not initialized - call initialize() first")
-                
-                if (!engine.isModelLoaded.value) {
-                    throw IllegalStateException("Model not loaded - call initialize() with valid model path")
-                }
-                
-                val result = engine.generate(
-                    prompt = prompt,
-                    maxTokens = config.maxLength,
-                    temperature = config.temperature,
-                    topK = config.topK,
-                    topP = config.topP
-                )
-                
-                val elapsed = System.currentTimeMillis() - startTime
-                val stats = engine.inferenceStats.value
-                
-                FileLogger.d(TAG, "infer: completed in ${elapsed}ms, output length=${result.length}")
-                
-                InferenceResult(
-                    text = result,
-                    inferenceTimeMs = elapsed,
-                    tokenCount = stats.tokensGenerated,
-                    tokensPerSecond = stats.tokensPerSecond,
-                    success = true
-                )
-                
-            } catch (e: Throwable) {
-                FileLogger.e(TAG, "infer: failed", e)
-                InferenceResult(
-                    text = "",
-                    inferenceTimeMs = System.currentTimeMillis() - startTime,
-                    tokenCount = 0,
-                    tokensPerSecond = 0f,
-                    success = false,
-                    errorMessage = e.message
-                )
-            }
+        return try {
+            val result = llamaEngine?.generate(
+                prompt = prompt,
+                maxTokens = config.maxLength,
+                temperature = config.temperature,
+                topK = config.topK,
+                topP = config.topP
+            ) ?: ""
+            
+            InferenceResult(
+                text = result,
+                inferenceTimeMs = llamaEngine?.inferenceState?.value?.lastInferenceTimeMs ?: 0,
+                tokenCount = result.length / 4,
+                tokensPerSecond = llamaEngine?.inferenceState?.value?.tokensPerSecond ?: 0f,
+                success = result.isNotEmpty(),
+                errorMessage = if (result.isEmpty()) "Empty response" else null
+            )
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "infer failed", e)
+            InferenceResult(
+                text = "",
+                inferenceTimeMs = 0,
+                tokenCount = 0,
+                tokensPerSecond = 0f,
+                success = false,
+                errorMessage = e.message
+            )
         }
     }
     
-    override suspend fun inferStream(prompt: String, config: InferenceConfig): Flow<String> {
+    override suspend fun inferStream(
+        prompt: String,
+        config: InferenceConfig
+    ): Flow<String> = flow {
         FileLogger.d(TAG, "inferStream: prompt length=${prompt.length}")
         
-        return flow {
-            try {
-                val engine = llamaEngine
-                    ?: throw IllegalStateException("Engine not initialized - call initialize() first")
-                
-                if (!engine.isModelLoaded.value) {
-                    throw IllegalStateException("Model not loaded - call initialize() with valid model path")
-                }
-                
-                // Bug7修复: 传入useGPU参数
-                engine.generateStream(
-                    prompt = prompt,
-                    maxTokens = config.maxLength,
-                    temperature = config.temperature,
-                    topK = config.topK,
-                    topP = config.topP,
-                    useGPU = config.useGPU  // Bug7修复: 传递GPU配置
-                ).collect { token: String ->
-                    emit(token)
-                }
-                
-            } catch (e: Throwable) {
-                FileLogger.e(TAG, "inferStream: failed", e)
-                emit("推理失败: ${e.message}")
+        llamaEngine?.setTokenCallback(object : com.localai.server.engine.TokenCallback {
+            override fun onToken(token: String) {
+                // Tokens are emitted via flow
             }
-        }.flowOn(Dispatchers.IO)
-    }
+        })
+        
+        try {
+            llamaEngine?.generateStream(
+                prompt = prompt,
+                maxTokens = config.maxLength,
+                temperature = config.temperature,
+                topK = config.topK,
+                topP = config.topP
+            )?.collect { token ->
+                emit(token)
+            }
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "inferStream failed", e)
+            emit("[Error: ${e.message}]")
+        } finally {
+            llamaEngine?.setTokenCallback(null)
+        }
+    }.flowOn(Dispatchers.IO)
     
+    /**
+     * Generate embedding vector for text
+     * Default: character n-gram based lightweight embedding (128-dim)
+     * For neural embedding, use a dedicated embedding model
+     */
     override suspend fun generateEmbedding(text: String): FloatArray {
         FileLogger.d(TAG, "generateEmbedding: text length=${text.length}")
-        
         return withContext(Dispatchers.IO) {
-            // MNN 当前版本可能不支持 embedding
-            // 返回零向量或抛出异常
-            FileLogger.w(TAG, "generateEmbedding: not supported by MNN LLM")
-            FloatArray(768) { 0f }
+            // Lightweight n-gram embedding (SimHash-based)
+            // No neural network needed, works offline, good for semantic similarity
+            val dim = 128  // compact dimension for mobile
+            val vec = FloatArray(dim) { 0f }
+            
+            // Extract character bigrams and trigrams
+            val chars = text.lowercase().toCharArray()
+            for (i in chars.indices) {
+                // Unigram
+                val h1 = (chars[i].code * 31) % dim
+                vec[h1] += 1f
+                vec[(h1 + 1) % dim] += 0.5f
+                
+                // Bigram
+                if (i + 1 < chars.size) {
+                    val h2 = ((chars[i].code * 31 + chars[i + 1].code) * 17) % dim
+                    vec[Math.abs(h2)] += 0.8f
+                }
+                
+                // Trigram
+                if (i + 2 < chars.size) {
+                    val h3 = ((chars[i].code * 31 + chars[i + 1].code * 17 + chars[i + 2].code) * 7) % dim
+                    vec[Math.abs(h3)] += 0.6f
+                }
+            }
+            
+            // L2 normalize
+            var norm = 0f
+            for (v in vec) norm += v * v
+            norm = Math.sqrt(norm.toDouble()).toFloat()
+            if (norm > 0f) {
+                for (i in vec.indices) vec[i] /= norm
+            }
+            
+            FileLogger.d(TAG, "generateEmbedding: n-gram embedding generated, dim=$dim")
+            vec
         }
     }
     
     override suspend fun release() {
         FileLogger.d(TAG, "release")
-        
-        withContext(Dispatchers.IO) {
-            engineLock.lock()
-            try {
-                llamaEngine?.release()
-                llamaEngine = null
-                librariesLoaded = false
-                libraryLoadAttempted = false
-                // 注意：不清除保存的模型路径，下次启动时可以自动恢复
-                FileLogger.i(TAG, "release: success, saved model path preserved for auto-restore")
-            } catch (e: Throwable) {
-                FileLogger.e(TAG, "release: failed", e)
-            }
-        }
+        llamaEngine?.setTokenCallback(null)
+        llamaEngine?.unloadModel()
+        llamaEngine = null
     }
     
-    override fun getSupportedModelTypes(): List<String> {
-        return listOf(
-            "Qwen", "Qwen2", "Qwen2.5", "Qwen3",
-            "Llama", "Llama2", "Llama3",
-            "Mistral", "Gemma", "Phi", "Baichuan", "ChatGLM"
-        )
-    }
+    override fun getSupportedModelTypes(): List<String> = listOf("mnn", "onnx")
+    
+    override fun getMemoryUsageMB(): Float = llamaEngine?.getMemoryUsageMB() ?: 0f
     
     /**
-     * 获取当前推理统计
+     * Apply runtime config changes (e.g., switch backend)
+     * Note: Requires model reload to take effect
      */
-    fun getInferenceStats(): InferenceStats {
-        return llamaEngine?.inferenceStats?.value ?: InferenceStats()
-    }
-    
-    /**
-     * 获取内存使用（MB）
-     */
-    fun getMemoryUsageMB(): Float {
-        return llamaEngine?.getMemoryUsageMB() ?: 0f
-    }
-    
-    /**
-     * 获取已加载模型名称
-     */
-    fun getLoadedModelName(): String? {
-        return llamaEngine?.loadedModelName?.value
-    }
-    
-    /**
-     * 获取已加载模型路径
-     */
-    fun getLoadedModelPath(): String? {
-        return lastModelPath ?: getLastModelPath()
-    }
-    
-    /**
-     * 获取上下文大小
-     */
-    fun getContextSize(): Int {
-        return llamaEngine?.getContextSize() ?: 0
-    }
-    
-    /**
-     * 设置系统提示词
-     */
-    fun setSystemPrompt(systemPrompt: String): Boolean {
-        return llamaEngine?.setSystemPrompt(systemPrompt) ?: false
-    }
-    
-    /**
-     * 重置对话上下文
-     */
-    fun resetConversation() {
-        llamaEngine?.resetConversation()
-    }
-    
-    // ===== PH0: 设备信息检测 =====
-    
-    /**
-     * 获取设备 CPU 核心数
-     */
-    fun getAvailableProcessors(): Int = Runtime.getRuntime().availableProcessors()
-    
-    /**
-     * 获取推荐的推理线程数
-     * 778G(8核) → 6线程（用大核，留小核给UI）
-     */
-    fun getRecommendedThreads(): Int {
-        val cores = getAvailableProcessors()
-        return when {
-            cores >= 8 -> 6
-            cores >= 4 -> 4
-            else -> 2
-        }
-    }
-    
-    /**
-     * 检测设备是否支持 OpenCL GPU
-     */
-    /**
-     * P2: Enhanced OpenCL availability detection
-     * Checks: 1) OpenCL .so exists  2) GPU driver info  3) Memory sufficient
-     */
-    fun isOpenCLAvailable(): Boolean {
-        // 1. Check OpenCL library files exist
-        val openCLPaths = listOf(
-            "/system/vendor/lib64/libOpenCL.so",
-            "/system/vendor/lib/libOpenCL.so",
-            "/system/lib64/libOpenCL.so"
-        )
-        val hasOpenCLLib = openCLPaths.any { java.io.File(it).exists() }
-        if (!hasOpenCLLib) {
-            FileLogger.d(TAG, "isOpenCLAvailable: no OpenCL .so found")
-            return false
-        }
-        
-        // 2. Check GPU info (Adreno 6xx+ has good OpenCL support)
-        val hasAdreno = try {
-            val gpuVendor = java.io.File("/sys/class/kgsl/kgsl-3d0/gpu_model").readText().trim()
-            gpuVendor.contains("Adreno", ignoreCase = true)
-        } catch (e: Exception) {
-            // Can't read GPU model, assume available since OpenCL .so exists
-            true
-        }
-        
-        // 3. Check device memory (OpenCL needs at least 2GB free for LLM inference)
-        val totalMemMB = getDeviceTotalMemoryMB()
-        val memSufficient = totalMemMB >= 4000L  // 4GB+ devices can use GPU
-        
-        val available = hasOpenCLLib && (hasAdreno || true) && memSufficient
-        FileLogger.d(TAG, "isOpenCLAvailable: lib=$hasOpenCLLib, adreno=$hasAdreno, mem=${totalMemMB}MB, result=$available")
-        return available
-    }
-    
-    /**
-     * P2: Get OpenCL cache directory path
-     * AutoTuning results are cached here to avoid slow first-time initialization
-     */
-    fun getOpenCLCacheDir(): String {
-        val cacheDir = java.io.File(context.filesDir, "mnn_opencl_cache")
-        if (!cacheDir.exists()) {
-            cacheDir.mkdirs()
-        }
-        return cacheDir.absolutePath
-    }
-    
-    /**
-     * P2: Clear OpenCL AutoTuning cache
-     * Call when switching to a different model or after GPU driver update
-     */
-    fun clearOpenCLCache() {
-        try {
-            val cacheDir = java.io.File(context.filesDir, "mnn_opencl_cache")
-            cacheDir.listFiles()?.forEach { it.delete() }
-            FileLogger.d(TAG, "clearOpenCLCache: cache cleared")
-        } catch (e: Exception) {
-            FileLogger.e(TAG, "clearOpenCLCache: failed", e)
-        }
-    }
-    
-    /**
-     * 检测设备总内存（MB）
-     */
-    fun getDeviceTotalMemoryMB(): Long {
-        return try {
-            val stat = java.io.File("/proc/meminfo").readLines()
-            val memTotal = stat.firstOrNull { it.startsWith("MemTotal:") }
-            memTotal?.split("\s+".toRegex())?.get(1)?.toLongOrNull()?.div(1024) ?: 0L
-        } catch (e: Exception) {
-            0L
-        }
-    }
-    
-    // ===== P3: Enhanced interface method implementations =====
-    
-    override fun estimateTokens(text: String): Int {
-        var tokens = 0
-        for (char in text) {
-            tokens += if (char.code > 0x4E00) 1 else 0  // CJK = 1 token each
-        }
-        val asciiChars = text.count { it.code <= 0x4E00 }
-        tokens += (asciiChars + 3) / 4
-        return tokens
-    }
-    
-    override fun supportsToolCalling(): Boolean = false  // MNN parses tool calls from text
-    
-    override fun supportsThinking(): Boolean = true  // Qwen3.5 supports thinking mode
-    
-    override fun getInferenceStats(): InferenceStats {
-        val avgTps = if (totalInferences > 0) totalTokensGenerated.toFloat() / totalInferences else 0f
-        return InferenceStats(
-            lastInferenceTimeMs = lastInferenceTimeMs,
-            tokensPerSecond = lastTokensPerSecond,
-            totalInferences = totalInferences,
-            totalTokensGenerated = totalTokensGenerated,
-            avgTokensPerSecond = avgTps
-        )
-    }
-    
-    /**
-     * Update inference stats after each inference
-     */
-    fun updateInferenceStats(durationMs: Long, tokensGenerated: Int) {
-        totalInferences++
-        totalTokensGenerated += tokensGenerated
-        lastInferenceTimeMs = durationMs
-        lastTokensPerSecond = if (durationMs > 0) tokensGenerated * 1000f / durationMs else 0f
+    fun applyRuntimeConfig(
+        backend: String,
+        attentionMode: Int,
+        precision: String,
+        openclCachePath: String?
+    ) {
+        llamaEngine?.applyRuntimeConfig(backend, attentionMode, precision, openclCachePath)
     }
 }
