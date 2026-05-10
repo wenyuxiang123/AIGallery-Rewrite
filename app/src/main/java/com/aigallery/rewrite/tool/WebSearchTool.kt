@@ -123,6 +123,6 @@ class WebSearchTool(
             return "搜索「$query」未找到具体结果，建议换个关键词试试"
         }
         
-        builder.toString()
+        return builder.toString()
     }
 }
