@@ -38,6 +38,21 @@ interface MemoryDao {
 
     @Query("DELETE FROM memories")
     suspend fun deleteAllMemories()
+
+
+    /**
+     * P2: FTS5 full-text search across memories
+     * Replaces LIKE-based search with proper full-text search
+     */
+    @Query("""
+        SELECT m.* FROM memories m 
+        INNER JOIN memories_fts fts ON m.rowid = fts.rowid 
+        WHERE fts.content MATCH :query OR fts.tags MATCH :query
+        ORDER BY rank
+        LIMIT :limit
+    """)
+    suspend fun searchMemoriesFts(query: String, limit: Int = 20): List<MemoryEntity>
+
 }
 
 /**
