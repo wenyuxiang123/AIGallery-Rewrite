@@ -46,6 +46,11 @@ class ChatSessionViewModel @Inject constructor(
 
     private var inferenceJob: Job? = null
     private val messageIdCounter = AtomicLong(0)
+    
+    // Bug2修复: thinking block 状态机变量
+    private var thinkingBuffer = ""
+    private var inToolCallBlock = false
+    private var thinkingBlockChars = 0
 
     private val _state = MutableStateFlow(ChatSessionState())
     val state: StateFlow<ChatSessionState> = _state.asStateFlow()
@@ -197,6 +202,49 @@ class ChatSessionViewModel @Inject constructor(
     }
 
     /**
+     * 处理 thinking block 过滤
+     * 使用状态机正确匹配 <tool_call> 和 </tool_call> 标签
+     * 
+     * @param token 新收到的 token
+     * @return 如果不在 thinking block 中，返回要显示的内容；否则返回 null
+     */
+    private fun processThinkingBlock(token: String): String? {
+        // 累积 buffer 用于检测标签
+        thinkingBuffer += token
+        
+        // 检测 <tool_call> 标签开始
+        if (!inToolCallBlock && thinkingBuffer.contains("<tool_call>")) {
+            inToolCallBlock = true
+            thinkingBuffer = ""
+            return null
+        }
+        
+        // 检测 </tool_call> 标签结束
+        if (inToolCallBlock && thinkingBuffer.contains("</tool_call>")) {
+            inToolCallBlock = false
+            thinkingBuffer = ""
+            return null
+        }
+        
+        // 如果在 thinking block 中
+        if (inToolCallBlock) {
+            thinkingBlockChars += token.length
+            // 安全限制：超过最大长度强制退出 thinking block
+            if (thinkingBlockChars > MAX_THINKING_BLOCK_CHARS) {
+                inToolCallBlock = false
+                thinkingBlockChars = 0
+                thinkingBuffer = ""
+                FileLogger.w(TAG, "processThinkingBlock: forced exit due to max length exceeded")
+            }
+            return null
+        }
+        
+        // 不在 thinking block 中，正常返回内容
+        return token
+    }
+
+
+    /**
      * 发送消息
      */
     fun sendMessage(message: String) {
@@ -291,10 +339,8 @@ class ChatSessionViewModel @Inject constructor(
                     }
                     
                     val fullPrompt = buildPrompt(cleanedMessage)
-                    var tokenBuffer = ""
-                    var inThinkingBlock = false
-                    var thinkingBlockChars = 0
                     
+                    // Bug2修复: 使用状态机正确匹配 <tool_call> 和 </tool_call> 标签
                     inferenceEngine.inferStream(
                         prompt = fullPrompt,
                         config = InferenceConfig(
@@ -306,33 +352,10 @@ class ChatSessionViewModel @Inject constructor(
                             repeatPenalty = 1.2f
                         )
                     ).collect { token ->
-                        tokenBuffer += token
-                        
-                        if (tokenBuffer.contains("<think")) {
-                            inThinkingBlock = true
-                            tokenBuffer = ""
-                            thinkingBlockChars = 0
-                        }
-                        
-                        if (inThinkingBlock && tokenBuffer.contains(">")) {
-                            inThinkingBlock = false
-                            thinkingBlockChars = 0
-                            tokenBuffer = ""
-                        }
-                        
-                        if (inThinkingBlock) {
-                            thinkingBlockChars += token.length
-                            if (thinkingBlockChars > MAX_THINKING_BLOCK_CHARS) {
-                                inThinkingBlock = false
-                                thinkingBlockChars = 0
-                                tokenBuffer = ""
-                            }
-                        }
-                        
-                        if (!inThinkingBlock && tokenBuffer.isNotEmpty()) {
-                            updateStreamingMessage(aiMessageId, tokenBuffer)
+                        val result = processThinkingBlock(token)
+                        result?.let {
+                            updateStreamingMessage(aiMessageId, it)
                             tokenCount++
-                            tokenBuffer = ""
                         }
                         
                         if (tokenCount % 20 == 0) {
