@@ -64,6 +64,38 @@ interface InferenceEngine {
      * 获取支持的模型类型
      */
     fun getSupportedModelTypes(): List<String>
+
+    // ===== P3: Enhanced interface methods =====
+
+    /**
+     * Estimate token count for text
+     * Used by ContextManager for budget allocation
+     * Default implementation: ~4 chars per token
+     */
+    fun estimateTokens(text: String): Int {
+        return (text.length + 3) / 4
+    }
+
+    /**
+     * Whether this engine supports tool/function calling natively
+     * Local MNN engines return false (tool calls parsed from text output)
+     */
+    fun supportsToolCalling(): Boolean = false
+
+    /**
+     * Whether this engine supports streaming output
+     */
+    fun supportsStreaming(): Boolean = true
+
+    /**
+     * Whether this engine supports thinking/reasoning mode
+     */
+    fun supportsThinking(): Boolean = false
+
+    /**
+     * Get current inference statistics
+     */
+    fun getInferenceStats(): InferenceStats = InferenceStats()
 }
 
 /**
@@ -123,6 +155,17 @@ data class InferenceResult(
     val success: Boolean,
     /** 错误信息 */
     val errorMessage: String? = null
+)
+
+/**
+ * P3: Inference statistics for observability
+ */
+data class InferenceStats(
+    val lastInferenceTimeMs: Long = 0,
+    val tokensPerSecond: Float = 0f,
+    val totalInferences: Long = 0,
+    val totalTokensGenerated: Long = 0,
+    val avgTokensPerSecond: Float = 0f
 )
 
 /**
