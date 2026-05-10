@@ -20,6 +20,9 @@ import com.aigallery.rewrite.inference.SpeculativeDecoder
 import com.aigallery.rewrite.context.ContextManager
 import com.aigallery.rewrite.context.MemoryCompressor
 import com.aigallery.rewrite.context.GSSCPromptBuilder
+import com.aigallery.rewrite.skill.SkillRegistry
+import com.aigallery.rewrite.skill.SkillMatch
+import com.aigallery.rewrite.trace.AgentTraceLogger
 import com.aigallery.rewrite.download.MnnModelDownloader
 import com.aigallery.rewrite.download.MnnDownloadStatus
 import com.aigallery.rewrite.domain.model.MemoryConfig
@@ -47,6 +50,8 @@ class ChatSessionViewModel @Inject constructor(
     private val contextManager: ContextManager,
     private val memoryCompressor: MemoryCompressor,
     private val gsscPromptBuilder: GSSCPromptBuilder,
+    private val skillRegistry: SkillRegistry,
+    private val traceLogger: AgentTraceLogger,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -512,7 +517,15 @@ class ChatSessionViewModel @Inject constructor(
             FileLogger.e(TAG, "buildPrompt: memory retrieval failed", e)
         }
         
-        // 2. Build GSSC dynamic system prompt
+        // 2. P3: Skill matching - find relevant skills
+        val skillMatches = skillRegistry.matchSkill(userMessage)
+        val bestSkill = skillMatches.firstOrNull()
+        if (bestSkill != null && bestSkill.confidence > 0.3f) {
+            traceLogger.logSkillMatch(userMessage, bestSkill.skill.id, bestSkill.confidence)
+            FileLogger.d(TAG, "buildPrompt: matched skill '${bestSkill.skill.name}' (confidence=${bestSkill.confidence})")
+        }
+        
+        // 3. Build GSSC dynamic system prompt
         val tierName = _state.value.selectedTier.name.lowercase()
         val hasToolHistory = _state.value.toolSteps.isNotEmpty()
         val systemPrompt = gsscPromptBuilder.buildPrompt(
@@ -591,6 +604,7 @@ class ChatSessionViewModel @Inject constructor(
         while (step < MAX_REACT_STEPS) {
             step++
             FileLogger.d(TAG, "ReAct step $step/$MAX_REACT_STEPS")
+            traceLogger.logReActStep(step, MAX_REACT_STEPS, false, 0)
             
             var fullOutput = ""
             var hasToolCall = false
@@ -637,6 +651,7 @@ class ChatSessionViewModel @Inject constructor(
             hasToolCall = true
             for (call in toolCalls) {
                 FileLogger.i(TAG, "ReAct: executing tool ${call.toolName}")
+                val toolStartTime = System.currentTimeMillis()
                 
                 // Add tool step to UI
                 val toolStep = ToolStep(
@@ -659,6 +674,7 @@ class ChatSessionViewModel @Inject constructor(
                 }
                 
                 FileLogger.i(TAG, "ReAct: tool ${call.toolName} result: ${result.content.take(100)}")
+                traceLogger.logToolCall(call, result, System.currentTimeMillis() - toolStartTime)
                 
                 // Inject tool result into context and continue
                 val toolResultPrompt = buildToolResultPrompt(call, result)
