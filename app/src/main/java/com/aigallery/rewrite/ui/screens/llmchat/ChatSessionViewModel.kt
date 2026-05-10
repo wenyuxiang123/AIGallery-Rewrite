@@ -13,6 +13,10 @@ import com.aigallery.rewrite.domain.model.ModelStatus
 import com.aigallery.rewrite.domain.model.ModelCatalog
 import com.aigallery.rewrite.domain.model.ModelTier
 import com.aigallery.rewrite.data.repository.MemoryRepository
+import com.aigallery.rewrite.tool.ToolRegistry
+import com.aigallery.rewrite.tool.ToolCall
+import com.aigallery.rewrite.tool.ToolResponse
+import com.aigallery.rewrite.inference.SpeculativeDecoder
 import com.aigallery.rewrite.download.MnnModelDownloader
 import com.aigallery.rewrite.download.MnnDownloadStatus
 import com.aigallery.rewrite.domain.model.MemoryConfig
@@ -36,14 +40,17 @@ class ChatSessionViewModel @Inject constructor(
     private val chatMessageDao: ChatMessageDao,
     private val chatSessionDao: ChatSessionDao,
     private val mnnDownloader: MnnModelDownloader,
+    private val toolRegistry: ToolRegistry,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
     companion object {
         private const val TAG = "ChatSession"
         private const val MAX_MEMORY_CHARS = 500
-        private const val MAX_HISTORY_TURNS = 6  // Keep last 6 messages (3 user + 3 assistant)
-        private const val MAX_THINKING_BLOCK_CHARS = 500  // Safety limit for thinking block
+        private const val MAX_HISTORY_TURNS = 6
+        private const val MAX_THINKING_BLOCK_CHARS = 500
+        private const val MAX_REACT_STEPS = 5  // P0: ReAct max loop steps
+        private const val REACT_STEP_TAG = "[ReAct]"  // Display prefix for tool steps
         private val memoryConfig = MemoryConfig(shortTermMemoryEnabled = true, shortTermWindowSize = 5, longTermMemoryEnabled = true, longTermRetrievalLimit = 3, personaMemoryEnabled = true)
         private const val KEY_SESSION_ID = "sessionId"
     }
@@ -370,37 +377,26 @@ class ChatSessionViewModel @Inject constructor(
                     
                     val fullPrompt = buildPrompt(cleanedMessage)
                     
-                    // Bug2修复: 使用状态机正确匹配 <tool_call> 和 </tool_call> 标签
-                    // Bug4修复: 添加120秒推理超时
-                    withTimeoutOrNull(120_000L) {
-                        inferenceEngine.inferStream(
-                            prompt = fullPrompt,
-                            config = InferenceConfig(
-                                maxLength = 2048,
-                                temperature = 0.7f,
-                                topK = 40,
-                                topP = 0.9f,
-                                numThreads = 0,
-                                repeatPenalty = 1.2f
-                            )
-                        ).collect { token ->
-                            val result = processThinkingBlock(token)
-                            result?.let {
-                                updateStreamingMessage(aiMessageId, it)
-                                tokenCount++
-                            }
-                            
-                            if (tokenCount % 20 == 0) {
-                                FileLogger.d(TAG, "sendMessage: streamed $tokenCount tokens")
-                            }
-                        }
-                    } ?: run {
-                        FileLogger.w(TAG, "sendMessage: inference timed out after 120s")
-                        updateStreamingMessage(aiMessageId, "\n\n⏱️ 推理超时，已自动停止")
-                    }
+                    // P0: ReAct loop inference (replaces direct single-pass inference)
+                    val reactConfig = InferenceConfig(
+                        maxLength = 2048,
+                        temperature = 0.7f,
+                        topK = 40,
+                        topP = 0.9f,
+                        numThreads = 0,
+                        repeatPenalty = 1.2f,
+                        backend = if (inferenceEngine.isOpenCLAvailable()) "opencl" else "cpu",
+                        attentionMode = when (_state.value.selectedTier) {
+                            ModelTier.MAXIMUM -> 14
+                            else -> 10
+                        },
+                        precision = "low",
+                        enableSpeculativeDecoding = _state.value.speculativeDecodingEnabled && 
+                            _state.value.selectedTier == ModelTier.RECOMMENDED
+                    )
                     
-                    // 修复：如果流结束后仍在 thinking 块中，flush 剩余内容
-                    FileLogger.d(TAG, "sendMessage: stream completed, tokenCount=$tokenCount")
+                    runReActLoop(fullPrompt, aiMessageId, reactConfig)
+                    FileLogger.d(TAG, "sendMessage: ReAct loop completed, tokenCount=$tokenCount")
 
                     _engineState.update { 
                         it.copy(
@@ -555,6 +551,159 @@ class ChatSessionViewModel @Inject constructor(
         return sb.toString()
     }
 
+
+    /**
+     * P0: ReAct 推理循环
+     * 
+     * 流程：
+     * 1. 模型推理生成输出
+     * 2. 如果输出包含工具调用 → 解析工具 → 执行 → 将结果注入上下文 → 继续推理
+     * 3. 如果输出是纯文本 → 输出给用户
+     * 4. 最多循环 MAX_REACT_STEPS 次
+     */
+    private suspend fun runReActLoop(
+        initialPrompt: String,
+        assistantMsgId: Long,
+        config: InferenceConfig
+    ) {
+        var currentPrompt = initialPrompt
+        var step = 0
+        
+        while (step < MAX_REACT_STEPS) {
+            step++
+            FileLogger.d(TAG, "ReAct step $step/$MAX_REACT_STEPS")
+            
+            var fullOutput = ""
+            var hasToolCall = false
+            
+            try {
+                withTimeoutOrNull(120_000L) {
+                    inferenceEngine.inferStream(currentPrompt, config).collect { token ->
+                        // Filter thinking blocks
+                        if (inToolCallBlock) {
+                            thinkingBuffer += token
+                            return@collect
+                        }
+                        if (token == "") {
+                            inToolCallBlock = true
+                            thinkingBlockChars = 0
+                            return@collect
+                        }
+                        thinkingBlockChars++
+                        if (thinkingBlockChars <= MAX_THINKING_BLOCK_CHARS) {
+                            fullOutput += token
+                            updateStreamingMessage(assistantMsgId, token)
+                        }
+                    }
+                } ?: run {
+                    FileLogger.w(TAG, "ReAct step $step: inference timed out")
+                    updateStreamingMessage(assistantMsgId, "
+[推理超时]")
+                    break
+                }
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "ReAct step $step: stream error", e)
+                break
+            }
+            
+            // Check for tool calls
+            val toolCalls = toolRegistry.parseToolCalls(fullOutput)
+            if (toolCalls.isEmpty()) {
+                // No tool calls - we're done
+                FileLogger.d(TAG, "ReAct: no tool calls, output complete at step $step")
+                break
+            }
+            
+            // Execute tool calls
+            hasToolCall = true
+            for (call in toolCalls) {
+                FileLogger.i(TAG, "ReAct: executing tool ${call.toolName}")
+                
+                // Add tool step to UI
+                val toolStep = ToolStep(
+                    step = step,
+                    toolName = call.toolName,
+                    parameters = call.parameters
+                )
+                _state.update { it.copy(toolSteps = it.toolSteps + toolStep) }
+                
+                // Execute the tool
+                val result = toolRegistry.execute(call)
+                
+                // Update tool step with result
+                _state.update { s ->
+                    s.copy(toolSteps = s.toolSteps.map {
+                        if (it.step == step && it.toolName == call.toolName && it.isExecuting)
+                            it.copy(result = result.content.take(200), isExecuting = false)
+                        else it
+                    })
+                }
+                
+                FileLogger.i(TAG, "ReAct: tool ${call.toolName} result: ${result.content.take(100)}")
+                
+                // Inject tool result into context and continue
+                val toolResultPrompt = buildToolResultPrompt(call, result)
+                currentPrompt = toolResultPrompt
+            }
+        }
+        
+        if (step >= MAX_REACT_STEPS) {
+            FileLogger.w(TAG, "ReAct: reached max steps")
+            updateStreamingMessage(assistantMsgId, "
+[已达最大推理步数]")
+        }
+        
+        // Clear tool steps after completion
+        _state.update { it.copy(toolSteps = emptyList()) }
+        markStreamingComplete(assistantMsgId)
+    }
+    
+    /**
+     * Build prompt for tool result injection
+     */
+    private fun buildToolResultPrompt(call: ToolCall, result: ToolResponse): String {
+        val resultContent = if (result.success) result.content else "Error: ${result.error}"
+        val messages = mutableListOf<Pair<String, String>>()
+        
+        // Add memory context
+        val memoryContext = getMemoryContext()
+        if (memoryContext.isNotEmpty()) {
+            messages.add("system" to memoryContext)
+        }
+        
+        // Add recent history
+        val history = _state.value.messages
+            .filter { !it.isStreaming && it.content.isNotBlank() }
+            .takeLast(MAX_HISTORY_TURNS)
+        for (msg in history) {
+            val role = when (msg.role) {
+                MessageRole.USER -> "user"
+                MessageRole.ASSISTANT -> "assistant"
+                else -> continue
+            }
+            messages.add(role to msg.content.take(300))
+        }
+        
+        // Add tool result as observation
+        messages.add("user" to "Tool ${call.toolName} returned: $resultContent
+Please use this result to answer the user.")
+        
+        val sb = StringBuilder()
+        for ((role, msgContent) in messages) {
+            sb.append("$role$msgContent")
+        }
+        return sb.toString()
+    }
+    
+    private fun getMemoryContext(): String {
+        return try {
+            val workingMemories = memoryRepository.getWorkingMemories(sessionId).first()
+            if (workingMemories.isNotEmpty()) {
+                workingMemories.take(3).joinToString("
+") { "- ${it.content.take(MAX_MEMORY_CHARS)}" }
+            } else ""
+        } catch (e: Exception) { "" }
+    }
 
     /**
      * 生成 fallback 回复
@@ -906,4 +1055,16 @@ fun ChatMessageEntity.toDomain() = ChatMessage(
     content = content,
     timestamp = timestamp,
     isStreaming = isStreaming
+)
+
+/**
+ * ReAct tool execution step (for UI display)
+ */
+data class ToolStep(
+    val step: Int,
+    val toolName: String,
+    val parameters: Map<String, Any>,
+    val result: String? = null,
+    val isExecuting: Boolean = true,
+    val timestamp: Long = System.currentTimeMillis()
 )
