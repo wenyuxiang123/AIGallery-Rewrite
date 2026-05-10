@@ -10,8 +10,8 @@ import okhttp3.OkHttpClient
 class ToolRegistry {
     companion object {
         private const val TAG = "ToolRegistry"
-        val FUNC_START = "\x27FUNC\x27"
-        val FUNC_END = "\x27F"
+        val FUNC_START = "✿FUNCTION✿"
+        val FUNC_END = "✿RESULT✿"
         val TOOL_CALL_START = "<tool_call>"
         val TOOL_CALL_END = "</tool_call>"
     }
@@ -82,7 +82,7 @@ class ToolRegistry {
         val calls = mutableListOf<ToolCall>()
         // Format 1: Qwen 3.5 FUNC format
         if (output.contains(FUNC_START)) {
-            val parts = output.split(FUNC_START)
+        val FUNC_START = "✿FUNCTION✿"
             for (part in parts.drop(1)) {
                 try {
                     val lines = part.trim().split("\n")
@@ -115,7 +115,7 @@ class ToolRegistry {
 
     fun stripToolCalls(output: String): String {
         var cleaned = output
-        val funcPattern = Regex(Regex.escape(FUNC_START) + ".*?" + Regex.escape(FUNC_END), RegexOption.DOT_MATCHES_ALL)
+        val FUNC_START = "✿FUNCTION✿"
         cleaned = funcPattern.replace(cleaned, "")
         val toolCallPattern = Regex(Regex.escape(TOOL_CALL_START) + ".*?" + Regex.escape(TOOL_CALL_END), RegexOption.DOT_MATCHES_ALL)
         cleaned = toolCallPattern.replace(cleaned, "")
