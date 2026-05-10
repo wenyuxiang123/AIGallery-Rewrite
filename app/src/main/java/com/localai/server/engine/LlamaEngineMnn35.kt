@@ -12,9 +12,6 @@ import java.io.File
 /**
  * Token 回调接口，用于流式输出
  */
-interface TokenCallback {
-    fun onToken(token: String)
-}
 
 /**
  * MNN LLM 推理引擎 JNI 桥接类 - MNN 3.5.0 兼容版本
