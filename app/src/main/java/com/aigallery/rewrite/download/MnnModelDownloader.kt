@@ -99,16 +99,15 @@ class MnnModelDownloader @Inject constructor(
     // 下载状态
     private val _downloadStates = MutableStateFlow<Map<String, MnnDownloadState>>(emptyMap())
     val downloadStates: StateFlow<Map<String, MnnDownloadState>> = _downloadStates.asStateFlow()
-    
-        // MNN 模型 ID 映射（modelId -> ModelScope 路径）
+
+    // MNN 模型 ID 映射（modelId -> ModelScope 路径）
     // ModelScope 路径格式: MNN/ModelName
-    // Bug 2 修复：补全所有在AIModel.kt中定义的MNN模型映射
     private val mnnModelPaths = mapOf(
-        // ============ Qwen 3.5 系列 ============
-        "qwen3.5-0.8b-mnn" to "MNN/Qwen3.5-0.8B-MNN",
-        "qwen3.5-2b-mnn" to "MNN/Qwen3.5-2B-MNN",
-        "qwen3.5-4b-mnn" to "MNN/Qwen3.5-4B-MNN",
-        "qwen3.5-9b-mnn" to "MNN/Qwen3.5-9B-MNN"
+        // ============ 新5档位模型 ============
+        "qwen3.5-0.8b-int4" to "MNN/Qwen3.5-0.8B-Instruct-MNN",
+        "qwen3.5-1.5b-int4" to "MNN/Qwen3.5-1.5B-Instruct-MNN",
+        "qwen3.5-3b-int4" to "MNN/Qwen3.5-3B-Instruct-MNN",
+        "qwen3.5-4b-int4" to "MNN/Qwen3.5-4B-Instruct-MNN"
     )
     
     /**
@@ -123,7 +122,8 @@ class MnnModelDownloader @Inject constructor(
         // 检查必需文件是否存在
         return REQUIRED_FILES.all { File(modelDir, it).exists() }
     }
-    
+
+
     /**
      * 检查可选文件是否已下载
      */
