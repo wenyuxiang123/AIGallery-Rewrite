@@ -146,15 +146,26 @@ class InferenceManager @Inject constructor(
      */
     private fun getModelPath(modelId: String): String? {
         val modelDir = context.getDir("models", Context.MODE_PRIVATE)
-        val modelFile = java.io.File(modelDir, "$modelId.mnn")
         
-        return if (modelFile.exists()) {
-            modelFile.absolutePath
-        } else {
-            // 检查是否有 gguf 格式
-            val ggufFile = java.io.File(modelDir, "$modelId.gguf")
-            if (ggufFile.exists()) ggufFile.absolutePath else null
+        // Bug3修复: MNN 模型是目录结构，不是 .mnn 文件
+        // 检查 models/{modelId}/ 目录是否存在
+        val mnnModelDir = java.io.File(modelDir, modelId)
+        if (mnnModelDir.exists() && mnnModelDir.isDirectory) {
+            // 检查目录中是否包含必要的 MNN 文件
+            val llmMnn = java.io.File(mnnModelDir, "llm.mnn")
+            val config = java.io.File(mnnModelDir, "config.json")
+            if (llmMnn.exists() || config.exists()) {
+                return mnnModelDir.absolutePath
+            }
         }
+        
+        // 检查是否有 gguf 格式
+        val ggufFile = java.io.File(modelDir, "$modelId.gguf")
+        if (ggufFile.exists()) {
+            return ggufFile.absolutePath
+        }
+        
+        return null
     }
 
     /**
