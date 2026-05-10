@@ -104,3 +104,15 @@ data class PersonaMemoryEntity(
     val createdAt: Long,
     val updatedAt: Long
 )
+
+
+/**
+ * FTS5 full-text search entity for memories
+ * Mirrors MemoryEntity content for full-text search capability
+ */
+@Fts4(contentEntity = MemoryEntity::class)
+@Entity(tableName = "memories_fts")
+data class MemoryFts(
+    val content: String,
+    val tags: String
+)
