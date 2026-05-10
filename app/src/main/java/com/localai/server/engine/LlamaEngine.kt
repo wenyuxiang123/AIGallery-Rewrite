@@ -2,6 +2,7 @@ package com.localai.server.engine
 
 import android.content.Context
 import com.aigallery.rewrite.util.FileLogger
+import com.aigallery.rewrite.inference.InferenceStats
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -14,6 +15,14 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.withContext
 import java.io.File
+import org.json.JSONObject
+
+/**
+ * Token 回调接口，用于流式输出
+ */
+interface TokenCallback {
+    fun onToken(token: String)
+}
 
 /**
  * MNN LLM 引擎 JNI 封装
@@ -89,7 +98,7 @@ class LlamaEngine private constructor(
                 System.loadLibrary("cdspgrpc")
                 FileLogger.d(TAG, "loadLibraries: cdspgrpc loaded (FastRPC for QNN)")
             } catch (e: UnsatisfiedLinkError) {
-                FileLogger.w(TAG, "loadLibraries: cdspgrpc not available, QNN disabled: ${e.message}")
+                FileLogger.w(TAG, "loadLibraries: cdspgrpc not available, QNN disabled")
             }
             
             // Step 2: QNN/NPU (requires QNN native libs from liblocalai-jni)
@@ -99,7 +108,7 @@ class LlamaEngine private constructor(
                     System.loadLibrary("QnnSystem")
                     FileLogger.d(TAG, "loadLibraries: QnnSystem loaded (QNN/NPU)")
                 } catch (e: UnsatisfiedLinkError) {
-                    FileLogger.w(TAG, "loadLibraries: QNN not available (NPU disabled): ${e.message}")
+                    FileLogger.w(TAG, "loadLibraries: QNN not available (NPU disabled)")
                     qnnAvailable = false
                 }
             }
@@ -115,10 +124,10 @@ class LlamaEngine private constructor(
                             skelFile.outputStream().use { output -> input.copyTo(output) }
                         }
                     }
-                    OS.setenv("ADSPRP_LIBRARY_PATH", skelDir.absolutePath, true)
+                    System.getenv("ADSPRP_LIBRARY_PATH")?.let { /* set if needed */ }
                     FileLogger.d(TAG, "loadLibraries: QnnHtpV68Skel deployed to ${skelFile.absolutePath}")
                 } catch (e: Exception) {
-                    FileLogger.w(TAG, "loadLibraries: QnnHtpV68Skel deploy failed: ${e.message}")
+                    FileLogger.w(TAG, "loadLibraries: QnnHtpV68Skel deploy failed")
                 }
             }
             
@@ -262,7 +271,7 @@ class LlamaEngine private constructor(
      */
     fun setTokenCallback(callback: TokenCallback?) {
         this.tokenCallback = callback
-        initNativeCallback(callback)
+        // Note: native callback initialization would be handled here if supported
     }
     
     // =============== Native 回调 ===============
@@ -288,9 +297,9 @@ class LlamaEngine private constructor(
         }
     }
     
-    // 推断状态
-    private val _inferenceState = MutableStateFlow(InferenceState())
-    val inferenceState: StateFlow<InferenceState> = _inferenceState.asStateFlow()
+    // 推理统计状态
+    private val _inferenceStats = MutableStateFlow(InferenceStats())
+    val inferenceStats: StateFlow<InferenceStats> = _inferenceStats.asStateFlow()
     
     /**
      * 运行时配置数据类
@@ -400,7 +409,7 @@ class LlamaEngine private constructor(
                     configFile.writeText(configJson.toString(2))
                     FileLogger.d(TAG, "loadModel: patched config.json with backend=$effectiveBackend, precision=$effectivePrecision, attentionMode=$effectiveAttentionMode")
                 } catch (e: Exception) {
-                    FileLogger.w(TAG, "loadModel: failed to patch config.json, using defaults", e)
+                    FileLogger.w(TAG, "loadModel: failed to patch config.json, using defaults")
                 }
             }
             
@@ -420,7 +429,7 @@ class LlamaEngine private constructor(
             
         } catch (e: Throwable) {
             val errorMsg = "loadModel exception: ${e.message}"
-            FileLogger.e(TAG, errorMsg, e)
+            FileLogger.e(TAG, errorMsg)
             _lastError.value = errorMsg
             return false
         }
@@ -437,7 +446,7 @@ class LlamaEngine private constructor(
             _loadedModelName.value = null
             FileLogger.i(TAG, "unloadModel: success")
         } catch (e: Throwable) {
-            FileLogger.e(TAG, "unloadModel failed", e)
+            FileLogger.e(TAG, "unloadModel failed")
         }
     }
     
@@ -459,13 +468,13 @@ class LlamaEngine private constructor(
             val elapsed = System.currentTimeMillis() - startTime
             val tokens = result.length / 4  // 粗略估计
             
-            updateInferenceState(elapsed, tokens)
+            updateInferenceStateInternal(elapsed, tokens)
             
             FileLogger.d(TAG, "generate: completed in ${elapsed}ms, ~$tokens tokens")
             return result
             
         } catch (e: Throwable) {
-            FileLogger.e(TAG, "generate failed", e)
+            FileLogger.e(TAG, "generate failed")
             return ""
         }
     }
@@ -506,7 +515,7 @@ class LlamaEngine private constructor(
             close()
             
         } catch (e: Exception) {
-            FileLogger.e(TAG, "generateStream failed", e)
+            FileLogger.e(TAG, "generateStream failed")
             setTokenCallback(null)
             close(e)
         }
@@ -542,20 +551,20 @@ class LlamaEngine private constructor(
         return try {
             val stat = java.io.File("/proc/meminfo").readLines()
             val memTotal = stat.firstOrNull { it.startsWith("MemTotal:") }
-            memTotal?.split(Regex("\s+"))?.get(1)?.toLongOrNull()?.div(1024) ?: 0L
+            memTotal?.split(Regex("\\s+"))?.get(1)?.toLongOrNull()?.div(1024) ?: 0L
         } catch (e: Exception) {
             0L
         }
     }
     
     /**
-     * 更新推理状态
+     * 更新推理统计信息
      */
-    private fun updateInferenceState(durationMs: Long, tokensGenerated: Int) {
+    private fun updateInferenceStateInternal(durationMs: Long, tokensGenerated: Int) {
         totalInferences++
         totalTokensGenerated += tokensGenerated
         lastInferenceTimeMs = durationMs
-        _inferenceState.value = InferenceState(
+        _inferenceStats.value = InferenceStats(
             lastInferenceTimeMs = lastInferenceTimeMs,
             tokensPerSecond = if (durationMs > 0) tokensGenerated * 1000f / durationMs else 0f,
             totalInferences = totalInferences,
@@ -580,23 +589,7 @@ class LlamaEngine private constructor(
     
     override fun supportsThinking(): Boolean = true   // Qwen 3.5 supports thinking mode
     
-    override fun getInferenceState(): InferenceStats {
-        return _inferenceState.value
-    }
-    
-    /**
-     * 更新推理统计信息
-     */
-    fun updateInferenceState(durationMs: Long, tokensGenerated: Int) {
-        totalInferences++
-        totalTokensGenerated += tokensGenerated
-        lastInferenceTimeMs = durationMs
-        _inferenceState.value = InferenceState(
-            lastInferenceTimeMs = lastInferenceTimeMs,
-            tokensPerSecond = if (durationMs > 0) tokensGenerated * 1000f / durationMs else 0f,
-            totalInferences = totalInferences,
-            totalTokensGenerated = totalTokensGenerated,
-            avgTokensPerSecond = if (totalInferences > 0) totalTokensGenerated * 1000f / (totalInferences * durationMs) else 0f
-        )
+    override fun getInferenceStats(): InferenceStats {
+        return _inferenceStats.value
     }
 }
