@@ -128,6 +128,7 @@ fun ChatSessionScreen(
     if (showModelSelector) {
         ModelSelectionDialog(
             selectedModel = state.selectedModel,
+            availableModels = state.availableModels,
             onModelSelected = { model ->
                 viewModel.selectModel(model)
                 showModelSelector = false
@@ -485,6 +486,7 @@ private fun BottomInputBar(
 @Composable
 private fun ModelSelectionDialog(
     selectedModel: AIModel?,
+    availableModels: List<AIModel>,
     onModelSelected: (AIModel) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -496,12 +498,7 @@ private fun ModelSelectionDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // 获取已下载的模型
-                val downloadedModels = ModelCatalog.supportedModels.filter { 
-                    it.status == ModelStatus.DOWNLOADED 
-                }
-                
-                if (downloadedModels.isEmpty()) {
+                if (availableModels.isEmpty()) {
                     item {
                         Text(
                             text = "暂无可用模型，请先在模型管理页面下载模型",
@@ -510,7 +507,7 @@ private fun ModelSelectionDialog(
                         )
                     }
                 } else {
-                    items(downloadedModels) { model ->
+                    items(availableModels) { model ->
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
