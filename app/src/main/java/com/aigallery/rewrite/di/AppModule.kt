@@ -16,6 +16,8 @@ import com.aigallery.rewrite.tool.ToolRegistry
 import com.aigallery.rewrite.context.ContextManager
 import com.aigallery.rewrite.context.MemoryCompressor
 import com.aigallery.rewrite.context.GSSCPromptBuilder
+import com.aigallery.rewrite.skill.SkillRegistry
+import com.aigallery.rewrite.trace.AgentTraceLogger
 import com.aigallery.rewrite.tool.CalculatorTool
 import com.aigallery.rewrite.tool.DateTimeTool
 import com.aigallery.rewrite.tool.WebSearchTool
