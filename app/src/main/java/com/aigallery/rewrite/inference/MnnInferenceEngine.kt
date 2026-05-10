@@ -587,4 +587,41 @@ class MnnInferenceEngine(
             0L
         }
     }
+    
+    // ===== P3: Enhanced interface method implementations =====
+    
+    override fun estimateTokens(text: String): Int {
+        var tokens = 0
+        for (char in text) {
+            tokens += if (char.code > 0x4E00) 1 else 0  // CJK = 1 token each
+        }
+        val asciiChars = text.count { it.code <= 0x4E00 }
+        tokens += (asciiChars + 3) / 4
+        return tokens
+    }
+    
+    override fun supportsToolCalling(): Boolean = false  // MNN parses tool calls from text
+    
+    override fun supportsThinking(): Boolean = true  // Qwen3.5 supports thinking mode
+    
+    override fun getInferenceStats(): InferenceStats {
+        val avgTps = if (totalInferences > 0) totalTokensGenerated.toFloat() / totalInferences else 0f
+        return InferenceStats(
+            lastInferenceTimeMs = lastInferenceTimeMs,
+            tokensPerSecond = lastTokensPerSecond,
+            totalInferences = totalInferences,
+            totalTokensGenerated = totalTokensGenerated,
+            avgTokensPerSecond = avgTps
+        )
+    }
+    
+    /**
+     * Update inference stats after each inference
+     */
+    fun updateInferenceStats(durationMs: Long, tokensGenerated: Int) {
+        totalInferences++
+        totalTokensGenerated += tokensGenerated
+        lastInferenceTimeMs = durationMs
+        lastTokensPerSecond = if (durationMs > 0) tokensGenerated * 1000f / durationMs else 0f
+    }
 }
