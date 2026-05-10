@@ -22,11 +22,13 @@ import com.aigallery.rewrite.context.ReflectionChecker
 import com.aigallery.rewrite.tool.CalculatorTool
 import com.aigallery.rewrite.tool.DateTimeTool
 import com.aigallery.rewrite.tool.WebSearchTool
+import com.aigallery.rewrite.tool.ReadFileTool
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.components.ApplicationComponent
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
@@ -66,7 +68,7 @@ object AppModule {
         return Room.databaseBuilder(
             context,
             AIGalleryDatabase::class.java,
-            AIGalleryDatabase.DATABASE_NAME
+            AIGalleryDatabase::DATABASE_NAME
         )
             .fallbackToDestructiveMigration()
             .build()
@@ -191,13 +193,14 @@ object AppModule {
     // Tool Registry (P1: Tool System)
     @Provides
     @Singleton
-    fun provideToolRegistry(): ToolRegistry {
+    fun provideToolRegistry(@ApplicationContext context: Context, okHttpClient: OkHttpClient): ToolRegistry {
         val registry = ToolRegistry()
         registry.registerAll(
             CalculatorTool(),
             DateTimeTool(),
-            WebSearchTool()
+            ReadFileTool(context.filesDir.absolutePath)
         )
+        registry.registerExternalTools(okHttpClient, context.filesDir.absolutePath)
         return registry
     }
 }
