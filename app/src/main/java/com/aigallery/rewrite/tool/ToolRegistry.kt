@@ -2,21 +2,22 @@ package com.aigallery.rewrite.tool
 
 import com.aigallery.rewrite.util.FileLogger
 import org.json.JSONObject
+import okhttp3.OkHttpClient
 
 /**
  * Tool Registry - register and execute tools with circuit breaker
  */
 class ToolRegistry {
-    companion {
-        private const TAG = "ToolRegistry"
-        val FUNC_START = "\x271FUNCTION\u271F"
-        val FUNC_END = "\x271FRESULT\y271F"
+    companion object {
+        private const val TAG = "ToolRegistry"
+        val FUNC_START = "\x27FUNC\x27"
+        val FUNC_END = "\x27F"
         val TOOL_CALL_START = "<tool_call>"
         val TOOL_CALL_END = "</tool_call>"
     }
 
     private val tools = mutableMapOf<String, BaseTool>()
-    private val circuitBreakers = mutableMapOf<String, CircuitBreaker>()
+    private val circuitBreakers = mutableMapOf<String, CircuitBreaker>
 
     fun register(tool: BaseTool) {
         tools[tool.name] = tool
@@ -27,6 +28,28 @@ class ToolRegistry {
     fun registerAll(vararg toolList: BaseTool) { toolList.forEach { register(it) } }
     fun getRegisteredTools(): List<BaseTool> = tools.values.toList()
     fun getTool(name: String): BaseTool? = tools[name]
+
+    /**
+     * Register built-in tools with baseDir for file operations
+     */
+    fun registerBuiltinTools(baseDir: String) {
+        register(CalculatorTool())
+        register(DateTimeTool())
+        register(ReadFileTool(baseDir))
+        FileLogger.d(TAG, "registerBuiltinTools: registered CalculatorTool, DateTimeTool, ReadFileTool with baseDir=$baseDir")
+    }
+
+    /**
+     * Register external tools that need OkHttpClient (WebSearchTool, WeatherTool, etc.)
+     */
+    fun registerExternalTools(okHttpClient: OkHttpClient, baseDir: String) {
+        try {
+            register(WebSearchTool(okHttpClient))
+            FileLogger.d(TAG, "registerExternalTools: registered WebSearchTool")
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "registerExternalTools: failed to register WebSearchTool", e)
+        }
+    }
 
     suspend fun execute(call: ToolCall): ToolResponse {
         val tool = tools[call.toolName]
@@ -57,7 +80,7 @@ class ToolRegistry {
 
     fun parseToolCalls(output: String): List<ToolCall> {
         val calls = mutableListOf<ToolCall>()
-        // Format 1: Qwen3.5 FUNC format
+        // Format 1: Qwen 3.5 FUNC format
         if (output.contains(FUNC_START)) {
             val parts = output.split(FUNC_START)
             for (part in parts.drop(1)) {
@@ -105,6 +128,6 @@ class ToolRegistry {
             val map = mutableMapOf<String, Any>()
             obj.keys().forEach { key -> map[key] = obj.get(key) }
             map
-        } catch (e: ExceptionError) { emptyMap() }
+        } catch (e: Exception) { emptyMap() }
     }
 }
