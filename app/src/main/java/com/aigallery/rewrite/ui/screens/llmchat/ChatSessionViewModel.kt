@@ -632,8 +632,7 @@ class ChatSessionViewModel @Inject constructor(
                     }
                 } ?: run {
                     FileLogger.w(TAG, "ReAct step $step: inference timed out")
-                    updateStreamingMessage(assistantMsgId, "
-[推理超时]")
+                    updateStreamingMessage(assistantMsgId, "\n[推理超时]")
                     break
                 }
             } catch (e: Exception) {
@@ -686,8 +685,7 @@ class ChatSessionViewModel @Inject constructor(
         
         if (step >= MAX_REACT_STEPS) {
             FileLogger.w(TAG, "ReAct: reached max steps")
-            updateStreamingMessage(assistantMsgId, "
-[已达最大推理步数]")
+            updateStreamingMessage(assistantMsgId, "\n[已达最大推理步数]")
         }
         
         // Clear tool steps after completion
