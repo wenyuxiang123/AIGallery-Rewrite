@@ -13,6 +13,7 @@ import com.aigallery.rewrite.domain.model.ModelStatus
 import com.aigallery.rewrite.domain.model.ModelCatalog
 import com.aigallery.rewrite.data.repository.MemoryRepository
 import com.aigallery.rewrite.download.MnnModelDownloader
+import com.aigallery.rewrite.download.MnnDownloadStatus
 import com.aigallery.rewrite.domain.model.MemoryConfig
 import com.aigallery.rewrite.inference.InferenceConfig
 import com.aigallery.rewrite.inference.MnnInferenceEngine
@@ -22,6 +23,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 
@@ -74,6 +76,9 @@ class ChatSessionViewModel @Inject constructor(
         
         // 加载可用模型列表
         loadAvailableModels()
+        
+        // 加载所有模型（用于模型管理面板）
+        loadAllModels()
         
         // 恢复消息和 session 元数据
         restoreSessionData()
@@ -128,6 +133,25 @@ class ChatSessionViewModel @Inject constructor(
                 FileLogger.d(TAG, "loadAvailableModels: found ${available.size} available models")
             } catch (e: Exception) {
                 FileLogger.e(TAG, "loadAvailableModels: failed", e)
+            }
+        }
+    }
+
+    /**
+     * 加载所有模型（用于模型管理面板）
+     */
+    private fun loadAllModels() {
+        viewModelScope.launch {
+            try {
+                val downloadedMnnModels = mnnDownloader.getDownloadedModels().toSet()
+                val allModels = ModelCatalog.supportedModels.map { model ->
+                    val isDownloaded = model.id in downloadedMnnModels
+                    model.copy(status = if (isDownloaded) ModelStatus.DOWNLOADED else ModelStatus.NOT_DOWNLOADED)
+                }
+                _state.update { it.copy(allModels = allModels) }
+                FileLogger.d(TAG, "loadAllModels: ${allModels.size} models, ${downloadedMnnModels.size} downloaded")
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "loadAllModels: failed", e)
             }
         }
     }
@@ -190,14 +214,16 @@ class ChatSessionViewModel @Inject constructor(
     }
 
     /**
-     * 清理文本中的控制字符和 HTML 标签
+     * Bug3修复: 清理文本中的控制字符
+     * - 移除内部用的控制字符（\u0001\u0002是prompt分隔符，不能进入模型输入）
+     * - 移除其他控制字符（保留换行\n和制表符\t）
      */
     private fun cleanContent(text: String): String {
         return text
-            // 移除控制字符 (保留换行和制表符)
-            .replace(Regex("[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]"), "")
-            // 移除 HTML 标签
-            .replace(Regex("<[^>]+>"), "")
+            // 移除内部用的控制字符（\u0001\u0002是prompt分隔符，不能进入模型输入）
+            .replace(Regex("[\u0001\u0002]"), "")
+            // 移除其他控制字符（保留换行\n和制表符\t）
+            .replace(Regex("[\u0000\u0003-\u0008\u000B\u000C\u000E-\u001F\u007F]"), "")
             .trim()
     }
 
@@ -253,8 +279,10 @@ class ChatSessionViewModel @Inject constructor(
             return
         }
 
+        // Bug3修复: 添加原始消息日志
+        FileLogger.d(TAG, "sendMessage: raw_len=${message.length}, raw_preview=${message.take(30)}")
         val cleanedMessage = cleanContent(message)
-        FileLogger.d(TAG, "sendMessage: content=${cleanedMessage.take(50)}")
+        FileLogger.d(TAG, "sendMessage: cleaned_len=${cleanedMessage.length}, content=${cleanedMessage.take(50)}")
 
         val userMsgId = nextMessageId()
         val userMsg = ChatMessage(id = userMsgId, content = cleanedMessage, role = MessageRole.USER, timestamp = System.currentTimeMillis())
@@ -341,26 +369,32 @@ class ChatSessionViewModel @Inject constructor(
                     val fullPrompt = buildPrompt(cleanedMessage)
                     
                     // Bug2修复: 使用状态机正确匹配 <tool_call> 和 </tool_call> 标签
-                    inferenceEngine.inferStream(
-                        prompt = fullPrompt,
-                        config = InferenceConfig(
-                            maxLength = 2048,
-                            temperature = 0.7f,
-                            topK = 40,
-                            topP = 0.9f,
-                            numThreads = 0,
-                            repeatPenalty = 1.2f
-                        )
-                    ).collect { token ->
-                        val result = processThinkingBlock(token)
-                        result?.let {
-                            updateStreamingMessage(aiMessageId, it)
-                            tokenCount++
+                    // Bug4修复: 添加120秒推理超时
+                    withTimeoutOrNull(120_000L) {
+                        inferenceEngine.inferStream(
+                            prompt = fullPrompt,
+                            config = InferenceConfig(
+                                maxLength = 2048,
+                                temperature = 0.7f,
+                                topK = 40,
+                                topP = 0.9f,
+                                numThreads = 0,
+                                repeatPenalty = 1.2f
+                            )
+                        ).collect { token ->
+                            val result = processThinkingBlock(token)
+                            result?.let {
+                                updateStreamingMessage(aiMessageId, it)
+                                tokenCount++
+                            }
+                            
+                            if (tokenCount % 20 == 0) {
+                                FileLogger.d(TAG, "sendMessage: streamed $tokenCount tokens")
+                            }
                         }
-                        
-                        if (tokenCount % 20 == 0) {
-                            FileLogger.d(TAG, "sendMessage: streamed $tokenCount tokens")
-                        }
+                    } ?: run {
+                        FileLogger.w(TAG, "sendMessage: inference timed out after 120s")
+                        updateStreamingMessage(aiMessageId, "\n\n⏱️ 推理超时，已自动停止")
                     }
                     
                     // 修复：如果流结束后仍在 thinking 块中，flush 剩余内容
@@ -656,6 +690,73 @@ class ChatSessionViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 下载模型
+     */
+    fun downloadModel(modelId: String) {
+        FileLogger.d(TAG, "downloadModel: id=$modelId")
+        viewModelScope.launch {
+            try {
+                mnnDownloader.downloadModel(
+                    modelId = modelId,
+                    onProgress = { current, total, fileName ->
+                        FileLogger.d(TAG, "downloadModel: $fileName ($current/$total)")
+                    },
+                    onByteProgress = { progress ->
+                        FileLogger.d(TAG, "downloadModel: byte progress=${(progress * 100).toInt()}%")
+                    }
+                )
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "downloadModel: failed", e)
+            }
+        }
+        
+        // 监听下载进度
+        viewModelScope.launch {
+            mnnDownloader.downloadStates.collect { states ->
+                val progress = states.mapValues { it.value.progress }
+                _state.update { it.copy(downloadProgress = progress) }
+                val modelState = states[modelId]
+                if (modelState?.status == MnnDownloadStatus.COMPLETED || modelState?.status == MnnDownloadStatus.READY) {
+                    loadAllModels()
+                    loadAvailableModels()
+                    return@collect
+                }
+            }
+        }
+    }
+
+    /**
+     * 取消下载
+     */
+    fun cancelDownload(modelId: String) {
+        FileLogger.d(TAG, "cancelDownload: id=$modelId")
+        // MnnModelDownloader 没有直接的 cancel 方法，只能重新加载状态
+        loadAllModels()
+    }
+
+    /**
+     * 删除模型
+     */
+    fun deleteModel(modelId: String) {
+        FileLogger.d(TAG, "deleteModel: id=$modelId")
+        viewModelScope.launch {
+            try {
+                mnnDownloader.deleteModel(modelId)
+                loadAllModels()
+                loadAvailableModels()
+                val currentModelName = engineState.value.loadedModelName
+                if (currentModelName?.contains(modelId, ignoreCase = true) == true) {
+                    inferenceEngine.release()
+                    updateEngineState()
+                    _state.update { it.copy(selectedModel = null) }
+                }
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "deleteModel: failed", e)
+            }
+        }
+    }
+
     private fun addMessage(message: ChatMessage) {
         _state.update { s -> s.copy(messages = s.messages + message, isGenerating = message.role == MessageRole.ASSISTANT) }
     }
@@ -730,7 +831,9 @@ data class ChatSessionState(
     val isGenerating: Boolean = false,
     val sessionId: String = "",
     val selectedModel: AIModel? = null,
-    val availableModels: List<AIModel> = emptyList()
+    val availableModels: List<AIModel> = emptyList(),
+    val allModels: List<AIModel> = emptyList(),  // 新增：所有模型（用于模型管理面板）
+    val downloadProgress: Map<String, Float> = emptyMap()  // 新增：下载进度
 )
 
 /**
