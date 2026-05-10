@@ -162,7 +162,7 @@ class MnnInferenceEngineV35(
                 InferenceResult(
                     text = result,
                     inferenceTimeMs = elapsed,
-                    tokenCount = stats.tokensGenerated,
+                    tokenCount = stats.totalTokensGenerated.toInt(),
                     tokensPerSecond = stats.tokensPerSecond,
                     success = true
                 )
