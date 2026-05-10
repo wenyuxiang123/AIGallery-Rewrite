@@ -33,6 +33,7 @@ import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import java.util.concurrent.TimeUnit
+import java.io.File
 import javax.inject.Singleton
 
 @Module
@@ -230,13 +231,13 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideAgentTraceLogger(): AgentTraceLogger {
-        return AgentTraceLogger()
+    fun provideAgentTraceLogger(@ApplicationContext context: Context): AgentTraceLogger {
+        return AgentTraceLogger(File(context.filesDir, "agent_traces"))
     }
 
     @Provides
     @Singleton
-    fun provideReflectionChecker(inferenceEngine: MnnInferenceEngine): ReflectionChecker {
-        return ReflectionChecker(inferenceEngine)
+    fun provideReflectionChecker(): ReflectionChecker {
+        return ReflectionChecker()
     }
 }
