@@ -30,6 +30,11 @@ interface ChatRepository {
     suspend fun updateMessage(message: ChatMessage)
     suspend fun deleteMessage(messageId: String)
     suspend fun clearSessionMessages(sessionId: String)
+    
+    /**
+     * P2: FTS5 full-text search across messages in a session
+     */
+    suspend fun searchMessages(sessionId: String, query: String, limit: Int = 20): List<ChatMessage>
 }
 
 /**
@@ -106,6 +111,15 @@ class ChatRepositoryImpl @Inject constructor(
 
     override suspend fun clearSessionMessages(sessionId: String) {
         messageDao.deleteMessagesBySession(sessionId)
+    }
+    
+    override suspend fun searchMessages(sessionId: String, query: String, limit: Int): List<ChatMessage> {
+        return try {
+            messageDao.searchMessagesBySession(sessionId, query, limit).map { it.toDomain() }
+        } catch (e: Exception) {
+            // FTS5 might fail if table not yet created, fall back to empty
+            emptyList()
+        }
     }
 
     // Extension functions for mapping
