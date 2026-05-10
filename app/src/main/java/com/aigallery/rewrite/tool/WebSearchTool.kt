@@ -13,8 +13,6 @@ import java.net.URLEncoder
  * 
  * FREE: No API key required
  * API: https://api.duckduckgo.com/
- * 
- * Returns instant answers, abstract summaries, and related topics.
  */
 class WebSearchTool(
     private val httpClient: OkHttpClient
@@ -27,7 +25,7 @@ class WebSearchTool(
         private const val API_BASE = "https://api.duckduckgo.com/"
     }
 
-    override fun getParameters(): JSONObject {
+    override fun getParametersSchema(): JSONObject {
         return JSONObject().apply {
             put("type", "object")
             put("properties", JSONObject().apply {
@@ -40,19 +38,18 @@ class WebSearchTool(
         }
     }
 
-    override suspend fun run(params: Map<String, Any>): ToolResponse {
-        val query = params["query"]?.toString() ?: return ToolResponse(
-            success = false,
-            content = "",
-            error = "缺少搜索关键词"
+    override suspend fun execute(params: Map<String, Any>): ToolResponse {
+        val query = params["query"]?.toString() ?: return ToolResponse.failure(
+            error = "缺少搜索关键词",
+            toolName = name
         )
 
         return try {
             val results = duckDuckGoSearch(query)
-            ToolResponse(success = true, content = results)
+            ToolResponse.success(content = results, toolName = name)
         } catch (e: Exception) {
-            FileLogger.e(TAG, "run: failed for query=$query", e)
-            ToolResponse(success = false, content = "", error = "搜索失败: ${e.message}")
+            FileLogger.e(TAG, "execute: failed for query=$query", e)
+            ToolResponse.failure(error = "搜索失败: ${e.message}", toolName = name)
         }
     }
 
@@ -70,14 +67,14 @@ class WebSearchTool(
         val responseBody = response.body?.string() ?: ""
         
         if (!response.isSuccessful || responseBody.isEmpty()) {
-            return "未找到相关结果"
+            return@withContext "未找到相关结果"
         }
         
         try {
             val json = JSONObject(responseBody)
             formatDuckDuckGoResponse(query, json)
         } catch (e: Exception) {
-            FileLogger.w(TAG, "Failed to parse DuckDuckGo response", e)
+            FileLogger.w(TAG, "Failed to parse DuckDuckGo response: ${e.message}")
             "搜索结果格式异常"
         }
     }
@@ -103,24 +100,6 @@ class WebSearchTool(
             builder.append("详情: ").append(abstractUrl).append("\n\n")
         }
         
-        // Infobox structured data
-        val infobox = json.optJSONObject("Infobox")
-        if (infobox != null && infobox.has("content")) {
-            val content = infobox.getJSONObject("content")
-            builder.append("详细信息:\n")
-            var count = 0
-            val keys = content.keys()
-            while (keys.hasNext() && count < 5) {
-                val key = keys.next()
-                val value = content.optString(key, "").take(100)
-                if (value.isNotBlank()) {
-                    builder.append("  $key: $value\n")
-                    count++
-                }
-            }
-            builder.append("\n")
-        }
-        
         // RelatedTopics
         val relatedTopics = json.optJSONArray("RelatedTopics")
         if (relatedTopics != null && relatedTopics.length() > 0) {
@@ -136,7 +115,7 @@ class WebSearchTool(
         
         // Direct answer
         val answer = json.optString("Answer", "")
-        if (answer.isNotBlank() && builder.length() < 50) {
+        if (answer.isNotBlank() && builder.length < 50) {
             return answer
         }
         
