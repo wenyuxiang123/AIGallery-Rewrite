@@ -580,30 +580,55 @@ class ChatSessionViewModel @Inject constructor(
             }
         }
         
-        // 加载模型到推理引擎
+        // 真正加载模型到推理引擎
         viewModelScope.launch {
             try {
                 _engineState.update { it.copy(isInitializing = true, isLoading = true, loadProgress = 0.1f) }
                 updateEngineState()
                 
-                // 模拟加载进度更新
-                val progressJob = launch {
-                    var progress = 0.1f
-                    while (progress < 0.9f) {
-                        delay(500)
-                        progress += 0.05f
-                        _engineState.update { it.copy(loadProgress = progress.coerceAtMost(0.9f)) }
-                    }
+                // 获取模型路径
+                val modelPath = mnnDownloader.getModelDir(model.id)
+                FileLogger.d(TAG, "selectModel: loading model from path=$modelPath")
+                
+                // 验证模型目录存在
+                val modelDir = java.io.File(modelPath)
+                if (!modelDir.exists()) {
+                    throw IllegalStateException("Model directory not found: $modelPath")
                 }
                 
-                FileLogger.i(TAG, "selectModel: model selected successfully")
-                progressJob.cancel()
-                _engineState.update { it.copy(loadProgress = 1f) }
+                // 释放旧模型
+                if (inferenceEngine.isInitialized) {
+                    FileLogger.d(TAG, "selectModel: releasing previous model")
+                    inferenceEngine.release()
+                }
+                
+                // 加载新模型
+                val success = inferenceEngine.initialize(
+                    modelPath = modelPath,
+                    config = InferenceConfig(
+                        maxLength = 2048,
+                        temperature = 0.7f,
+                        topK = 40,
+                        topP = 0.9f,
+                        numThreads = 0,
+                        contextWindow = 2048
+                    )
+                )
+                
+                if (success) {
+                    FileLogger.i(TAG, "selectModel: model ${model.name} loaded successfully from $modelPath")
+                    _engineState.update { it.copy(loadProgress = 1f) }
+                    updateEngineState()
+                } else {
+                    FileLogger.e(TAG, "selectModel: failed to load model ${model.name}")
+                    _engineState.update { it.copy(loadProgress = 0f) }
+                }
             } catch (e: Exception) {
                 FileLogger.e(TAG, "selectModel: failed", e)
                 _engineState.update { it.copy(loadProgress = 0f) }
             } finally {
                 _engineState.update { it.copy(isInitializing = false, isLoading = false) }
+                updateEngineState()
             }
         }
     }
