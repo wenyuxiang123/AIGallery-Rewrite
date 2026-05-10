@@ -185,11 +185,11 @@ object ModelCatalog {
     }
 
     /**
-     * Get multimodal models
-     * 新模型都不是多模态，返回空列表
+     * 多模态模型（当前不支持）
+     * MNN 推理框架暂不支持多模态模型，此方法始终返回空列表
      */
     fun getMultimodalModels(): List<AIModel> {
-        return emptyList()
+        return emptyList()  // MNN 暂不支持多模态
     }
 
     /**
