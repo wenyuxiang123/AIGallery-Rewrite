@@ -4,6 +4,8 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import com.aigallery.rewrite.data.local.dao.*
 import com.aigallery.rewrite.data.local.entity.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
  * Room database for AIGallery app
@@ -12,20 +14,27 @@ import com.aigallery.rewrite.data.local.entity.*
     entities = [
         // Chat entities
         ChatMessageEntity::class,
+        ChatMessageFts::class,
         ChatSessionEntity::class,
         // Memory entities
         MemoryEntity::class,
+        MemoryFts::class,
         WorkingMemoryEntity::class,
+        MemoryFts::class,
         ShortTermMemoryEntity::class,
+        MemoryFts::class,
         LongTermMemoryEntity::class,
+        MemoryFts::class,
         KnowledgeBaseMemoryEntity::class,
+        MemoryFts::class,
         PersonaMemoryEntity::class,
+        MemoryFts::class,
         // Task entities
         CustomSkillEntity::class,
         TaskTemplateEntity::class,
         TaskResultEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AIGalleryDatabase : RoomDatabase() {
@@ -46,7 +55,24 @@ abstract class AIGalleryDatabase : RoomDatabase() {
     abstract fun taskTemplateDao(): TaskTemplateDao
     abstract fun taskResultDao(): TaskResultDao
 
+
     companion object {
         const val DATABASE_NAME = "aigallery_database"
+
+        /**
+         * P2: Migration from v1 to v2 - Add FTS5 virtual tables
+         */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Create FTS5 virtual table for chat messages
+                db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS `chat_messages_fts` USING FTS4(`content`, content=`chat_messages`)")
+                // Create FTS5 virtual table for memories
+                db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS `memories_fts` USING FTS4(`content`, `tags`, content=`memories`)")
+                // Populate FTS tables with existing data
+                db.execSQL("INSERT INTO `chat_messages_fts`(`content`) SELECT `content` FROM `chat_messages`")
+                db.execSQL("INSERT INTO `memories_fts`(`content`, `tags`) SELECT `content`, `tags` FROM `memories`")
+            }
+        }
     }
+
 }
