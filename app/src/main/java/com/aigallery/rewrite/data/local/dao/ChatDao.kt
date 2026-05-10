@@ -78,4 +78,31 @@ interface ChatMessageDao {
 
     @Query("SELECT * FROM chat_messages WHERE sessionId = :sessionId ORDER BY timestamp DESC LIMIT :limit")
     suspend fun getRecentMessages(sessionId: String, limit: Int): List<ChatMessageEntity>
+
+
+    /**
+     * P2: FTS5 full-text search across chat messages
+     * Searches message content using FTS5 MATCH instead of LIKE
+     */
+    @Query("""
+        SELECT m.* FROM chat_messages m 
+        INNER JOIN chat_messages_fts fts ON m.rowid = fts.rowid 
+        WHERE fts.content MATCH :query AND m.sessionId = :sessionId
+        ORDER BY m.timestamp DESC 
+        LIMIT :limit
+    """)
+    suspend fun searchMessagesBySession(sessionId: String, query: String, limit: Int = 20): List<ChatMessageEntity>
+
+    /**
+     * P2: FTS5 search across all sessions
+     */
+    @Query("""
+        SELECT m.* FROM chat_messages m 
+        INNER JOIN chat_messages_fts fts ON m.rowid = fts.rowid 
+        WHERE fts.content MATCH :query
+        ORDER BY m.timestamp DESC 
+        LIMIT :limit
+    """)
+    suspend fun searchAllMessages(query: String, limit: Int = 50): List<ChatMessageEntity>
+
 }
