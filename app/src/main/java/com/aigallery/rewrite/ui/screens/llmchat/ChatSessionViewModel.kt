@@ -748,8 +748,7 @@ class ChatSessionViewModel @Inject constructor(
         }
         
         // Add tool result as observation
-        messages.add("user" to "Tool ${call.toolName} returned: $resultContent
-Please use this result to answer the user.")
+        messages.add("user" to "Tool ${call.toolName} returned: $resultContent\nPlease use this result to answer the user.")
         
         val sb = StringBuilder()
         for ((role, msgContent) in messages) {
@@ -762,8 +761,7 @@ Please use this result to answer the user.")
         return try {
             val workingMemories = memoryRepository.getWorkingMemories(sessionId).first()
             if (workingMemories.isNotEmpty()) {
-                workingMemories.take(3).joinToString("
-") { "- ${it.content.take(MAX_MEMORY_CHARS)}" }
+                workingMemories.take(3).joinToString("\n") { "- ${it.content.take(MAX_MEMORY_CHARS)}" }
             } else ""
         } catch (e: Exception) { "" }
     }
