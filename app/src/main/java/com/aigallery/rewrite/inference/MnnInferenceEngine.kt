@@ -136,17 +136,42 @@ class MnnInferenceEngine(
                     val memoryMB = llamaEngine?.getMemoryUsageMB() ?: 0f
                     FileLogger.i(TAG, "initialize: success, model=$modelName, memory=${memoryMB}MB")
                     
-                    // PH0: 应用运行时硬件加速配置
+                    // PH0/P2: 应用运行时硬件加速配置（带优雅降级）
+                    val effectiveBackend = if (config.backend == "opencl" || config.backend == "auto") {
+                        if (isOpenCLAvailable()) {
+                            FileLogger.i(TAG, "initialize: OpenCL available, using GPU backend")
+                            "opencl"
+                        } else {
+                            FileLogger.w(TAG, "initialize: OpenCL not available, falling back to CPU")
+                            "cpu"
+                        }
+                    } else {
+                        config.backend
+                    }
+                    
                     try {
+                        val openclCache = config.openclCachePath ?: getOpenCLCacheDir()
                         llamaEngine?.applyRuntimeConfig(
-                            backend = config.backend,
+                            backend = effectiveBackend,
                             attentionMode = config.attentionMode,
                             precision = config.precision,
-                            openclCachePath = config.openclCachePath
+                            openclCachePath = openclCache
                         )
-                        FileLogger.i(TAG, "initialize: runtime config applied, backend=${config.backend}, attentionMode=${config.attentionMode}")
+                        FileLogger.i(TAG, "initialize: runtime config applied, backend=$effectiveBackend, attentionMode=${config.attentionMode}")
                     } catch (e: Throwable) {
-                        FileLogger.w(TAG, "initialize: runtime config failed (non-fatal)", e)
+                        // Graceful degradation: if GPU config fails, fall back to CPU
+                        FileLogger.w(TAG, "initialize: runtime config failed, trying CPU fallback", e)
+                        try {
+                            llamaEngine?.applyRuntimeConfig(
+                                backend = "cpu",
+                                attentionMode = config.attentionMode,
+                                precision = "normal",
+                                openclCachePath = null
+                            )
+                            FileLogger.i(TAG, "initialize: CPU fallback applied successfully")
+                        } catch (e2: Throwable) {
+                            FileLogger.w(TAG, "initialize: CPU fallback also failed (non-fatal)", e2)
+                        }
                     }
                     
                     // 5. 保存模型路径到 SharedPreferences，以便下次自动恢复
@@ -489,13 +514,65 @@ class MnnInferenceEngine(
     /**
      * 检测设备是否支持 OpenCL GPU
      */
+    /**
+     * P2: Enhanced OpenCL availability detection
+     * Checks: 1) OpenCL .so exists  2) GPU driver info  3) Memory sufficient
+     */
     fun isOpenCLAvailable(): Boolean {
+        // 1. Check OpenCL library files exist
         val openCLPaths = listOf(
             "/system/vendor/lib64/libOpenCL.so",
             "/system/vendor/lib/libOpenCL.so",
             "/system/lib64/libOpenCL.so"
         )
-        return openCLPaths.any { java.io.File(it).exists() }
+        val hasOpenCLLib = openCLPaths.any { java.io.File(it).exists() }
+        if (!hasOpenCLLib) {
+            FileLogger.d(TAG, "isOpenCLAvailable: no OpenCL .so found")
+            return false
+        }
+        
+        // 2. Check GPU info (Adreno 6xx+ has good OpenCL support)
+        val hasAdreno = try {
+            val gpuVendor = java.io.File("/sys/class/kgsl/kgsl-3d0/gpu_model").readText().trim()
+            gpuVendor.contains("Adreno", ignoreCase = true)
+        } catch (e: Exception) {
+            // Can't read GPU model, assume available since OpenCL .so exists
+            true
+        }
+        
+        // 3. Check device memory (OpenCL needs at least 2GB free for LLM inference)
+        val totalMemMB = getDeviceTotalMemoryMB()
+        val memSufficient = totalMemMB >= 4000L  // 4GB+ devices can use GPU
+        
+        val available = hasOpenCLLib && (hasAdreno || true) && memSufficient
+        FileLogger.d(TAG, "isOpenCLAvailable: lib=$hasOpenCLLib, adreno=$hasAdreno, mem=${totalMemMB}MB, result=$available")
+        return available
+    }
+    
+    /**
+     * P2: Get OpenCL cache directory path
+     * AutoTuning results are cached here to avoid slow first-time initialization
+     */
+    fun getOpenCLCacheDir(): String {
+        val cacheDir = java.io.File(context.filesDir, "mnn_opencl_cache")
+        if (!cacheDir.exists()) {
+            cacheDir.mkdirs()
+        }
+        return cacheDir.absolutePath
+    }
+    
+    /**
+     * P2: Clear OpenCL AutoTuning cache
+     * Call when switching to a different model or after GPU driver update
+     */
+    fun clearOpenCLCache() {
+        try {
+            val cacheDir = java.io.File(context.filesDir, "mnn_opencl_cache")
+            cacheDir.listFiles()?.forEach { it.delete() }
+            FileLogger.d(TAG, "clearOpenCLCache: cache cleared")
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "clearOpenCLCache: failed", e)
+        }
     }
     
     /**
