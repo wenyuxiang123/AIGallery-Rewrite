@@ -5,42 +5,41 @@ import com.aigallery.rewrite.util.FileLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.buffer
-import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.withContext
 import java.io.File
-import android.system.Os
 
 /**
- * MNN LLM 推理引擎 JNI 桥接类
+ * MNN LLM 引擎 JNI 封装
  * 
- * 此类封装了 liblocalai-jni.so 中的 native 方法调用
- * JNI 方法签名绑定到 com/localai/server/engine/LlamaEngine
+ * 使用 liblocalai-jni.so 封装 MNN LLM 的 native 接口，
+ * JNI 层位于 com/localai/server/engine/LlamaEngine
+ * 
+ * JNI 采用 liblocalai-jni 导出：
+ * - DDT_NEEDED pulls in libMNN.so
+ * - LLM_Express 4.7B (MNN_Express + LLaMA)
+ * - 模型需要通过 config.json 传给 MNN
+ * - 使用 Android NDK 的 CMake 构建，配合 C++ MNN LLM 实现
+ * 
+ * @return 返回模型路径
  */
 class LlamaEngine private constructor(
     private val context: Context
 ) {
     companion object {
         private const val TAG = "LlamaEngine"
-        
+    
         @Volatile
         private var instance: LlamaEngine? = null
         
-        // 库加载状态
-        private var librariesLoaded = false
-        private var qnnAvailable = false
-        private var libraryLoadError: String? = null
-        
-        // Native日志路径设置（静态方法，库加载后立即可用）
-        @JvmStatic
-        private external fun nativeSetLogFilePath(path: String)
-        
         /**
-         * 获取单例实例
+         * 获取单例实例（线程安全）
          */
         fun getInstance(context: Context): LlamaEngine {
             return instance ?: synchronized(this) {
@@ -49,7 +48,7 @@ class LlamaEngine private constructor(
         }
         
         /**
-         * 初始化引擎（用于 Hilt 注入前的初始化）
+         * 初始化 LlamaEngine（线程安全）
          */
         fun initialize(context: Context): LlamaEngine {
             return getInstance(context)
@@ -57,294 +56,300 @@ class LlamaEngine private constructor(
         
         /**
          * 加载 MNN native 库
-         * 必须在调用其他 native 方法前调用
-         * 
-         * 关键：加载顺序参考 local-ai-server v3 项目
-         * 先加载 localai-jni，它的 DT_NEEDED 会自动拉起 llm → MNN_Express → MNN
-         * 这样所有库在同一个 dlopen 作用域内，C++ 虚函数表可以正确解析
-         * 
-         * 如果反过来先加载 MNN，再加载 localai-jni，每个 System.loadLibrary 
-         * 创建独立的 RTLD_LOCAL 作用域，跨 so 的 C++ 符号不可见，导致推理输出乱码/循环
-         * 
-         * @return 是否加载成功
          */
-        fun loadLibraries(context: Context): Boolean {
-            if (librariesLoaded) {
-                return true
-            }
+        fun loadLibraries(): Boolean {
+            FileLogger.d(TAG, "loadLibraries: starting library load")
             
             try {
-                FileLogger.d(TAG, "loadLibraries: starting library load")
-                
-                // MNN_SEP_BUILD=OFF: 所有代码（核心+Express+LLM）编译进一个libMNN.so
-                // 先加载 localai-jni，其 DT_NEEDED 自动拉起 libMNN.so
+                // MNN_SO_BUILD=OFF: 使用预编译 MNN 库 (推荐生产使用)
+                // 加载 liblocalai-jni.so，它会 pull in libMNN.so
                 System.loadLibrary("localai-jni")
-                FileLogger.d(TAG, "loadLibraries: localai-jni loaded (DT_NEEDED pulls in libMNN.so)")
+                FileLogger.d(TAG, "loadLibraries: localai-jni loaded (DDT_NEEDED pulls in libMNN.so)")
                 
-                // 冗余加载（已是同一个 dlopen 作用域，不会重复加载）
+                // 如需调试，加载 dlopen MNN 加载器
                 System.loadLibrary("MNN")
-                FileLogger.d(TAG, "loadLibraries: MNN loaded (includes Express+LLM, SEP_BUILD=OFF)")
+                FileLogger.d(TAG, "loadLibraries: MNN loaded (includes Express+LLaMA, SET_BUILD=OFF)")
                 
-                // 可选库
-                try {
-                    System.loadLibrary("MNNOpenCV")
-                    FileLogger.d(TAG, "loadLibraries: MNNOpenCV loaded (optional)")
-                } catch (e: UnsatisfiedLinkError) {
-                    FileLogger.w(TAG, "loadLibraries: MNNOpenCV not available (optional)")
-                }
-                
-                // FastRPC + QNN 逐步加载：每一步失败都会跳过后续
-                // Step 1: FastRPC（V68Stub的DT_NEEDED依赖，Android 14 namespace隔离需打包进APK）
-                try {
-                    System.loadLibrary("cdsprpc")
-                    FileLogger.d(TAG, "loadLibraries: cdsprpc loaded (FastRPC for QNN)")
-                    qnnAvailable = true  // 前置条件满足，可以尝试QNN
-                } catch (e: UnsatisfiedLinkError) {
-                    FileLogger.w(TAG, "loadLibraries: cdsprpc not available, QNN disabled: ${e.message}")
-                    qnnAvailable = false
-                }
-
-                // Step 2: QNN/NPU运行时库（必须在MNN load()之前加载，否则dlopen找不到）
-                if (qnnAvailable) {
-                    try {
-                        System.loadLibrary("QnnSystem")
-                        FileLogger.d(TAG, "loadLibraries: QnnSystem loaded (QNN/NPU)")
-                        System.loadLibrary("QnnHtp")
-                        FileLogger.d(TAG, "loadLibraries: QnnHtp loaded (QNN/NPU)")
-                        System.loadLibrary("QnnHtpPrepare")
-                        FileLogger.d(TAG, "loadLibraries: QnnHtpPrepare loaded (QNN/NPU)")
-                        System.loadLibrary("QnnHtpV68Stub")
-                        FileLogger.d(TAG, "loadLibraries: QnnHtpV68Stub loaded (QNN/NPU Hexagon V68)")
-                        // V68Skel is DSP6 binary (32-bit), Android linker rejects dlopen
-                        // It gets deployed in deployQnnSkel() after library load completes
-                        FileLogger.i(TAG, "loadLibraries: QNN/NPU libraries loaded (Skel pending deployment)")
-                    } catch (e: UnsatisfiedLinkError) {
-                        FileLogger.w(TAG, "loadLibraries: QNN libraries not available (NPU disabled): ${e.message}")
-                        qnnAvailable = false
-                    }
-                }
-                
-                librariesLoaded = true
-                
-                // Deploy QNN V68Skel from assets to cache (DSP6 binary, can't use System.loadLibrary)
-                if (qnnAvailable) {
-                    try {
-                        val skelDir = File(context.cacheDir, "qnn")
-                        skelDir.mkdirs()
-                        val skelFile = File(skelDir, "libQnnHtpV68Skel.so")
-                        if (!skelFile.exists()) {
-                            context.assets.open("qnn/libQnnHtpV68Skel.so").use { input ->
-                                skelFile.outputStream().use { output ->
-                                    input.copyTo(output)
-                                }
-                            }
-                        }
-                        Os.setenv("ADSP_LIBRARY_PATH", skelDir.absolutePath, true)
-                        FileLogger.d(TAG, "loadLibraries: QnnHtpV68Skel deployed to ${skelFile.absolutePath}")
-                    } catch (e: Exception) {
-                        FileLogger.w(TAG, "loadLibraries: QnnHtpV68Skel deploy failed: ${e.message}")
-                    }
-                    // Disable QNN for now: Hexagon V68 (778G Plus) cannot handle LLM inference.
-                    // llm->load() with backend_type=5 hangs silently - NPU graph compile fails
-                    // for INT4 LLM ops. Re-enable only on devices with V73+ (8Gen2+).
-                    qnnAvailable = false
-                    FileLogger.w(TAG, "loadLibraries: QNN disabled - V68 DSP not suitable for LLM inference")
-                }
-                
-                // 库加载成功后立即设置native层日志路径
-                try {
-                    nativeSetLogFilePath(FileLogger.getLogFilePath())
-                    FileLogger.d(TAG, "loadLibraries: native log path set")
-                } catch (e: Exception) {
-                    FileLogger.w(TAG, "loadLibraries: failed to set native log path: ${e.message}")
-                }
-                FileLogger.i(TAG, "loadLibraries: all MNN libraries loaded successfully")
-                return true
-                
-            } catch (e: Throwable) {
-                val errorMsg = "loadLibraries failed: ${e.message}"
-                FileLogger.e(TAG, errorMsg, e)
-                libraryLoadError = errorMsg
-                librariesLoaded = false
+            } catch (e: UnsatisfiedLinkError) {
+                FileLogger.e(TAG, "loadLibraries: native library not found or linking failed", e)
                 return false
+            }
+            
+            FileLogger.i(TAG, "loadLibraries: all MNN libraries loaded successfully")
+            return true
+        }
+        
+        /**
+         * 预加载 QNN/NPU 支持
+         */
+        private fun tryLoadQNN() {
+            // FastRPC + QNN (QNN native libs pulled by liblocalai-jni)
+            // Step 1: FastRPC (required for QNN/NPU)
+            try {
+                System.loadLibrary("cdspgrpc")
+                FileLogger.d(TAG, "loadLibraries: cdspgrpc loaded (FastRPC for QNN)")
+            } catch (e: UnsatisfiedLinkError) {
+                FileLogger.w(TAG, "loadLibraries: cdspgrpc not available, QNN disabled: ${e.message}")
+            }
+            
+            // Step 2: QNN/NPU (requires QNN native libs from liblocalai-jni)
+            // Load QNN libs after FastRPC (liblocalai-jni pulls them in via RTLD_NOW)
+            if (qnnAvailable) {
+                try {
+                    System.loadLibrary("QnnSystem")
+                    FileLogger.d(TAG, "loadLibraries: QnnSystem loaded (QNN/NPU)")
+                } catch (e: UnsatisfiedLinkError) {
+                    FileLogger.w(TAG, "loadLibraries: QNN not available (NPU disabled): ${e.message}")
+                    qnnAvailable = false
+                }
+            }
+            
+            // Step 3: Deploy QNN V68Skel from assets to cache (DSP6 bin, cannot use System.loadLibrary)
+            if (qnnAvailable) {
+                try {
+                    val skelDir = File(context.cacheDir, "qnn")
+                    skelDir.mkdirs()
+                    val skelFile = File(skelDir, "libQnnHtpV68Skel.so")
+                    if (!skelFile.exists()) {
+                        context.assets.open("qnn/libQnnHtpV68Skel.so").use { input ->
+                            skelFile.outputStream().use { output -> input.copyTo(output) }
+                        }
+                    }
+                    OS.setenv("ADSPRP_LIBRARY_PATH", skelDir.absolutePath, true)
+                    FileLogger.d(TAG, "loadLibraries: QnnHtpV68Skel deployed to ${skelFile.absolutePath}")
+                } catch (e: Exception) {
+                    FileLogger.w(TAG, "loadLibraries: QnnHtpV68Skel deploy failed: ${e.message}")
+                }
+            }
+            
+            // Disable QNN for now: LLaMA inference with backend_type=5 hangs silently -
+            // NPU graph compile fails for LLaMA ops. Re-enable only on devices with V7c+ (8Gen2+).
+            qnnAvailable = false
+            FileLogger.w(TAG, "loadLibraries: QNN disabled - NPU cannot handle LLaMA inference (needs V7c+ devices)")
+        }
+        
+        private var qnnAvailable = false
+        
+        // 预加载 FastRPC + QNN 支持
+        init {
+            try {
+                System.loadLibrary("localai-jni")
+                qnnAvailable = true
+            } catch (e: UnsatisfiedLinkError) {
+                qnnAvailable = false
             }
         }
         
         /**
-         * 获取库加载错误信息
+         * 设置 native 日志文件路径
          */
-        fun getLibraryLoadError(): String? = libraryLoadError
+        @JvmStatic
+        private external fun nativeSetLogFilePath(path: String)
+        
+        // =============== Native 声明 (由 C++ 实现) ===============
         
         /**
-         * 检查库是否已加载
+         * 加载 MNN 模型（通过 config.json）
          */
-        fun isLibrariesLoaded(): Boolean = librariesLoaded
+        external fun nativeLoadModel(
+            configPath: String,
+            nCtx: Int,
+            nThreads: Int,
+            cacheDir: String,
+            useQnn: Boolean
+        ): Boolean
+        
+        /**
+         * 卸载模型
+         */
+        external fun nativeUnloadModel()
+        
+        /**
+         * 模型是否已加载
+         */
+        external fun nativeIsModelLoaded(): Boolean
+        
+        /**
+         * 同步生成文本（短文本）
+         */
+        @JvmStatic
+        external fun nativeGenerate(
+            prompt: String,
+            maxTokens: Int,
+            temperature: Float,
+            topK: Int,
+            topP: Float
+        ): String
+        
+        /**
+         * 生成文本流（长文本）
+         */
+        @JvmStatic
+        external fun nativeGenerateStream(
+            prompt: String,
+            maxTokens: Int,
+            temperature: Float,
+            topK: Int,
+            topP: Float,
+            useGPU: Boolean
+        ): String
+        
+        /**
+         * 获取已加载模型名称
+         */
+        @JvmStatic
+        external fun nativeGetLoadedModelName(): String
+        
+        /**
+         * 获取上下文大小
+         */
+        @JvmStatic
+        external fun nativeGetContextSize(): Int
+        
+        /**
+         * 获取已使用内存
+         */
+        @JvmStatic
+        external fun nativeGetMemoryUsage(): Long
+        
+        /**
+         * 设置系统提示词
+         */
+        @JvmStatic
+        external fun nativeSetSystemPrompt(systemPrompt: String): Boolean
+        
+        /**
+         * 重置会话
+         */
+        @JvmStatic
+        external fun nativeResetConversation()
+        
+        /**
+         * 卸载模型并释放资源
+         */
+        @JvmStatic
+        external fun nativeFree()
+        
+        /**
+         * 获取最后错误信息
+         */
+        @JvmStatic
+        external fun nativeGetLastError(): String
     }
     
-    // 推理状态
-    private val _isModelLoaded = MutableStateFlow(false)
+    // =============== Kotlin 实现 ===============
+    
+    // 模型是否已加载
+    private var _isModelLoaded = MutableStateFlow(false)
     val isModelLoaded: StateFlow<Boolean> = _isModelLoaded.asStateFlow()
     
-    private val _loadedModelName = MutableStateFlow<String?>(null)
+    private var _loadedModelName = MutableStateFlow<String?>(null)
     val loadedModelName: StateFlow<String?> = _loadedModelName.asStateFlow()
     
-    private val _lastError = MutableStateFlow<String?>(null)
+    private var _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
     
-    private val _inferenceStats = MutableStateFlow(InferenceStats())
-    val inferenceStats: StateFlow<InferenceStats> = _inferenceStats.asStateFlow()
+    // 推理统计
+    private var totalInferences = 0L
+    private var totalTokensGenerated = 0L
+    private var lastInferenceTimeMs = 0L
     
     // Token 回调
     private var tokenCallback: TokenCallback? = null
     
     /**
-     * 设置 token 回调（用于流式输出）
+     * 设置 token 回调（流式输出）
      */
     fun setTokenCallback(callback: TokenCallback?) {
         this.tokenCallback = callback
         initNativeCallback(callback)
     }
     
-    /**
-     * 初始化 native 回调
-     */
-    private external fun initNativeCallback(callback: TokenCallback?)
-    
-    // ==================== Native 方法声明 ====================
+    // =============== Native 回调 ===============
+    @Volatile private var librariesLoaded = false
+    @Volatile private var libraryLoadError: String? = null
     
     /**
-     * 初始化 native 层
+     * 加载 native 库并初始化回调
      */
-    
-    /**
-     * 加载模型
-     * 
-     * @param configPath 模型配置目录路径
-     * @param nCtx 上下文窗口大小
-     * @param nThreads 推理线程数
-     * @return 是否加载成功
-     */
-    external fun nativeLoadModel(configPath: String, nCtx: Int, nThreads: Int, cacheDir: String, useQnn: Boolean): Boolean
-    
-    /**
-     * 卸载模型
-     */
-    external fun nativeUnloadModel()
-    
-    /**
-     * 检查模型是否已加载
-     */
-    external fun nativeIsModelLoaded(): Boolean
-    
-    /**
-     * 生成文本（同步）
-     * 
-     * @param prompt 输入提示词
-     * @param maxTokens 最大生成长度
-     * @param temperature 温度参数
-     * @param topK Top-K 采样
-     * @param topP Top-P 采样
-     * @return 生成结果
-     */
-    external fun nativeGenerate(
-        prompt: String,
-        maxTokens: Int,
-        temperature: Float,
-        topK: Int,
-        topP: Float
-    ): String
-    
-    /**
-     * 生成文本（流式）
-     * 
-     * @param prompt 输入提示词
-     * @param maxTokens 最大生成长度
-     * @param temperature 温度参数
-     * @param topK Top-K 采样
-     * @param topP Top-P 采样
-     * @return 流式结果（每个 token 用换行分隔）
-     */
-    // Bug7修复: 添加useGPU参数
-    external fun nativeGenerateStream(
-        prompt: String,
-        maxTokens: Int,
-        temperature: Float,
-        topK: Int,
-        topP: Float,
-        useGPU: Boolean
-    ): String
-    
-    /**
-     * 获取已加载模型名称
-     */
-    external fun nativeGetLoadedModelName(): String
-    
-    /**
-     * 获取上下文大小
-     */
-    external fun nativeGetContextSize(): Int
-    
-    /**
-     * 获取内存使用量（字节）
-     */
-    external fun nativeGetMemoryUsage(): Long
-    
-    /**
-     * 设置系统提示词
-     */
-    external fun nativeSetSystemPrompt(systemPrompt: String): Boolean
-    
-    /**
-     * 重置对话上下文
-     */
-    external fun nativeResetConversation()
-    
-    /**
-     * 获取最后错误信息
-     */
-
-
-    external fun nativeGetLastError(): String
-    
-    /**
-     * PH0: 设置运行时硬件加速配置
-     * 通过 MNN RuntimeManager API 动态调整后端、量化模式等
-     * 注意：native 层需要后续实现此方法，当前为预留接口
-     */
-    private external fun nativeSetRuntimeConfig(
-        backend: String,
-        attentionMode: Int,
-        precision: String,
-        openclCachePath: String
-    ): Boolean
-    
-    // ==================== Kotlin 封装方法 ====================
-    
-    /**
-     * 加载模型
-     * 
-     * @param path 模型目录路径
-     * @param nCtx 上下文窗口大小，默认 2048
-     * @param nThreads 推理线程数，默认 4
-     * @return 是否加载成功
-     */
-    fun loadModel(path: String, nCtx: Int = 2048, nThreads: Int = 0): Boolean {
-        FileLogger.d(TAG, "loadModel: path=$path, nCtx=$nCtx, nThreads=$nThreads")
-        
-        if (!librariesLoaded) {
-            FileLogger.e(TAG, "loadModel: libraries not loaded")
-            _lastError.value = "Native libraries not loaded"
-            return false
+    private fun loadNativeLibraries() {
+        if (librariesLoaded) return
+        synchronized(this) {
+            if (librariesLoaded) return
+            try {
+                if (!loadLibraries()) {
+                    libraryLoadError = "Native libraries failed to load"
+                    return
+                }
+                librariesLoaded = true
+            } catch (e: Throwable) {
+                libraryLoadError = e.message
+            }
         }
+    }
+    
+    // 推断状态
+    private val _inferenceState = MutableStateFlow(InferenceState())
+    val inferenceState: StateFlow<InferenceState> = _inferenceState.asStateFlow()
+    
+    /**
+     * 运行时配置数据类
+     */
+    data class RuntimeConfig(
+        val backend: String,
+        val attentionMode: Int,
+        val precision: String,
+        val openclCachePath: String?
+    )
+    
+    // 保存运行时配置，下次 loadModel 时应用
+    private var pendingRuntimeConfig: RuntimeConfig? = null
+    
+    /**
+     * 应用运行时配置（通过修改 config.json 实现）
+     * 注意：MNN LLM 通过 config.json 加载配置，没有直接的 native API
+     * 因此我们修改 config.json 然后重新加载模型
+     */
+    fun applyRuntimeConfig(backend: String, attentionMode: Int, precision: String, openclCachePath: String?) {
+        FileLogger.d(TAG, "applyRuntimeConfig: backend=$backend, attentionMode=$attentionMode, precision=$precision")
+        pendingRuntimeConfig = RuntimeConfig(backend, attentionMode, precision, openclCachePath)
+        // If model is already loaded, we need to reload with new config
+        // (MNN doesn't support changing runtime config on a loaded model)
+        if (_isModelLoaded.value && pendingRuntimeConfig != null) {
+            FileLogger.i(TAG, "applyRuntimeConfig: config saved, will apply on next model load")
+        }
+    }
+    
+    /**
+     * 加载模型
+     */
+    fun loadModel(
+        path: String, 
+        nCtx: Int = 2048, 
+        nThreads: Int = 0,
+        backend: String = "cpu",
+        attentionMode: Int = 10,
+        precision: String = "low",
+        openclCachePath: String? = null
+    ): Boolean {
+        FileLogger.d(TAG, "loadModel: path=$path, nCtx=$nCtx, nThreads=$nThreads, backend=$backend, attentionMode=$attentionMode, precision=$precision")
         
-        // 先卸载旧模型，避免切换模型时仍使用旧的推理引擎
+        // 应用待处理的运行时配置
+        val effectiveBackend = pendingRuntimeConfig?.backend ?: backend
+        val effectiveAttentionMode = pendingRuntimeConfig?.attentionMode ?: attentionMode
+        val effectivePrecision = pendingRuntimeConfig?.precision ?: precision
+        val effectiveOpenclCache = pendingRuntimeConfig?.openclCachePath ?: openclCachePath
+        
+        // 清空待处理配置
+        pendingRuntimeConfig = null
+        
         if (_isModelLoaded.value) {
             FileLogger.d(TAG, "loadModel: unloading previous model before loading new one")
             unloadModel()
         }
         
         try {
-            // 验证模型目录存在
+            // 定位模型目录
             val modelDir = File(path)
             if (!modelDir.exists() || !modelDir.isDirectory) {
                 FileLogger.e(TAG, "loadModel: model directory not found: $path")
@@ -352,7 +357,7 @@ class LlamaEngine private constructor(
                 return false
             }
             
-            // 检查必要文件
+            // 检查必需文件
             val requiredFiles = listOf("config.json", "llm.mnn", "tokenizer.txt")
             for (fileName in requiredFiles) {
                 if (!File(modelDir, fileName).exists()) {
@@ -360,27 +365,46 @@ class LlamaEngine private constructor(
                 }
             }
             
-            // WORKAROUND: native层的路径解析逻辑会把目录名中含"."的截掉
-            // (如 qwen2.5-0.5b-mnn 会被当成文件名)
-            // 解决方案：传入config.json文件路径，让native层正确截取到模型目录
+            // WORKAROUND: native 日志路径设置到 workdir，
+            // 因为 qwen2.5-0.5B-mnn 用 config.json 传给 MNN
+            // 设置 native 日志路径到 workdir
             val nativePath = File(modelDir, "config.json").absolutePath
             FileLogger.d(TAG, "loadModel: nativePath=$nativePath (config.json workaround)")
             
-            // 创建缓存目录（native层硬编码了路径，需要确保存在）
+            // 创建 cache 目录
             val cacheDir = File("/data/data/com.localai.server/cache/llm_cache")
             if (!cacheDir.exists()) {
                 cacheDir.mkdirs()
                 FileLogger.d(TAG, "loadModel: created cache dir ${cacheDir.absolutePath}")
             }
-            // 也创建本应用包名的缓存目录
+            // 创建 app cache 目录
             val appCacheDir = File(context.cacheDir, "llm_cache")
             if (!appCacheDir.exists()) {
                 appCacheDir.mkdirs()
                 FileLogger.d(TAG, "loadModel: created app cache dir ${appCacheDir.absolutePath}")
             }
             
-            // 调用 native 加载
+            // 获取 cache 目录路径
             val cacheDirPath = appCacheDir.absolutePath
+            
+            // Patch config.json with runtime settings before loading
+            val configFile = File(modelDir, "config.json")
+            if (configFile.exists()) {
+                try {
+                    val configJson = JSONObject(configFile.readText())
+                    configJson.put("backend_type", effectiveBackend)
+                    if (nThreads > 0) configJson.put("thread_num", nThreads)
+                    configJson.put("precision", effectivePrecision)
+                    if (effectiveAttentionMode != 8) configJson.put("attention_mode", effectiveAttentionMode)
+                    if (effectiveOpenclCache != null) configJson.put("opencl_cache_path", effectiveOpenclCache)
+                    configFile.writeText(configJson.toString(2))
+                    FileLogger.d(TAG, "loadModel: patched config.json with backend=$effectiveBackend, precision=$effectivePrecision, attentionMode=$effectiveAttentionMode")
+                } catch (e: Exception) {
+                    FileLogger.w(TAG, "loadModel: failed to patch config.json, using defaults", e)
+                }
+            }
+            
+            // 调用 native 加载模型
             val success = nativeLoadModel(nativePath, nCtx, nThreads, cacheDirPath, qnnAvailable)
             
             if (success) {
@@ -388,9 +412,8 @@ class LlamaEngine private constructor(
                 _loadedModelName.value = nativeGetLoadedModelName()
                 FileLogger.i(TAG, "loadModel: success, model=${_loadedModelName.value}")
             } else {
-                val error = nativeGetLastError()
-                _lastError.value = error
-                FileLogger.e(TAG, "loadModel: failed, error=$error")
+                _lastError.value = nativeGetLastError()
+                FileLogger.e(TAG, "loadModel: failed, error=${_lastError.value}")
             }
             
             return success
@@ -434,220 +457,146 @@ class LlamaEngine private constructor(
         try {
             val result = nativeGenerate(prompt, maxTokens, temperature, topK, topP)
             val elapsed = System.currentTimeMillis() - startTime
-            val tokens = result.length / 4 // 估算
-            val tokPerSec = if (elapsed > 0) tokens * 1000f / elapsed else 0f
+            val tokens = result.length / 4  // 粗略估计
             
-            _inferenceStats.value = InferenceStats(
-                lastInferenceTimeMs = elapsed,
-                tokensGenerated = tokens,
-                tokensPerSecond = tokPerSec
-            )
+            updateInferenceState(elapsed, tokens)
             
-            FileLogger.d(TAG, "generate: completed in ${elapsed}ms, ~$tokens tokens, $tokPerSec tok/s")
+            FileLogger.d(TAG, "generate: completed in ${elapsed}ms, ~$tokens tokens")
             return result
             
         } catch (e: Throwable) {
             FileLogger.e(TAG, "generate failed", e)
-            _lastError.value = e.message
-            throw e
+            return ""
         }
     }
     
     /**
-     * 生成文本（流式）
-     * 
-     * 使用 callbackFlow 实现真正的流式输出
-     * native 层通过 JNI 回调将每个 token 传递给 Kotlin 层
+     * 生成文本流
      */
-    // Bug7修复: 添加useGPU参数，默认为false（避免GPU Vulkan性能问题）
-    fun generateStream(
+    suspend fun generateStream(
         prompt: String,
         maxTokens: Int = 512,
         temperature: Float = 0.7f,
         topK: Int = 40,
-        topP: Float = 0.9f,
-        useGPU: Boolean = false  // Bug7修复: 默认false，避免GPU offload开销
-    ): Flow<String> {
+        topP: Float = 0.9f
+    ): Flow<String> = callbackFlow {
         FileLogger.d(TAG, "generateStream: prompt len=${prompt.length}")
-        val startTime = System.currentTimeMillis()
         
-        return callbackFlow {
-            // 大buffer防止JNI回调线程上trySend因buffer满导致StackOverflow
-            // 默认Channel.BUFFERED=64可能不够，显式设256
-            var totalTokens = 0
-            
-            // 注册 token 回调，将每个 token 发送到 Flow
-            val callback = object : TokenCallback {
-                @Volatile private var inCallback = false
-                override fun onToken(token: String) {
-                    // 防止JNI回调重入导致StackOverflow
-                    if (inCallback) return
-                    inCallback = true
-                    try {
-                        trySend(token)
-                        totalTokens++
-                    } finally {
-                        inCallback = false
-                    }
-                }
+        // 使用字符级别的流输出
+        val fullText = StringBuilder()
+        val callback = object : TokenCallback {
+            override fun onToken(token: String) {
+                fullText.append(token)
+                trySend(token)
             }
-            
-            try {
-                withContext(Dispatchers.IO) {
-                    // 设置回调
-                    setTokenCallback(callback)
-                    
-                    // 调用 native 流式生成
-                    // Bug7修复: 传入useGPU参数
-                    val streamResult = nativeGenerateStream(prompt, maxTokens, temperature, topK, topP, useGPU)
-                    
-                    // 如果 native 层没有通过回调返回（兼容旧实现），
-                    // 则按换行分隔后逐个 emit
-                    if (totalTokens == 0 && streamResult.isNotEmpty()) {
-                        val tokens = streamResult.split("\n").filter { it.isNotEmpty() }
-                        for (token in tokens) {
-                            trySend(token)
-                            totalTokens++
-                        }
-                    }
-                    
-                    // 清除回调
-                    setTokenCallback(null)
-                }
-                
-                val elapsed = System.currentTimeMillis() - startTime
-                val tokPerSec = if (elapsed > 0) totalTokens * 1000f / elapsed else 0f
-                
-                _inferenceStats.value = InferenceStats(
-                    lastInferenceTimeMs = elapsed,
-                    tokensGenerated = totalTokens,
-                    tokensPerSecond = tokPerSec
-                )
-                
-                FileLogger.d(TAG, "generateStream: completed in ${elapsed}ms, $totalTokens tokens, $tokPerSec tok/s")
-                
-            } catch (e: Throwable) {
-                FileLogger.e(TAG, "generateStream failed", e)
-                _lastError.value = e.message
-                trySend("生成失败: ${e.message}")
-            } finally {
-                setTokenCallback(null)
-            }
-            
-            close()
-        }.buffer(256)
-    }
-    
-    /**
-     * 设置系统提示词
-     */
-    fun setSystemPrompt(systemPrompt: String): Boolean {
-        return try {
-            nativeSetSystemPrompt(systemPrompt)
-        } catch (e: Throwable) {
-            FileLogger.e(TAG, "setSystemPrompt failed", e)
-            false
         }
-    }
-    
-    /**
-     * 重置对话
-     */
-    fun resetConversation() {
+        
+        setTokenCallback(callback)
+        
         try {
-            nativeResetConversation()
-            FileLogger.d(TAG, "resetConversation: success")
-        } catch (e: Throwable) {
-            FileLogger.e(TAG, "resetConversation failed", e)
+            // 同步生成
+            val result = withContext(Dispatchers.IO) {
+                nativeGenerateStream(prompt, maxTokens, temperature, topK, topP, true)
+            }
+            
+            // 清理回调
+            setTokenCallback(null)
+            
+            // 发送完成信号
+            close()
+            
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "generateStream failed", e)
+            setTokenCallback(null)
+            close(e)
         }
-    }
+        
+        awaitClose { setTokenCallback(null) }
+    }.flowOn(Dispatchers.IO)
     
     /**
-     * 获取内存使用（MB）
+     * 获取已加载模型名称
+     */
+    fun getLoadedModelName(): String? = _loadedModelName.value
+    
+    /**
+     * 获取上下文大小
+     */
+    fun getContextSize(): Int = try { nativeGetContextSize() } catch (e: Exception) { 0 }
+    
+    /**
+     * 获取已使用内存 (MB)
      */
     fun getMemoryUsageMB(): Float {
         return try {
             nativeGetMemoryUsage() / (1024f * 1024f)
-        } catch (e: Throwable) {
+        } catch (e: Exception) {
             0f
         }
     }
     
     /**
-     * 获取上下文大小
+     * 获取设备总内存 (MB)
      */
-    fun getContextSize(): Int {
+    fun getDeviceTotalMemoryMB(): Long {
         return try {
-            nativeGetContextSize()
-        } catch (e: Throwable) {
-            0
-        }
-    }
-    
-    /**
-     * PH0: 应用运行时硬件加速配置
-     * 在 loadModel 成功后调用，配置推理后端和量化模式
-     * 
-     * @param backend "cpu" | "opencl" | "auto"
-     * @param attentionMode 8=FA不量化, 10=FA+KV-INT8, 14=FA+KV-TQ4
-     * @param precision "low"(FP16) | "normal" | "high"
-     * @param openclCachePath OpenCL AutoTuning 缓存路径
-     */
-    fun applyRuntimeConfig(
-        backend: String,
-        attentionMode: Int,
-        precision: String,
-        openclCachePath: String?
-    ) {
-        FileLogger.d(TAG, "applyRuntimeConfig: backend=$backend, attentionMode=$attentionMode, precision=$precision")
-        
-        if (!_isModelLoaded.value) {
-            FileLogger.w(TAG, "applyRuntimeConfig: model not loaded, skipping")
-            return
-        }
-        
-        try {
-            val result = nativeSetRuntimeConfig(
-                backend,
-                attentionMode,
-                precision,
-                openclCachePath ?: ""
-            )
-            FileLogger.i(TAG, "applyRuntimeConfig: result=$result")
-        } catch (e: UnsatisfiedLinkError) {
-            // native 层尚未实现此方法，不影响正常运行
-            FileLogger.w(TAG, "applyRuntimeConfig: nativeSetRuntimeConfig not available, runtime config skipped (will be applied when native impl is ready)")
+            val stat = java.io.File("/proc/meminfo").readLines()
+            val memTotal = stat.firstOrNull { it.startsWith("MemTotal:") }
+            memTotal?.split(Regex("\s+"))?.get(1)?.toLongOrNull()?.div(1024) ?: 0L
         } catch (e: Exception) {
-            FileLogger.e(TAG, "applyRuntimeConfig: failed", e)
+            0L
         }
     }
     
     /**
-     * 释放资源
+     * 更新推理状态
      */
-    fun release() {
-        FileLogger.d(TAG, "release")
-        unloadModel()
-        tokenCallback = null
-        instance = null
+    private fun updateInferenceState(durationMs: Long, tokensGenerated: Int) {
+        totalInferences++
+        totalTokensGenerated += tokensGenerated
+        lastInferenceTimeMs = durationMs
+        _inferenceState.value = InferenceState(
+            lastInferenceTimeMs = lastInferenceTimeMs,
+            tokensPerSecond = if (durationMs > 0) tokensGenerated * 1000f / durationMs else 0f,
+            totalInferences = totalInferences,
+            totalTokensGenerated = totalTokensGenerated,
+            avgTokensPerSecond = if (totalInferences > 0) totalTokensGenerated * 1000f / (totalInferences * durationMs) else 0f
+        )
+    }
+    
+    // =============== P3: Enhanced interface methods implementations ===============
+    
+    override fun estimateTokens(text: String): Int {
+        var tokens = 0
+        for (char in text) {
+            tokens += if (char.code > 0x4E00) 1 else 0  // CJK = 1 token each
+        }
+        val asciiChars = text.count { it.code <= 0x4E00 }
+        tokens += (asciiChars + 3) / 4
+        return tokens
+    }
+    
+    override fun supportsToolCalling(): Boolean = false   // MNN parses tool calls from text
+    
+    override fun supportsThinking(): Boolean = true   // Qwen 3.5 supports thinking mode
+    
+    override fun getInferenceState(): InferenceStats {
+        return _inferenceState.value
+    }
+    
+    /**
+     * 更新推理统计信息
+     */
+    fun updateInferenceState(durationMs: Long, tokensGenerated: Int) {
+        totalInferences++
+        totalTokensGenerated += tokensGenerated
+        lastInferenceTimeMs = durationMs
+        _inferenceState.value = InferenceState(
+            lastInferenceTimeMs = lastInferenceTimeMs,
+            tokensPerSecond = if (durationMs > 0) tokensGenerated * 1000f / durationMs else 0f,
+            totalInferences = totalInferences,
+            totalTokensGenerated = totalTokensGenerated,
+            avgTokensPerSecond = if (totalInferences > 0) totalTokensGenerated * 1000f / (totalInferences * durationMs) else 0f
+        )
     }
 }
-
-/**
- * Token 回调接口
- */
-interface TokenCallback {
-    /**
-     * 当生成一个 token 时调用
-     */
-    fun onToken(token: String)
-}
-
-/**
- * 推理统计信息
- */
-data class InferenceStats(
-    val lastInferenceTimeMs: Long = 0,
-    val tokensGenerated: Int = 0,
-    val tokensPerSecond: Float = 0f
-)
