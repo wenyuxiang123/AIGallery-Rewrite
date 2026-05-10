@@ -23,6 +23,7 @@ import com.aigallery.rewrite.context.GSSCPromptBuilder
 import com.aigallery.rewrite.skill.SkillRegistry
 import com.aigallery.rewrite.skill.SkillMatch
 import com.aigallery.rewrite.trace.AgentTraceLogger
+import com.aigallery.rewrite.context.ReflectionChecker
 import com.aigallery.rewrite.download.MnnModelDownloader
 import com.aigallery.rewrite.download.MnnDownloadStatus
 import com.aigallery.rewrite.domain.model.MemoryConfig
@@ -52,6 +53,7 @@ class ChatSessionViewModel @Inject constructor(
     private val gsscPromptBuilder: GSSCPromptBuilder,
     private val skillRegistry: SkillRegistry,
     private val traceLogger: AgentTraceLogger,
+    private val reflectionChecker: ReflectionChecker,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -690,6 +692,31 @@ class ChatSessionViewModel @Inject constructor(
         
         // Clear tool steps after completion
         _state.update { it.copy(toolSteps = emptyList()) }
+        
+        // P4: Reflection self-correction check
+        val finalOutput = _state.value.messages.find { it.id == assistantMsgId }?.content ?: ""
+        val userMsg = _state.value.messages.lastOrNull { it.role == MessageRole.USER }?.content ?: ""
+        val reflectionResult = reflectionChecker.check(finalOutput, userMsg, retryCount = 0)
+        
+        if (reflectionResult.shouldRetry && reflectionResult.retryPrompt != null) {
+            FileLogger.d(TAG, "ReAct: reflection triggered retry (score=${reflectionResult.qualityScore}, issues=${reflectionResult.issues})")
+            // Re-infer with retry prompt (limited to 1 retry to avoid loops)
+            try {
+                var retryOutput = ""
+                withTimeoutOrNull(60_000L) {
+                    inferenceEngine.inferStream(reflectionResult.retryPrompt, config).collect { token ->
+                        if (!inToolCallBlock) {
+                            retryOutput += token
+                            updateStreamingMessage(assistantMsgId, token)
+                        }
+                    }
+                }
+                traceLogger.logInference(0, 0, 0, "reflection_retry", true)
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "ReAct: reflection retry failed", e)
+            }
+        }
+        
         markStreamingComplete(assistantMsgId)
         
         // P2: Compress old messages after inference completes
