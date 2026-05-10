@@ -74,9 +74,9 @@ class MnnInferenceEngine(
             
             InferenceResult(
                 text = result,
-                inferenceTimeMs = engine?.inferenceState?.value?.lastInferenceTimeMs ?: 0,
+                inferenceTimeMs = engine?.inferenceStats?.value?.lastInferenceTimeMs ?: 0,
                 tokenCount = result.length / 4,
-                tokensPerSecond = engine?.inferenceState?.value?.tokensPerSecond ?: 0f,
+                tokensPerSecond = engine?.inferenceStats?.value?.tokensPerSecond ?: 0f,
                 success = result.isNotEmpty(),
                 errorMessage = if (result.isEmpty()) "Empty response" else null
             )
@@ -188,3 +188,4 @@ class MnnInferenceEngine(
         llamaEngine?.applyRuntimeConfig(backend, attentionMode, precision, openclCachePath)
     }
 }
+
