@@ -6,6 +6,7 @@ import com.aigallery.rewrite.util.FileLogger
 import com.localai.server.engine.InferenceStats
 import com.localai.server.engine.LlamaEngine
 import kotlinx.coroutines.Dispatchers
+import java.util.concurrent.locks.ReentrantLock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -34,6 +35,9 @@ class MnnInferenceEngine(
         const val DEFAULT_CONTEXT_LENGTH = 2048
         const val DEFAULT_THREADS = 0  // 骁龙778G+ 8核，4线程最优
     }
+    
+    // 操作锁，防止并发 initialize/release
+    val engineLock = ReentrantLock()
     
     // MNN 引擎实例
     private var llamaEngine: LlamaEngine? = null
@@ -94,6 +98,7 @@ class MnnInferenceEngine(
         FileLogger.d(TAG, "initialize: modelPath=$modelPath, config=$config")
         
         return withContext(Dispatchers.IO) {
+            engineLock.lock()
             try {
                 // 1. 加载 native 库
                 if (!ensureLibrariesLoaded()) {
@@ -135,6 +140,8 @@ class MnnInferenceEngine(
             } catch (e: Throwable) {
                 FileLogger.e(TAG, "initialize: exception", e)
                 return@withContext false
+            } finally {
+                engineLock.unlock()
             }
         }
     }
@@ -366,6 +373,7 @@ class MnnInferenceEngine(
         FileLogger.d(TAG, "release")
         
         withContext(Dispatchers.IO) {
+            engineLock.lock()
             try {
                 llamaEngine?.release()
                 llamaEngine = null
