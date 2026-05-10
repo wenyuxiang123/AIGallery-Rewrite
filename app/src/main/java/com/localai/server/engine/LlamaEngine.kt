@@ -458,8 +458,6 @@ class LlamaEngine private constructor(
     ): Flow<String> {
         FileLogger.d(TAG, "generateStream: prompt len=${prompt.length}")
         val startTime = System.currentTimeMillis()
-        // Bug1修复: 每次推理前reset()清理KV cache，避免前几次推理乱码
-        resetConversation()
         
         return callbackFlow {
             // 大buffer防止JNI回调线程上trySend因buffer满导致StackOverflow
