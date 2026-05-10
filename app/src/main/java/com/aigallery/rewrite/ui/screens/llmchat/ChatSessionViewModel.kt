@@ -11,6 +11,7 @@ import com.aigallery.rewrite.domain.model.AIModel
 import com.aigallery.rewrite.domain.model.MessageRole
 import com.aigallery.rewrite.domain.model.ModelCatalog
 import com.aigallery.rewrite.data.repository.MemoryRepository
+import com.aigallery.rewrite.download.MnnModelDownloader
 import com.aigallery.rewrite.domain.model.MemoryConfig
 import com.aigallery.rewrite.inference.InferenceConfig
 import com.aigallery.rewrite.inference.MnnInferenceEngine
@@ -29,6 +30,7 @@ class ChatSessionViewModel @Inject constructor(
     private val memoryRepository: MemoryRepository,
     private val chatMessageDao: ChatMessageDao,
     private val chatSessionDao: ChatSessionDao,
+    private val mnnDownloader: MnnModelDownloader,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -63,6 +65,9 @@ class ChatSessionViewModel @Inject constructor(
         
         // 自动尝试恢复上次加载的模型
         autoRestoreModel()
+        
+        // 加载可用模型列表
+        loadAvailableModels()
         
         // 恢复消息和 session 元数据
         restoreSessionData()
@@ -102,6 +107,24 @@ class ChatSessionViewModel @Inject constructor(
     }
 
     private fun nextMessageId(): Long = messageIdCounter.incrementAndGet()
+
+    /**
+     * 加载可用模型列表（已下载的模型）
+     */
+    private fun loadAvailableModels() {
+        viewModelScope.launch {
+            try {
+                val downloadedMnnModels = mnnDownloader.getDownloadedModels().toSet()
+                val available = ModelCatalog.supportedModels.filter { model ->
+                    model.id in downloadedMnnModels
+                }.map { it.copy(status = ModelStatus.DOWNLOADED) }
+                _state.update { it.copy(availableModels = available) }
+                FileLogger.d(TAG, "loadAvailableModels: found ${available.size} available models")
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "loadAvailableModels: failed", e)
+            }
+        }
+    }
 
     /**
      * 尝试自动恢复上次加载的模型
@@ -657,7 +680,8 @@ data class ChatSessionState(
     val messages: List<ChatMessage> = emptyList(),
     val isGenerating: Boolean = false,
     val sessionId: String = "",
-    val selectedModel: AIModel? = null
+    val selectedModel: AIModel? = null,
+    val availableModels: List<AIModel> = emptyList()
 )
 
 /**
