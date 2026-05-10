@@ -49,3 +49,14 @@ data class ModelDownloadEntity(
     val startedAt: Long,
     val completedAt: Long?
 )
+
+
+/**
+ * FTS5 full-text search entity for chat messages
+ * Mirrors ChatMessageEntity content for full-text search capability
+ */
+@Fts4(contentEntity = ChatMessageEntity::class)
+@Entity(tableName = "chat_messages_fts")
+data class ChatMessageFts(
+    val content: String
+)
