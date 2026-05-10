@@ -258,7 +258,7 @@ class MnnInferenceEngineV35(
     /**
      * 获取当前推理统计
      */
-    fun getInferenceStats(): InferenceStats {
+    override fun getInferenceStats(): InferenceStats {
         return llamaEngine?.inferenceStats?.value ?: InferenceStats()
     }
     
