@@ -264,7 +264,8 @@ class ChatSessionViewModel @Inject constructor(
         }
         
         // P1: Skill 匹配
-        val skillMatch = skillRegistry.matchSkill(userMessage)
+        val skillMatches = skillRegistry.matchSkill(userMessage)
+        val skillMatch = skillMatches.firstOrNull()
         if (skillMatch != null) {
             FileLogger.d(TAG, "generateResponse: matched skill=${skillMatch.skill.name}")
             executeSkill(skillMatch, userMessage)
@@ -453,9 +454,9 @@ class ChatSessionViewModel @Inject constructor(
         }
         
         // P3: Reflection 检查
-        if (finalResponse != null && _state.value.selectedTier == ModelTier.QUALITY || _state.value.selectedTier == ModelTier.MAXIMUM) {
+        if (finalResponse != null && (_state.value.selectedTier == ModelTier.QUALITY || _state.value.selectedTier == ModelTier.MAXIMUM)) {
             viewModelScope.launch {
-                val reflection = reflectionChecker.check(finalResponse, userMessage)
+                val reflection = reflectionChecker.check(finalResponse ?: "", userMessage)
                 if (!reflection.isAcceptable) {
                     FileLogger.d(TAG, "generateResponse: reflection flagged issues: ${reflection.issues}")
                     // 可以在这里自动触发重新生成
@@ -484,7 +485,15 @@ class ChatSessionViewModel @Inject constructor(
     private suspend fun executeSkill(skillMatch: SkillMatch, userMessage: String) {
         FileLogger.d(TAG, "executeSkill: skill=${skillMatch.skill.name}, confidence=${skillMatch.confidence}")
         
-        val result = skillRegistry.execute(skillMatch, userMessage)
+        // Use the skill's prompt template with the inference engine
+        val prompt = skillMatch.skill.promptTemplate.replace("{user_message}", userMessage)
+        val result = try {
+            val inferenceResult = inferenceEngine.infer(prompt, InferenceConfig(maxLength = 512, temperature = 0.7f))
+            inferenceResult.text.ifBlank { "技能执行完成，但未获得有效结果" }
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "executeSkill: failed", e)
+            "技能执行失败: ${e.message}"
+        }
         
         val assistantMsg = ChatMessage(
             id = nextMessageId(),
@@ -622,7 +631,6 @@ class ChatSessionViewModel @Inject constructor(
                 }
                 // 使用 cpu 作为默认后端（OpenCL 检测不在接口中）
                 val backend = "cpu"
-                val openclCache = File(context.filesDir, "mnn_opencl_cache").absolutePath
                 
                 val success = inferenceEngine.initialize(
                     modelPath = modelPath,
@@ -635,8 +643,7 @@ class ChatSessionViewModel @Inject constructor(
                         contextWindow = 2048,
                         backend = backend,
                         attentionMode = attentionMode,
-                        precision = "low",
-                        openclCachePath = openclCache
+                        precision = "low"
                     )
                 )
                 
@@ -878,3 +885,4 @@ data class ToolStep(
     val isExecuting: Boolean = true,
     val timestamp: Long = System.currentTimeMillis()
 )
+
