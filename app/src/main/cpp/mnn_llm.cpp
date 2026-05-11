@@ -17,17 +17,13 @@
 #include <sys/stat.h>
 #include <cstdarg>
 #include <dlfcn.h>
-
 #include "llm/llm.hpp"
-
 #define TAG "MNNLlm"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
-
 // ====== 全局文件日志 - 写入与FileLogger同一个文件 ======
 static std::string g_logFilePath;
 static std::mutex g_logMutex;
-
 static void fileLog(const char* fmt, ...) {
     if (g_logFilePath.empty()) return;
     char buf[2048];
@@ -35,7 +31,6 @@ static void fileLog(const char* fmt, ...) {
     va_start(args, fmt);
     vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
-
     // 获取时间戳
     auto now = std::chrono::system_clock::now();
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
@@ -44,10 +39,8 @@ static void fileLog(const char* fmt, ...) {
     localtime_r(&t, &tm_buf);
     char timebuf[64];
     strftime(timebuf, sizeof(timebuf), "%m-%d %H:%M:%S", &tm_buf);
-
     char line[2304];
     snprintf(line, sizeof(line), "%s.%03lld [MNN-Native] %s\n", timebuf, (long long)ms.count(), buf);
-
     std::lock_guard<std::mutex> lock(g_logMutex);
     // Use POSIX open()/write() instead of std::ofstream - more reliable on Android
     int fd = open(g_logFilePath.c_str(), O_WRONLY | O_APPEND | O_CREAT, 0644);
@@ -57,11 +50,9 @@ static void fileLog(const char* fmt, ...) {
         write(fd, line, len);
         close(fd);
     }
-
     // 同时输出到logcat
     LOGI("%s", buf);
 }
-
 // JNI: 设置日志文件路径（由Kotlin层调用，传入FileLogger的日志路径）
 extern "C" JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeSetLogFilePath(JNIEnv* env, jclass, jstring jPath) {
@@ -72,14 +63,12 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeSetLogFilePath(J
         fileLog("nativeSetLogFilePath: log file set to %s", g_logFilePath.c_str());
     }
 }
-
 // ====== CPU亲和性 ======
 // CPU拓扑检测：大核+小核
 struct CpuTopology {
     std::vector<int> bigCores;   // 高频大核
     std::vector<int> smallCores; // 低频小核
 };
-
 static CpuTopology getCpuTopology() {
     CpuTopology topo;
     std::vector<std::pair<long, int>> freqs;
@@ -111,11 +100,9 @@ static CpuTopology getCpuTopology() {
     for (int c : topo.smallCores) fileLog("  small: cpu%d", c);
     return topo;
 }
-
 static std::vector<int> getBigCores() {
     return getCpuTopology().bigCores;
 }
-
 static void setCpuAffinity() {
     auto bigCores = getBigCores();
     if (bigCores.empty()) return;
@@ -124,7 +111,6 @@ static void setCpuAffinity() {
     sched_setaffinity(0, sizeof(cpuset), &cpuset);
     fileLog("setCpuAffinity: bound to %zu big cores", bigCores.size());
 }
-
 // ====== Session管理 ======
 namespace {
 struct LlmSession {
@@ -140,9 +126,7 @@ struct LlmSession {
 std::atomic<LlmSession*> gSession{nullptr};
 std::atomic<bool> gModelLoaded{false};
 }
-
 JavaVM* gJavaVM = nullptr;
-
 // ====== Stream Buffer ======
 class LlmStreamBuffer : public std::streambuf {
 public:
@@ -158,7 +142,6 @@ protected:
 private:
     CallBack callback_ = nullptr;
 };
-
 // ====== UTF8 Processor ======
 class Utf8StreamProcessor {
 public:
@@ -183,14 +166,12 @@ private:
     std::string utf8Buffer_;
     std::function<void(const std::string&)> callback_;
 };
-
 // ====== JNI回调 ======
 static void callJavaTokenCallbackWithEnv(JNIEnv* env, LlmSession* s, const std::string& token) {
     if (!env || !s->javaCallback || !s->onTokenMethod) return;
     jstring js = env->NewStringUTF(token.c_str());
     if (js) { env->CallVoidMethod(s->javaCallback, s->onTokenMethod, js); env->DeleteLocalRef(js); }
 }
-
 // Native crash signal handler - uses raw write() which is async-signal-safe
 static void nativeCrashHandler(int sig) {
     const char* signame = "UNKNOWN";
@@ -214,7 +195,6 @@ static void nativeCrashHandler(int sig) {
     signal(sig, SIG_DFL);
     raise(sig);
 }
-
 static void installCrashHandler() {
     signal(SIGSEGV, nativeCrashHandler);
     signal(SIGABRT, nativeCrashHandler);
@@ -222,23 +202,19 @@ static void installCrashHandler() {
     signal(SIGFPE, nativeCrashHandler);
     signal(SIGILL, nativeCrashHandler);
 }
-
 extern "C" {
-
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     gJavaVM = vm;
     installCrashHandler();
     fileLog("JNI_OnLoad: saved JavaVM, installed crash handler");
     return JNI_VERSION_1_6;
 }
-
 JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeStop(JNIEnv*, jclass) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (s) s->stop_flag.store(true, std::memory_order_relaxed);
     fileLog("nativeStop called");
 }
-
 JNIEXPORT jboolean JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv* env, jclass,
     jstring jConfigPath, jint nCtx, jint nThreads, jstring jCacheDir, jboolean jUseQnn) {
@@ -269,9 +245,7 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
     const char* path = env->GetStringUTFChars(jConfigPath, nullptr);
     if (!path) { fileLog("nativeLoadModel: ERROR - null config path"); return JNI_FALSE; }
     std::string configPath(path); env->ReleaseStringUTFChars(jConfigPath, path);
-
     fileLog("nativeLoadModel: START - configPath=%s, nCtx=%d, nThreads=%d", configPath.c_str(), nCtx, nThreads);
-
     // 先释放旧session，避免内存泄漏和残留状态
     {
         LlmSession* oldSession = gSession.exchange(nullptr, std::memory_order_acq_rel);
@@ -283,7 +257,6 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
             gModelLoaded.store(false, std::memory_order_relaxed);
         }
     }
-
     fileLog("nativeLoadModel: calling createLLM with path=%s ...", configPath.c_str());
     MNN::Transformer::Llm* llm = nullptr;
     try {
@@ -300,7 +273,6 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
         return JNI_FALSE;
     }
     fileLog("nativeLoadModel: createLLM success, setting config...");
-
     // 线程自动调优：所有大核 + 2个小核，充分利用778G Plus算力
     // 大核做重计算（prefill/decode），小核做轻任务（tokenizer/调度）
     CpuTopology topo = getCpuTopology();
@@ -325,7 +297,6 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
         sched_setaffinity(0, sizeof(cpuset), &cpuset);
         fileLog("nativeLoadModel: CPU affinity set to %d big + %d small cores", bigCount, smallToUse);
     }
-
     // mmap优化 + QNN/NPU加速（KV-INT8和lookahead暂时禁用，778G Plus纯CPU上开销大于收益）
     // 根据QNN库是否完整加载决定后端
     // QNN完整: backend_type=5 (MNN_FORWARD_NN = QNN/NPU)，换8Gen2+手机可加速
@@ -351,7 +322,6 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
     }
     fileLog("nativeLoadModel: set_config: %s", cfg.c_str());
     llm->set_config(cfg);
-
     std::string cacheDirStr;
     if (jCacheDir) {
         const char* cd = env->GetStringUTFChars(jCacheDir, nullptr);
@@ -366,10 +336,8 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
     std::string tmpCfg = "{\"tmp_path\":\"" + cacheDirStr + "\"}";
     fileLog("nativeLoadModel: set_config tmp_path: %s", tmpCfg.c_str());
     llm->set_config(tmpCfg);
-
     // QNN/NPU加速: 仅在Kotlin层检测到QNN库完整加载时启用backend_type=5
     // 778G Plus上libcdsprpc.so不可访问，QNN不完整，自动使用CPU后端
-
     fileLog("nativeLoadModel: calling llm->load()...");
     auto t0 = std::chrono::steady_clock::now();
     bool ok = false;
@@ -385,9 +353,6 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
     auto t1 = std::chrono::steady_clock::now();
     int64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
     fileLog("nativeLoadModel: llm->load() returned %s in %lld ms", ok ? "true" : "false", (long long)ms);
-
-
-
     if (ok) {
         // Lookahead 投机解码暂时禁用 - 778G Plus纯CPU上draft命中率低，反而拖慢
         // std::string speculativeCfg = "{\"speculative_type\":\"lookahead\",\"draft_token_num\":4}";
@@ -403,17 +368,16 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
         size_t dp = mn.find(".json");
         if (dp != std::string::npos) mn = mn.substr(0, dp);
         session->loaded_model_name = mn;
-
         auto* ctx = llm->getContext();
         if (ctx) {
             fileLog("nativeLoadModel: context info - prompt_len=%d, gen_seq_len=%d, all_seq_len=%d, status=%d",
                  ctx->prompt_len, ctx->gen_seq_len, ctx->all_seq_len, (int)ctx->status);
         }
 
-        // 不再设置jinja chat_template - 手工拼接ChatML格式字符串调用response(string,...)
-        // llm_config.json的prompt_template是单轮格式，jinja模板可能与之冲突导致输出全F
-        // 改用use_template:false + 手工ChatML格式化，更可靠
-        fileLog("nativeLoadModel: skipping jinja - will use manual ChatML formatting");
+        // 方案3：不依赖MNN模板系统，C++层自行拼接ChatML格式字符串
+        // 调用tokenizer_encode()获取token IDs，然后response(vector<int>,...)
+        // 完全绕开applyTemplate的单角色prompt_template问题
+        fileLog("nativeLoadModel: 方案3 - 不依赖MNN模板系统，完全控制ChatML格式");
         fileLog("nativeLoadModel: SUCCESS - model=%s", mn.c_str());
         return JNI_TRUE;
     }
@@ -421,7 +385,6 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
     fileLog("nativeLoadModel: FAILED - llm->load() returned false");
     return JNI_FALSE;
 }
-
 JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeUnloadModel(JNIEnv* env, jclass) {
     fileLog("nativeUnloadModel: called");
@@ -434,12 +397,10 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeUnloadModel(JNIE
     gModelLoaded.store(false, std::memory_order_relaxed);
     fileLog("nativeUnloadModel: done");
 }
-
 JNIEXPORT jboolean JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeIsModelLoaded(JNIEnv*, jclass) {
     return gModelLoaded.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
 }
-
 // 手工拼接ChatML格式prompt
 // 输入: \x01role\x02content\x01role\x02content... 格式的多轮对话
 // 输出: <|im_start|>system\n...<|im_end|>\n<|im_start|>user\n...<|im_end|>\n<|im_start|>assistant\n
@@ -493,18 +454,15 @@ static std::string buildChatMLPrompt(const std::string& rawPrompt) {
     
     return chatml;
 }
-
-// Generate (sync) - 手工ChatML格式化 + response(string,...)
+// Generate (sync) - 方案3：自己拼ChatML + tokenizer_encode + response(vector<int>)
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerate(JNIEnv* env, jclass,
     jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (!s || !s->llm) { fileLog("nativeGenerate: ERROR - model not loaded"); return env->NewStringUTF(""); }
-
     const char* pc = env->GetStringUTFChars(jPrompt, nullptr);
     if (!pc) return env->NewStringUTF("");
     std::string prompt(pc); env->ReleaseStringUTFChars(jPrompt, pc);
-
     // 不设use_template - 让MNN用默认行为
     std::string cfg = "{\"temperature\":" + std::to_string(temperature)
         + ",\"top_k\":" + std::to_string(topK)
@@ -513,45 +471,39 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerate(JNIEnv*
         + ",\"repetition_penalty\":1.05}";
     s->llm->set_config(cfg);
 
-    // 使用ChatMessages API
-    MNN::Transformer::ChatMessages msgs;
-    msgs.push_back(MNN::Transformer::ChatMessage{"user", prompt});
-    fileLog("nativeGenerate: using ChatMessages API, user_prompt='%s' (len=%zu), maxTokens=%d",
-         prompt.c_str(), prompt.length(), maxTokens);
+    // 方案3：自己拼ChatML + tokenizer_encode + response(vector<int>)
+    std::string chatml = buildChatMLPrompt(prompt);
+    fileLog("nativeGenerate: 方案3 - ChatML prompt (len=%zu)", chatml.length());
+
+    auto token_ids = s->llm->tokenizer_encode(chatml);
+    fileLog("nativeGenerate: tokenized to %zu tokens", token_ids.size());
 
     std::ostringstream oss;
     auto t0 = std::chrono::steady_clock::now();
-    s->llm->response(msgs, &oss, nullptr, static_cast<int>(maxTokens));
+    s->llm->response(token_ids, &oss, "<|im_end|>", static_cast<int>(maxTokens));
     auto t1 = std::chrono::steady_clock::now();
-
     int64_t total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
     std::string result = oss.str();
-
     auto* ctx = s->llm->getContext();
     fileLog("nativeGenerate: completed in %lld ms, result len=%zu, gen_seq_len=%d, status=%d",
          (long long)total_ms, result.length(),
          ctx ? ctx->gen_seq_len : -1, ctx ? (int)ctx->status : -1);
     fileLog("nativeGenerate: result first 100 chars: '%.100s'", result.c_str());
-
     s->generated_tokens = ctx ? ctx->gen_seq_len : result.length() / 4;
     s->prefill_ms = ctx ? ctx->prefill_us / 1000 : total_ms * 30 / 100;
     s->decode_ms = ctx ? ctx->decode_us / 1000 : total_ms * 70 / 100;
     return env->NewStringUTF(result.c_str());
 }
-
-// Generate (streaming) - 手工ChatML格式化 + response(string,...)
+// Generate (streaming) - 方案3：自己拼ChatML + tokenizer_encode + response(vector<int>)
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(JNIEnv* env, jclass,
     jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP, jboolean useGPU) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (!s || !s->llm) { fileLog("nativeGenerateStream: ERROR - model not loaded"); return env->NewStringUTF(""); }
-
     const char* pc = env->GetStringUTFChars(jPrompt, nullptr);
     if (!pc) return env->NewStringUTF("");
     std::string prompt(pc); env->ReleaseStringUTFChars(jPrompt, pc);
-
-    // 不设use_template - 让MNN用默认行为（ChatMessages API自动格式化）
-    // 不设jinja - 模型自带prompt_template，MNN会用它格式化每条消息
+    // 不设use_template - 方案3完全绕过MNN模板系统
     std::string cfg = "{\"temperature\":" + std::to_string(temperature)
         + ",\"top_k\":" + std::to_string(topK)
         + ",\"top_p\":" + std::to_string(topP)
@@ -559,37 +511,24 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(J
         + ",\"repetition_penalty\":1.05}";
     s->llm->set_config(cfg);
 
-    // 使用ChatMessages API - MNN内部会用prompt_template正确格式化
-    MNN::Transformer::ChatMessages msgs;
-    // Parse multi-turn conversation using control character delimiters
-    bool parsedMultiTurn = false;
-    if (!prompt.empty() && prompt[0] == '\x01') {
-        size_t pos = 1;
-        while (pos < prompt.size()) {
-            size_t sepPos = prompt.find('\x02', pos);
-            if (sepPos == std::string::npos) break;
-            std::string role = prompt.substr(pos, sepPos - pos);
-            pos = sepPos + 1;
-            size_t nextMsg = prompt.find('\x01', pos);
-            if (nextMsg == std::string::npos) nextMsg = prompt.size();
-            std::string content = prompt.substr(pos, nextMsg - pos);
-            pos = nextMsg + 1;
-            if (!role.empty() && !content.empty()) {
-                msgs.push_back(MNN::Transformer::ChatMessage{role, content});
-                parsedMultiTurn = true;
-            }
-        }
-    }
-    if (!parsedMultiTurn) {
-        msgs.push_back(MNN::Transformer::ChatMessage{"user", prompt});
-    }
-    fileLog("nativeGenerateStream: using ChatMessages API, msgs_count=%zu, prompt_len=%zu", msgs.size(), prompt.length());
-    for (size_t i = 0; i < msgs.size(); i++) {
-        fileLog("nativeGenerateStream: msg[%zu] role=%s, content_len=%zu", i, msgs[i].first.c_str(), msgs[i].second.size());
-    }
+    // 方案3：自己拼ChatML + tokenizer_encode + response(vector<int>)
+    // 完全绕开MNN模板系统，避免applyTemplate对单角色prompt_template的错误处理
+    std::string chatml = buildChatMLPrompt(prompt);
+    fileLog("nativeGenerateStream: 方案3 - ChatML prompt (len=%zu): %.300s", chatml.length(), chatml.c_str());
 
+    auto token_ids = s->llm->tokenizer_encode(chatml);
+    fileLog("nativeGenerateStream: tokenized to %zu tokens", token_ids.size());
+    // Log first 20 token IDs for debugging
+    std::string tidStr;
+    for (size_t i = 0; i < token_ids.size() && i < 20; i++) {
+        if (i > 0) tidStr += ",";
+        tidStr += std::to_string(token_ids[i]);
+    }
+    fileLog("nativeGenerateStream: first token IDs: [%s]", tidStr.c_str());
+
+    // 重要：end_with 必须设为 "<|im_end|>" 而非 nullptr
+    // MNN 内部 nullptr 默认用 "\n" 作为停止符，会导致提前终止
     s->stop_flag.store(false, std::memory_order_relaxed);
-
     JNIEnv* callbackEnv = nullptr; bool threadAttached = false;
     if (s->javaCallback && s->javaVM) {
         int ret = s->javaVM->GetEnv(reinterpret_cast<void**>(&callbackEnv), JNI_VERSION_1_6);
@@ -599,11 +538,9 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(J
             fileLog("nativeGenerateStream: attached thread=%d", threadAttached);
         }
     }
-
     std::string accumulated;
     int tokenCount = 0;
     JNIEnv* cbEnv = callbackEnv;
-
     // Bug2+3修复: 添加thinking过滤状态变量
     bool inThinkingBlock = false;
     std::string thinkingBuffer;
@@ -707,50 +644,38 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(J
             }
         }
     });
-
     LlmStreamBuffer stream_buffer([&](const char* str, size_t len) {
         utf8Processor.processStream(str, len);
     });
     std::ostream output_ostream(&stream_buffer);
-
-    // MNN官方App用nullptr作end_with，max_new_tokens=0，然后循环generate(1)
-    // 但我们先用简单方式：end_with=nullptr（MNN默认用"\n"），max_new_tokens正常传
-    fileLog("nativeGenerateStream: calling response(ChatMessages) with end_with=nullptr");
+    
+    fileLog("nativeGenerateStream: calling response(vector<int>) with end_with=\"<|im_end|>\"");
     auto t0 = std::chrono::steady_clock::now();
-
-    s->llm->response(msgs, &output_ostream, nullptr, static_cast<int>(maxTokens));
-
+    s->llm->response(token_ids, &output_ostream, "<|im_end|>", static_cast<int>(maxTokens));
     utf8Processor.flush();
     if (threadAttached && s->javaVM) s->javaVM->DetachCurrentThread();
-
     auto t1 = std::chrono::steady_clock::now();
     int64_t total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
     auto* context = s->llm->getContext();
     s->generated_tokens = context ? context->gen_seq_len : tokenCount;
     s->prefill_ms = context ? context->prefill_us / 1000 : total_ms * 30 / 100;
     s->decode_ms = context ? context->decode_us / 1000 : total_ms * 70 / 100;
-
     fileLog("nativeGenerateStream: completed in %lld ms, tokens=%d, gen_seq_len=%d, accumulated=%zu, status=%d",
          (long long)total_ms, tokenCount,
          context ? context->gen_seq_len : -1, accumulated.length(),
          context ? (int)context->status : -1);
     fileLog("nativeGenerateStream: result first 100 chars: '%.100s'", accumulated.c_str());
-
     return env->NewStringUTF(accumulated.c_str());
 }
-
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetLoadedModelName(JNIEnv* env, jclass) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     return s ? env->NewStringUTF(s->loaded_model_name.c_str()) : env->NewStringUTF("");
 }
-
 JNIEXPORT jint JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetContextSize(JNIEnv*, jclass) { return 2048; }
-
 JNIEXPORT jlong JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetMemoryUsage(JNIEnv*, jclass) { return 0; }
-
 JNIEXPORT jboolean JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeSetSystemPrompt(JNIEnv* env, jclass, jstring jSP) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
@@ -761,30 +686,27 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeSetSystemPrompt(
     env->ReleaseStringUTFChars(jSP, sp);
     s->llm->set_config(cfg); return JNI_TRUE;
 }
-
 JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeResetConversation(JNIEnv*, jclass) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (s && s->llm) { fileLog("nativeResetConversation"); s->llm->reset(); }
 }
-
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetLastError(JNIEnv* env, jclass) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     return s ? env->NewStringUTF(s->last_error.c_str()) : env->NewStringUTF("");
 }
-
 JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeFree(JNIEnv*, jclass) {
     fileLog("nativeFree called");
     LlmSession* oldSession = gSession.exchange(nullptr, std::memory_order_acq_rel);
     if (oldSession) {
+
         if (oldSession->llm) MNN::Transformer::Llm::destroy(oldSession->llm);
         delete oldSession;
         gModelLoaded.store(false, std::memory_order_relaxed);
     }
 }
-
 JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_initNativeCallback(JNIEnv* env, jobject, jobject callback) {
     fileLog("initNativeCallback: called");
@@ -800,68 +722,53 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_initNativeCallback(JNI
         else fileLog("initNativeCallback: callback set up successfully");
     }
 }
-
 } // extern "C"
-
 // ====== @JvmStatic 别名 ======
 // Kotlin 中带 @JvmStatic 注解的 companion object 方法，JVM 查找时不带 _00024Companion 后缀
 // 因此需要提供不带后缀的 JNI 入口，转发到带后缀的实际实现
-
 extern "C" JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeSetLogFilePath(JNIEnv* env, jclass cls, jstring jPath) {
     Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeSetLogFilePath(env, cls, jPath);
 }
-
 extern "C" JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeStop(JNIEnv* env, jclass cls) {
     Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeStop(env, cls);
 }
-
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass cls,
     jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP) {
     return Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerate(env, cls, jPrompt, maxTokens, temperature, topK, topP);
 }
-
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jclass cls,
     jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP, jboolean useGPU) {
     return Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(env, cls, jPrompt, maxTokens, temperature, topK, topP, useGPU);
 }
-
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGetLoadedModelName(JNIEnv* env, jclass cls) {
     return Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetLoadedModelName(env, cls);
 }
-
 extern "C" JNIEXPORT jint JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGetContextSize(JNIEnv* env, jclass cls) {
     return Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetContextSize(env, cls);
 }
-
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGetMemoryUsage(JNIEnv* env, jclass cls) {
     return Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetMemoryUsage(env, cls);
 }
-
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeSetSystemPrompt(JNIEnv* env, jclass cls, jstring jSP) {
     return Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeSetSystemPrompt(env, cls, jSP);
 }
-
 extern "C" JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeResetConversation(JNIEnv* env, jclass cls) {
     Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeResetConversation(env, cls);
 }
-
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGetLastError(JNIEnv* env, jclass cls) {
     return Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetLastError(env, cls);
 }
-
 extern "C" JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeFree(JNIEnv* env, jclass cls) {
     Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeFree(env, cls);
 }
-
-
