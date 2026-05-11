@@ -16,6 +16,7 @@
 #include <ctime>
 #include <sys/stat.h>
 #include <cstdarg>
+#include <dlfcn.h>
 
 #include "llm/llm.hpp"
 
@@ -48,13 +49,14 @@ static void fileLog(const char* fmt, ...) {
     snprintf(line, sizeof(line), "%s.%03lld [MNN-Native] %s\n", timebuf, (long long)ms.count(), buf);
 
     std::lock_guard<std::mutex> lock(g_logMutex);
-    try {
-        std::ofstream ofs(g_logFilePath, std::ios::app);
-        if (ofs.is_open()) {
-            ofs << line;
-            ofs.flush();
-        }
-    } catch (...) {}
+    // Use POSIX open()/write() instead of std::ofstream - more reliable on Android
+    int fd = open(g_logFilePath.c_str(), O_WRONLY | O_APPEND | O_CREAT, 0644);
+    if (fd >= 0) {
+        size_t len = 0;
+        while (line[len] != '\0') len++;
+        write(fd, line, len);
+        close(fd);
+    }
 
     // 同时输出到logcat
     LOGI("%s", buf);
@@ -242,6 +244,28 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
     jstring jConfigPath, jint nCtx, jint nThreads, jstring jCacheDir, jboolean jUseQnn) {
     __android_log_print(ANDROID_LOG_INFO, "MNN-Native", "nativeLoadModel: ENTRY (logcat)");
     fileLog("nativeLoadModel: ENTRY - about to read config path");
+    
+    // QNN safety: force useQnn=false if QNN libs not loaded
+    // QNN requires libcdsprpc.so + libQnnHtpV68Skel.so; if missing, backend_type=5 will crash
+    bool useQnn = jUseQnn == JNI_TRUE;
+    if (useQnn) {
+        // Check if QNN V68Skel exists in cache (deployed by tryLoadQNN)
+        // If not found, QNN was never initialized properly
+        const char* home = getenv("HOME");
+        bool qnnReady = false;
+        // Try to dlopen libcdsprpc.so - if it fails, QNN is not available
+        void* hCdsp = dlopen("libcdsprpc.so", RTLD_NOW | RTLD_LOCAL);
+        if (hCdsp) {
+            dlclose(hCdsp);
+            qnnReady = true;
+        }
+        if (!qnnReady) {
+            fileLog("nativeLoadModel: QNN requested but libcdsprpc.so not available - forcing CPU backend");
+            useQnn = false;
+        }
+    }
+    fileLog("nativeLoadModel: useQnn=%s (requested=%s)", useQnn ? "true" : "false", jUseQnn == JNI_TRUE ? "true" : "false");
+    
     const char* path = env->GetStringUTFChars(jConfigPath, nullptr);
     if (!path) { fileLog("nativeLoadModel: ERROR - null config path"); return JNI_FALSE; }
     std::string configPath(path); env->ReleaseStringUTFChars(jConfigPath, path);
@@ -307,7 +331,6 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
     // QNN完整: backend_type=5 (MNN_FORWARD_NN = QNN/NPU)，换8Gen2+手机可加速
     // QNN不完整: 不设backend_type，默认CPU后端，避免native crash
     std::string cfg;
-    bool useQnn = jUseQnn == JNI_TRUE;
     if (useQnn) {
         cfg = std::string("{\"backend_type\":5")
             + ",\"attention_mode\":14"
@@ -792,3 +815,4 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeFree(JNIEnv* env, jclass cls) {
     Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeFree(env, cls);
 }
+
