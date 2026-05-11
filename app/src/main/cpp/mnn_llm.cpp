@@ -505,23 +505,23 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerate(JNIEnv*
     if (!pc) return env->NewStringUTF("");
     std::string prompt(pc); env->ReleaseStringUTFChars(jPrompt, pc);
 
-    // use_template:false - 手工ChatML格式化，避免jinja/prompt_template冲突
+    // 不设use_template - 让MNN用默认行为
     std::string cfg = "{\"temperature\":" + std::to_string(temperature)
         + ",\"top_k\":" + std::to_string(topK)
         + ",\"top_p\":" + std::to_string(topP)
         + ",\"thinking\":false"
-        + ",\"use_template\":false"
         + ",\"repetition_penalty\":1.05}";
     s->llm->set_config(cfg);
 
-    // 手工拼接ChatML格式字符串
-    std::string chatml = buildChatMLPrompt(prompt);
-    fileLog("nativeGenerate: using manual ChatML, prompt_len=%zu, chatml_len=%zu, maxTokens=%d",
-         prompt.length(), chatml.length(), maxTokens);
+    // 使用ChatMessages API
+    MNN::Transformer::ChatMessages msgs;
+    msgs.push_back(MNN::Transformer::ChatMessage{"user", prompt});
+    fileLog("nativeGenerate: using ChatMessages API, user_prompt='%s' (len=%zu), maxTokens=%d",
+         prompt.c_str(), prompt.length(), maxTokens);
 
     std::ostringstream oss;
     auto t0 = std::chrono::steady_clock::now();
-    s->llm->response(chatml, &oss, "<|im_end|>", static_cast<int>(maxTokens));
+    s->llm->response(msgs, &oss, nullptr, static_cast<int>(maxTokens));
     auto t1 = std::chrono::steady_clock::now();
 
     int64_t total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
@@ -550,19 +550,43 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(J
     if (!pc) return env->NewStringUTF("");
     std::string prompt(pc); env->ReleaseStringUTFChars(jPrompt, pc);
 
-    // use_template:false + 手工ChatML格式化，避免jinja/prompt_template冲突
+    // 不设use_template - 让MNN用默认行为（ChatMessages API自动格式化）
+    // 不设jinja - 模型自带prompt_template，MNN会用它格式化每条消息
     std::string cfg = "{\"temperature\":" + std::to_string(temperature)
         + ",\"top_k\":" + std::to_string(topK)
         + ",\"top_p\":" + std::to_string(topP)
         + ",\"thinking\":false"
-        + ",\"use_template\":false"
         + ",\"repetition_penalty\":1.05}";
     s->llm->set_config(cfg);
 
-    // 手工拼接ChatML格式字符串（复用buildChatMLPrompt）
-    std::string chatml = buildChatMLPrompt(prompt);
-    fileLog("nativeGenerateStream: using manual ChatML, prompt_len=%zu, chatml_len=%zu", prompt.length(), chatml.length());
-    fileLog("nativeGenerateStream: chatml first 200 chars: '%.200s'", chatml.c_str());
+    // 使用ChatMessages API - MNN内部会用prompt_template正确格式化
+    MNN::Transformer::ChatMessages msgs;
+    // Parse multi-turn conversation using control character delimiters
+    bool parsedMultiTurn = false;
+    if (!prompt.empty() && prompt[0] == '\x01') {
+        size_t pos = 1;
+        while (pos < prompt.size()) {
+            size_t sepPos = prompt.find('\x02', pos);
+            if (sepPos == std::string::npos) break;
+            std::string role = prompt.substr(pos, sepPos - pos);
+            pos = sepPos + 1;
+            size_t nextMsg = prompt.find('\x01', pos);
+            if (nextMsg == std::string::npos) nextMsg = prompt.size();
+            std::string content = prompt.substr(pos, nextMsg - pos);
+            pos = nextMsg + 1;
+            if (!role.empty() && !content.empty()) {
+                msgs.push_back(MNN::Transformer::ChatMessage{role, content});
+                parsedMultiTurn = true;
+            }
+        }
+    }
+    if (!parsedMultiTurn) {
+        msgs.push_back(MNN::Transformer::ChatMessage{"user", prompt});
+    }
+    fileLog("nativeGenerateStream: using ChatMessages API, msgs_count=%zu, prompt_len=%zu", msgs.size(), prompt.length());
+    for (size_t i = 0; i < msgs.size(); i++) {
+        fileLog("nativeGenerateStream: msg[%zu] role=%s, content_len=%zu", i, msgs[i].first.c_str(), msgs[i].second.size());
+    }
 
     s->stop_flag.store(false, std::memory_order_relaxed);
 
@@ -689,10 +713,12 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(J
     });
     std::ostream output_ostream(&stream_buffer);
 
-    fileLog("nativeGenerateStream: calling response(string) with manual ChatML, end_with=<|im_end|>");
+    // MNN官方App用nullptr作end_with，max_new_tokens=0，然后循环generate(1)
+    // 但我们先用简单方式：end_with=nullptr（MNN默认用"\n"），max_new_tokens正常传
+    fileLog("nativeGenerateStream: calling response(ChatMessages) with end_with=nullptr");
     auto t0 = std::chrono::steady_clock::now();
 
-    s->llm->response(chatml, &output_ostream, "<|im_end|>", static_cast<int>(maxTokens));
+    s->llm->response(msgs, &output_ostream, nullptr, static_cast<int>(maxTokens));
 
     utf8Processor.flush();
     if (threadAttached && s->javaVM) s->javaVM->DetachCurrentThread();
