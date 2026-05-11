@@ -73,7 +73,7 @@ private fun MainScreen() {
                     // 导航到对应页面
                     navController.navigate(screen.route) {
                         // 如果是子页面（如 ChatSession），不 popUpTo
-                        val isMainScreen = screen.route in listOf("llm_chat", "model_manager", "memory", "custom_tasks", "single_turn", "settings", "about")
+                        val isMainScreen = screen.route in listOf("llm_chat", "model_manager", "memory", "custom_tasks", "single_turn", "settings", "about") || screen.route.startsWith("chat_session")
                         if (isMainScreen) {
                             popUpTo(navController.graph.findStartDestination().id) {
                                 saveState = true
@@ -144,11 +144,19 @@ private fun DrawerContent(
                 .fillMaxWidth()
                 .fillMaxHeight()
         ) {
-            Screen.LLMChat.let { screen ->
+            Screen.ChatSession.let { screen ->
                 DrawerItem(
                     title = "AI对话",
                     icon = screen.selectedIcon,
                     isSelected = currentRoute == screen.route || currentRoute?.startsWith("chat_session") == true,
+                    onClick = { onItemClick(screen) }
+                )
+            }
+            Screen.LLMChat.let { screen ->
+                DrawerItem(
+                    title = "历史对话",
+                    icon = Icons.Default.History,
+                    isSelected = currentRoute == screen.route,
                     onClick = { onItemClick(screen) }
                 )
             }
