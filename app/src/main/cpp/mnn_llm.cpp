@@ -59,7 +59,7 @@ static void fileLog(const char* fmt, ...) {
 
 // JNI: 设置日志文件路径（由Kotlin层调用，传入FileLogger的日志路径）
 extern "C" JNIEXPORT void JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeSetLogFilePath(JNIEnv* env, jclass, jstring jPath) {
+Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeSetLogFilePath(JNIEnv* env, jclass, jstring jPath) {
     const char* p = env->GetStringUTFChars(jPath, nullptr);
     if (p) {
         g_logFilePath = std::string(p);
@@ -195,14 +195,14 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
 }
 
 JNIEXPORT void JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeStop(JNIEnv*, jclass) {
+Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeStop(JNIEnv*, jclass) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (s) s->stop_flag.store(true, std::memory_order_relaxed);
     fileLog("nativeStop called");
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
+Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv* env, jclass,
     jstring jConfigPath, jint nCtx, jint nThreads, jstring jCacheDir, jboolean jUseQnn) {
     const char* path = env->GetStringUTFChars(jConfigPath, nullptr);
     if (!path) { fileLog("nativeLoadModel: ERROR - null config path"); return JNI_FALSE; }
@@ -354,7 +354,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeLoadModel(JNIEnv* env, jclass,
 }
 
 JNIEXPORT void JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeUnloadModel(JNIEnv* env, jclass) {
+Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeUnloadModel(JNIEnv* env, jclass) {
     fileLog("nativeUnloadModel: called");
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (s) {
@@ -367,13 +367,13 @@ Java_com_localai_server_engine_LlamaEngine_nativeUnloadModel(JNIEnv* env, jclass
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeIsModelLoaded(JNIEnv*, jclass) {
+Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeIsModelLoaded(JNIEnv*, jclass) {
     return gModelLoaded.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
 }
 
 // Generate (sync) - ChatMessages + jinja模板格式化
 JNIEXPORT jstring JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
+Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerate(JNIEnv* env, jclass,
     jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (!s || !s->llm) { fileLog("nativeGenerate: ERROR - model not loaded"); return env->NewStringUTF(""); }
@@ -422,7 +422,7 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass,
 
 // Generate (streaming) - ChatMessages + jinja模板格式化
 JNIEXPORT jstring JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jclass,
+Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(JNIEnv* env, jclass,
     jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP, jboolean useGPU) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (!s || !s->llm) { fileLog("nativeGenerateStream: ERROR - model not loaded"); return env->NewStringUTF(""); }
@@ -622,19 +622,19 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jcl
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeGetLoadedModelName(JNIEnv* env, jclass) {
+Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetLoadedModelName(JNIEnv* env, jclass) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     return s ? env->NewStringUTF(s->loaded_model_name.c_str()) : env->NewStringUTF("");
 }
 
 JNIEXPORT jint JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeGetContextSize(JNIEnv*, jclass) { return 2048; }
+Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetContextSize(JNIEnv*, jclass) { return 2048; }
 
 JNIEXPORT jlong JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeGetMemoryUsage(JNIEnv*, jclass) { return 0; }
+Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetMemoryUsage(JNIEnv*, jclass) { return 0; }
 
 JNIEXPORT jboolean JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeSetSystemPrompt(JNIEnv* env, jclass, jstring jSP) {
+Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeSetSystemPrompt(JNIEnv* env, jclass, jstring jSP) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (!s || !s->llm) return JNI_FALSE;
     const char* sp = env->GetStringUTFChars(jSP, nullptr);
@@ -645,19 +645,19 @@ Java_com_localai_server_engine_LlamaEngine_nativeSetSystemPrompt(JNIEnv* env, jc
 }
 
 JNIEXPORT void JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeResetConversation(JNIEnv*, jclass) {
+Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeResetConversation(JNIEnv*, jclass) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (s && s->llm) { fileLog("nativeResetConversation"); s->llm->reset(); }
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_localai_server_engine_LlamaEngine_nativeGetLastError(JNIEnv* env, jclass) {
+Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetLastError(JNIEnv* env, jclass) {
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     return s ? env->NewStringUTF(s->last_error.c_str()) : env->NewStringUTF("");
 }
 
 JNIEXPORT void JNICALL
-Java_com_localai_server_engine_LlamaEngine_initNativeCallback(JNIEnv* env, jobject, jobject callback) {
+Java_com_localai_server_engine_LlamaEngine_00024Companion_initNativeCallback(JNIEnv* env, jobject, jobject callback) {
     fileLog("initNativeCallback: called");
     LlmSession* s = gSession.load(std::memory_order_relaxed);
     if (!s) { fileLog("initNativeCallback: ERROR - no session"); return; }
