@@ -684,3 +684,65 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_initNativeCallback(JNI
 }
 
 } // extern "C"
+
+// ====== @JvmStatic 别名 ======
+// Kotlin 中带 @JvmStatic 注解的 companion object 方法，JVM 查找时不带 _00024Companion 后缀
+// 因此需要提供不带后缀的 JNI 入口，转发到带后缀的实际实现
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_localai_server_engine_LlamaEngine_nativeSetLogFilePath(JNIEnv* env, jclass cls, jstring jPath) {
+    Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeSetLogFilePath(env, cls, jPath);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_localai_server_engine_LlamaEngine_nativeStop(JNIEnv* env, jclass cls) {
+    Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeStop(env, cls);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass cls,
+    jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP) {
+    return Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerate(env, cls, jPrompt, maxTokens, temperature, topK, topP);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jclass cls,
+    jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP, jstring jSystemPrompt) {
+    return Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(env, cls, jPrompt, maxTokens, temperature, topK, topP, jSystemPrompt);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_localai_server_engine_LlamaEngine_nativeGetLoadedModelName(JNIEnv* env, jclass cls) {
+    return Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetLoadedModelName(env, cls);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_localai_server_engine_LlamaEngine_nativeGetContextSize(JNIEnv* env, jclass cls) {
+    return Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetContextSize(env, cls);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_localai_server_engine_LlamaEngine_nativeGetMemoryUsage(JNIEnv* env, jclass cls) {
+    return Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetMemoryUsage(env, cls);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_localai_server_engine_LlamaEngine_nativeSetSystemPrompt(JNIEnv* env, jclass cls, jstring jSP) {
+    return Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeSetSystemPrompt(env, cls, jSP);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_localai_server_engine_LlamaEngine_nativeResetConversation(JNIEnv* env, jclass cls) {
+    Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeResetConversation(env, cls);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_localai_server_engine_LlamaEngine_nativeGetLastError(JNIEnv* env, jclass cls) {
+    return Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetLastError(env, cls);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_localai_server_engine_LlamaEngine_nativeFree(JNIEnv* env, jclass cls) {
+    Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeFree(env, cls);
+}
+
