@@ -416,11 +416,13 @@ class LlamaEngine private constructor(
                 nativeSetLogFilePath(logFile.absolutePath)
                 FileLogger.d(TAG, "loadModel: set native log path to ${logFile.absolutePath}")
             } catch (e: Throwable) {
-                FileLogger.w(TAG, "loadModel: failed to set native log path")
+                FileLogger.w(TAG, "loadModel: failed to set native log path: ${e.javaClass.simpleName}: ${e.message}")
             }
             
             // 调用 native 加载模型
+            FileLogger.d(TAG, "loadModel: calling nativeLoadModel(path=$nativePath, nCtx=$nCtx, nThreads=$nThreads, cacheDir=$cacheDirPath, qnn=$qnnAvailable)")
             val success = nativeLoadModel(nativePath, nCtx, nThreads, cacheDirPath, qnnAvailable)
+            FileLogger.d(TAG, "loadModel: nativeLoadModel returned $success")
             
             if (success) {
                 _isModelLoaded.value = true
