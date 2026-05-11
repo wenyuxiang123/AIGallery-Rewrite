@@ -430,6 +430,16 @@ class LlamaEngine private constructor(
             FileLogger.d(TAG, "loadModel: calling nativeLoadModel(path=$nativePath, nCtx=$nCtx, nThreads=$nThreads, cacheDir=$cacheDirPath, qnn=$qnnAvailable)")
             val success = nativeLoadModel(nativePath, nCtx, nThreads, cacheDirPath, qnnAvailable)
             FileLogger.d(TAG, "loadModel: nativeLoadModel returned $success")
+            // Dump logcat for any native crash info
+            try {
+                val process = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-t", "50", "-s", "DEBUG:F", "libc:F", "MNN-Native:*"))
+                val logcatOutput = process.inputStream.bufferedReader().readText()
+                if (logcatOutput.isNotBlank()) {
+                    FileLogger.d(TAG, "loadModel: logcat crash info:\n$logcatOutput")
+                }
+            } catch (e: Throwable) {
+                FileLogger.w(TAG, "loadModel: failed to read logcat: ${e.message}")
+            }
             
             if (success) {
                 _isModelLoaded.value = true
