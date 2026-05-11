@@ -410,11 +410,10 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
                  ctx->prompt_len, ctx->gen_seq_len, ctx->all_seq_len, (int)ctx->status);
         }
 
-        // 补充jinja chat_template：Qwen2.5模型需要此字段才能正确使用ChatMessages API
-        // 模型导出时如果缺少此字段，response(ChatMessages)内部apply_chat_template()会失败
-        std::string jinja_config = R"({"jinja":{"chat_template":"{%- for message in messages %}<|im_start|>{{ message.role }}\n{{ message.content }}<|im_end|>\n{%- endfor %}{%- if add_generation_prompt %}<|im_start|>assistant\n{%- endif %}"}})";
-        llm->set_config(jinja_config);
-        fileLog("nativeLoadModel: added jinja chat_template for ChatML format");
+        // 不再设置jinja chat_template - 手工拼接ChatML格式字符串调用response(string,...)
+        // llm_config.json的prompt_template是单轮格式，jinja模板可能与之冲突导致输出全F
+        // 改用use_template:false + 手工ChatML格式化，更可靠
+        fileLog("nativeLoadModel: skipping jinja - will use manual ChatML formatting");
         fileLog("nativeLoadModel: SUCCESS - model=%s", mn.c_str());
         return JNI_TRUE;
     }
@@ -441,7 +440,61 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeIsModelLoaded(JN
     return gModelLoaded.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
 }
 
-// Generate (sync) - ChatMessages + jinja模板格式化
+// 手工拼接ChatML格式prompt
+// 输入: \x01role\x02content\x01role\x02content... 格式的多轮对话
+// 输出: <|im_start|>system\n...<|im_end|>\n<|im_start|>user\n...<|im_end|>\n<|im_start|>assistant\n
+static std::string buildChatMLPrompt(const std::string& rawPrompt) {
+    std::string chatml;
+    
+    // 解析 \x01role\x02content 格式
+    struct Msg { std::string role; std::string content; };
+    std::vector<Msg> messages;
+    
+    if (!rawPrompt.empty() && rawPrompt[0] == '\x01') {
+        size_t pos = 1;
+        while (pos < rawPrompt.size()) {
+            size_t sepPos = rawPrompt.find('\x02', pos);
+            if (sepPos == std::string::npos) break;
+            std::string role = rawPrompt.substr(pos, sepPos - pos);
+            pos = sepPos + 1;
+            size_t nextMsg = rawPrompt.find('\x01', pos);
+            if (nextMsg == std::string::npos) nextMsg = rawPrompt.size();
+            std::string content = rawPrompt.substr(pos, nextMsg - pos);
+            pos = nextMsg + 1;
+            if (!role.empty() && !content.empty()) {
+                messages.push_back({role, content});
+            }
+        }
+    }
+    
+    // 如果没解析出任何消息，整个prompt作为user消息
+    if (messages.empty()) {
+        messages.push_back({"user", rawPrompt});
+    }
+    
+    // 检查是否已有system消息
+    bool hasSystem = false;
+    for (const auto& m : messages) {
+        if (m.role == "system") { hasSystem = true; break; }
+    }
+    
+    // 如果没有system消息，添加默认system prompt
+    if (!hasSystem) {
+        chatml += "<|im_start|>system\n你是一个有帮助的AI助手。请用中文回答。<|im_end|>\n";
+    }
+    
+    // 拼接ChatML格式
+    for (const auto& m : messages) {
+        chatml += "<|im_start|>" + m.role + "\n" + m.content + "<|im_end|>\n";
+    }
+    
+    // 添加assistant开头
+    chatml += "<|im_start|>assistant\n";
+    
+    return chatml;
+}
+
+// Generate (sync) - 手工ChatML格式化 + response(string,...)
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerate(JNIEnv* env, jclass,
     jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP) {
@@ -452,27 +505,23 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerate(JNIEnv*
     if (!pc) return env->NewStringUTF("");
     std::string prompt(pc); env->ReleaseStringUTFChars(jPrompt, pc);
 
-    // ChatMessages + use_template:true，由MNN内部的jinja模板格式化（loadModel时已补充jinja字段）
-    // 已在loadModel时补充jinja chat_template，MNN内部会正确格式化
-    
+    // use_template:false - 手工ChatML格式化，避免jinja/prompt_template冲突
     std::string cfg = "{\"temperature\":" + std::to_string(temperature)
         + ",\"top_k\":" + std::to_string(topK)
         + ",\"top_p\":" + std::to_string(topP)
         + ",\"thinking\":false"
-        + ",\"use_template\":true"
+        + ",\"use_template\":false"
         + ",\"repetition_penalty\":1.05}";
     s->llm->set_config(cfg);
 
-    MNN::Transformer::ChatMessages msgs;
-    msgs.push_back(MNN::Transformer::ChatMessage{"system", "你是一个有记忆能力的AI助手。如果提示中包含【相关记忆】和【对话历史】，请参考这些信息连贯地回答用户的问题。请用中文回答。"});
-    msgs.push_back(MNN::Transformer::ChatMessage{"user", prompt});
-
-    fileLog("nativeGenerate: using ChatMessages format, user_prompt='%s' (len=%zu), maxTokens=%d",
-         prompt.c_str(), prompt.length(), maxTokens);
+    // 手工拼接ChatML格式字符串
+    std::string chatml = buildChatMLPrompt(prompt);
+    fileLog("nativeGenerate: using manual ChatML, prompt_len=%zu, chatml_len=%zu, maxTokens=%d",
+         prompt.length(), chatml.length(), maxTokens);
 
     std::ostringstream oss;
     auto t0 = std::chrono::steady_clock::now();
-    s->llm->response(msgs, &oss, "<|im_end|>", static_cast<int>(maxTokens));
+    s->llm->response(chatml, &oss, "<|im_end|>", static_cast<int>(maxTokens));
     auto t1 = std::chrono::steady_clock::now();
 
     int64_t total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
@@ -490,7 +539,7 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerate(JNIEnv*
     return env->NewStringUTF(result.c_str());
 }
 
-// Generate (streaming) - ChatMessages + jinja模板格式化
+// Generate (streaming) - 手工ChatML格式化 + response(string,...)
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(JNIEnv* env, jclass,
     jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP, jboolean useGPU) {
@@ -501,46 +550,19 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(J
     if (!pc) return env->NewStringUTF("");
     std::string prompt(pc); env->ReleaseStringUTFChars(jPrompt, pc);
 
-    // ChatMessages + use_template:true，由MNN内部的jinja模板格式化（loadModel时已补充jinja字段）
-    // 已在loadModel时补充jinja chat_template，MNN内部会正确格式化
-    
+    // use_template:false + 手工ChatML格式化，避免jinja/prompt_template冲突
     std::string cfg = "{\"temperature\":" + std::to_string(temperature)
         + ",\"top_k\":" + std::to_string(topK)
         + ",\"top_p\":" + std::to_string(topP)
         + ",\"thinking\":false"
-        + ",\"use_template\":true"
+        + ",\"use_template\":false"
         + ",\"repetition_penalty\":1.05}";
     s->llm->set_config(cfg);
 
-    MNN::Transformer::ChatMessages msgs;
-    msgs.push_back(MNN::Transformer::ChatMessage{"system", "你是一个有记忆能力的AI助手。如果提示中包含【相关记忆】和【对话历史】，请参考这些信息连贯地回答用户的问题。请用中文回答。"});
-
-    // Parse multi-turn conversation using control character delimiters
-    // Format: \x01role\x02content\x01role\x02content...
-    // Fallback: treat entire prompt as single user message
-    bool parsedMultiTurn = false;
-    if (!prompt.empty() && prompt[0] == '\x01') {
-        size_t pos = 1; // skip initial \x01
-        while (pos < prompt.size()) {
-            size_t sepPos = prompt.find('\x02', pos);
-            if (sepPos == std::string::npos) break;
-            std::string role = prompt.substr(pos, sepPos - pos);
-            pos = sepPos + 1;
-            size_t nextMsg = prompt.find('\x01', pos);
-            if (nextMsg == std::string::npos) nextMsg = prompt.size();
-            std::string content = prompt.substr(pos, nextMsg - pos);
-            pos = nextMsg + 1;
-            if (!role.empty() && !content.empty()) {
-                msgs.push_back(MNN::Transformer::ChatMessage{role, content});
-                parsedMultiTurn = true;
-            }
-        }
-    }
-    if (!parsedMultiTurn) {
-        msgs.push_back(MNN::Transformer::ChatMessage{"user", prompt});
-    }
-
-    fileLog("nativeGenerateStream: using ChatMessages format, msgs_count=%zu, prompt_len=%zu", msgs.size(), prompt.length());
+    // 手工拼接ChatML格式字符串（复用buildChatMLPrompt）
+    std::string chatml = buildChatMLPrompt(prompt);
+    fileLog("nativeGenerateStream: using manual ChatML, prompt_len=%zu, chatml_len=%zu", prompt.length(), chatml.length());
+    fileLog("nativeGenerateStream: chatml first 200 chars: '%.200s'", chatml.c_str());
 
     s->stop_flag.store(false, std::memory_order_relaxed);
 
@@ -667,10 +689,10 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(J
     });
     std::ostream output_ostream(&stream_buffer);
 
-    fileLog("nativeGenerateStream: calling response() with ChatMessages, end_with=<|im_end|>");
+    fileLog("nativeGenerateStream: calling response(string) with manual ChatML, end_with=<|im_end|>");
     auto t0 = std::chrono::steady_clock::now();
 
-    s->llm->response(msgs, &output_ostream, "<|im_end|>", static_cast<int>(maxTokens));
+    s->llm->response(chatml, &output_ostream, "<|im_end|>", static_cast<int>(maxTokens));
 
     utf8Processor.flush();
     if (threadAttached && s->javaVM) s->javaVM->DetachCurrentThread();
@@ -815,4 +837,5 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeFree(JNIEnv* env, jclass cls) {
     Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeFree(env, cls);
 }
+
 
