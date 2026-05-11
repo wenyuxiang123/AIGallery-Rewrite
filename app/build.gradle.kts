@@ -92,6 +92,8 @@ android {
     // 参考 local-ai-server v3: doNotStrip MNN .so files to prevent AGP from over-stripping
     packagingOptions {
         jniLibs {
+            // CMake编译和jniLibs预置都会产生libc++_shared.so，pickFirst取第一个
+            pickFirsts += listOf("**/libc++_shared.so")
             // 保留所有MNN相关so的符号表，跨so C++调用需要这些符号
             doNotStrip += listOf("**/libMNN.so", "**/libMNN_Express.so", "**/libllm.so", "**/liblocalai-jni.so", "**/libMNNOpenCV.so", "**/libMNN_CL.so")
         }
