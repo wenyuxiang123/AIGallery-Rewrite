@@ -139,13 +139,12 @@ class LlamaEngine private constructor(
         
         private var qnnAvailable = false
         
-        // 预加载 FastRPC + QNN 支持
+        // 预加载 JNI 库（QNN 检测由 tryLoadQNN 处理，qnnAvailable 默认 false）
         init {
             try {
                 System.loadLibrary("localai-jni")
-                qnnAvailable = true
             } catch (e: UnsatisfiedLinkError) {
-                qnnAvailable = false
+                // library will be loaded again in loadLibraries()
             }
         }
         
@@ -410,9 +409,11 @@ class LlamaEngine private constructor(
             FileLogger.d(TAG, "loadModel: using original config.json, runtime config handled by C++ layer")
             
             // 设置 C++ 层日志路径，让 fileLog() 输出到同一个日志文件
+            // 必须用 getExternalFilesDir（与 FileLogger 同一目录），否则 C++ 日志写入内部存储但用户看到的是外部存储
             try {
-                val logFile = File(context.filesDir, "logs/aigallery_${java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())}.log")
-                if (!logFile.parentFile.exists()) logFile.parentFile.mkdirs()
+                val logDir = context.getExternalFilesDir("logs") ?: File(context.filesDir, "logs")
+                if (!logDir.exists()) logDir.mkdirs()
+                val logFile = File(logDir, "aigallery_${java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())}.log")
                 nativeSetLogFilePath(logFile.absolutePath)
                 FileLogger.d(TAG, "loadModel: set native log path to ${logFile.absolutePath}")
             } catch (e: Throwable) {
@@ -618,3 +619,4 @@ class LlamaEngine private constructor(
         return _inferenceStats.value
     }
 }
+
