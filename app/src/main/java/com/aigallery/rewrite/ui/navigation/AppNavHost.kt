@@ -27,7 +27,7 @@ import com.aigallery.rewrite.ui.screens.about.AboutScreen
 fun AppNavHost(
     navController: NavHostController,
     onMenuClick: () -> Unit = {},
-    startDestination: String = Screen.LLMChat.route
+    startDestination: String = Screen.ChatSession.BASE_ROUTE
 ) {
     NavHost(
         navController = navController,
@@ -93,13 +93,24 @@ fun AppNavHost(
 
         // Detail screens
         composable(
+            route = Screen.ChatSession.BASE_ROUTE
+        ) {
+            ChatSessionScreen(
+                onBack = { navController.popBackStack() },
+                onMenuClick = onMenuClick,
+                onNavigateToHistory = { navController.navigate(Screen.LLMChat.route) }
+            )
+        }
+
+        composable(
             route = Screen.ChatSession.route,
             arguments = listOf(navArgument("sessionId") { defaultValue = ""; type = NavType.StringType })
         ) { backStackEntry ->
             val sessionId = backStackEntry.arguments?.getString("sessionId") ?: ""
             ChatSessionScreen(
                 onBack = { navController.popBackStack() },
-                onMenuClick = onMenuClick
+                onMenuClick = onMenuClick,
+                onNavigateToHistory = { navController.navigate(Screen.LLMChat.route) }
             )
         }
 
@@ -121,3 +132,4 @@ fun AppNavHost(
         }
     }
 }
+
