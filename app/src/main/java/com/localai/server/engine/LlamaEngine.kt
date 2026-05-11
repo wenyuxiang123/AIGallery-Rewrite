@@ -409,6 +409,16 @@ class LlamaEngine private constructor(
             // 之前 Kotlin 写入 backend_type="cpu"（字符串），MNN 期望整数，导致 createLLM() 崩溃
             FileLogger.d(TAG, "loadModel: using original config.json, runtime config handled by C++ layer")
             
+            // 设置 C++ 层日志路径，让 fileLog() 输出到同一个日志文件
+            try {
+                val logFile = File(context.filesDir, "logs/aigallery_${java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())}.log")
+                if (!logFile.parentFile.exists()) logFile.parentFile.mkdirs()
+                nativeSetLogFilePath(logFile.absolutePath)
+                FileLogger.d(TAG, "loadModel: set native log path to ${logFile.absolutePath}")
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "loadModel: failed to set native log path")
+            }
+            
             // 调用 native 加载模型
             val success = nativeLoadModel(nativePath, nCtx, nThreads, cacheDirPath, qnnAvailable)
             
