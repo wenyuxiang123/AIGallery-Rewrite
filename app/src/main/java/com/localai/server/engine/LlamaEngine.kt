@@ -92,65 +92,10 @@ class LlamaEngine private constructor(
             return true
         }
         
-        /**
-         * 预加载 QNN/NPU 支持
-         */
-        private fun tryLoadQNN(appContext: android.content.Context) {
-            // FastRPC + QNN (QNN native libs pulled by liblocalai-jni)
-            // Step 1: FastRPC (required for QNN/NPU)
-            try {
-                System.loadLibrary("cdspgrpc")
-                FileLogger.d(TAG, "loadLibraries: cdspgrpc loaded (FastRPC for QNN)")
-            } catch (e: UnsatisfiedLinkError) {
-                FileLogger.w(TAG, "loadLibraries: cdspgrpc not available, QNN disabled")
-            }
-            
-            // Step 2: QNN/NPU (requires QNN native libs from liblocalai-jni)
-            // Load QNN libs after FastRPC (liblocalai-jni pulls them in via RTLD_NOW)
-            if (qnnAvailable) {
-                try {
-                    System.loadLibrary("QnnSystem")
-                    FileLogger.d(TAG, "loadLibraries: QnnSystem loaded (QNN/NPU)")
-                } catch (e: UnsatisfiedLinkError) {
-                    FileLogger.w(TAG, "loadLibraries: QNN not available (NPU disabled)")
-                    qnnAvailable = false
-                }
-            }
-            
-            // Step 3: Deploy QNN V68Skel from assets to cache (DSP6 bin, cannot use System.loadLibrary)
-            if (qnnAvailable) {
-                try {
-                    val skelDir = File(appContext.cacheDir, "qnn")
-                    skelDir.mkdirs()
-                    val skelFile = File(skelDir, "libQnnHtpV68Skel.so")
-                    if (!skelFile.exists()) {
-                        appContext.assets.open("qnn/libQnnHtpV68Skel.so").use { input ->
-                            skelFile.outputStream().use { output -> input.copyTo(output) }
-                        }
-                    }
-                    System.getenv("ADSPRP_LIBRARY_PATH")?.let { /* set if needed */ }
-                    FileLogger.d(TAG, "loadLibraries: QnnHtpV68Skel deployed to ${skelFile.absolutePath}")
-                } catch (e: Exception) {
-                    FileLogger.w(TAG, "loadLibraries: QnnHtpV68Skel deploy failed")
-                }
-            }
-            
-            // Disable QNN for now: LLaMA inference with backend_type=5 hangs silently -
-            // NPU graph compile fails for LLaMA ops. Re-enable only on devices with V7c+ (8Gen2+).
-            qnnAvailable = false
-            FileLogger.w(TAG, "loadLibraries: QNN disabled - NPU cannot handle LLaMA inference (needs V7c+ devices)")
-        }
+
         
-        private var qnnAvailable = false
+        // QNN/NPU 已移除，MNN 3.5.0 不再需要 QNN 库
         
-        // 预加载 JNI 库（QNN 检测由 tryLoadQNN 处理，qnnAvailable 默认 false）
-        init {
-            try {
-                System.loadLibrary("localai-jni")
-            } catch (e: UnsatisfiedLinkError) {
-                // library will be loaded again in loadLibraries()
-            }
-        }
         
         /**
          * 设置 native 日志文件路径
