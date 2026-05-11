@@ -113,14 +113,22 @@ class MnnModelDownloader @Inject constructor(
     /**
      * 检查模型是否已下载
      */
+    /**
+     * 模型是否已下载
+     * 修复：不仅检查文件存在，还要检查文件大小 > 0，防止 404 失败后残留空文件
+     */
     fun isModelDownloaded(modelId: String): Boolean {
         val modelPath = mnnModelPaths[modelId] ?: return false
         val modelDir = File(this.modelDir, modelId)
-        
+
         if (!modelDir.exists() || !modelDir.isDirectory) return false
-        
-        // 检查必需文件是否存在
-        return REQUIRED_FILES.all { File(modelDir, it).exists() }
+
+        // 检查所有必需文件是否存在且大小 > 0
+        return REQUIRED_FILES.all { fileName ->
+            val file = File(modelDir, fileName)
+            file.exists() && file.length() > 0
+        }
+    }
     }
 
 
