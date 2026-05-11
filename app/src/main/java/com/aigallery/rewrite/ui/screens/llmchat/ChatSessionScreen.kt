@@ -31,7 +31,8 @@ import kotlinx.coroutines.launch
 fun ChatSessionScreen(
     viewModel: ChatSessionViewModel = hiltViewModel(),
     onBack: () -> Unit = {},
-    onMenuClick: () -> Unit = {}
+    onMenuClick: () -> Unit = {},
+    onNavigateToHistory: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
     val engineState by viewModel.engineState.collectAsState()
@@ -68,6 +69,9 @@ fun ChatSessionScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onNavigateToHistory) {
+                        Icon(Icons.Default.History, contentDescription = "历史对话")
+                    }
                     IconButton(onClick = { showModelSelector = true }) {
                         Icon(Icons.Default.ModelTraining, contentDescription = "选择模型")
                     }
