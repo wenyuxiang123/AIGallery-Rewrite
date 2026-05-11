@@ -25,6 +25,12 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
+        externalNativeBuild {
+            cmake {
+                targets("localai-jni")
+                arguments("-DANDROID_STL=c++_shared")
+            }
+        }
     }
 
     // 配置 jniLibs 源目录
@@ -47,6 +53,13 @@ android {
             isDebuggable = true
             applicationIdSuffix = ".debug"
         }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "23.1.7779620"
+        }
+    }
     }
 
     compileOptions {
