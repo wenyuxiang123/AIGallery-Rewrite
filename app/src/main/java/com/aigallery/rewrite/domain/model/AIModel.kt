@@ -30,7 +30,7 @@ enum class ModelProvider(val displayName: String, val mirrorName: String) {
 enum class ModelStatus {
     NOT_DOWNLOADED,
     DOWNLOADING,
-    PQUSED,
+    PAUSED,
     DOWNLOADED,
     DOWNLOAD_FAILED,
     INITIALIZING,
