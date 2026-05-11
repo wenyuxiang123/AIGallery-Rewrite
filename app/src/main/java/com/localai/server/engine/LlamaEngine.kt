@@ -70,14 +70,18 @@ class LlamaEngine private constructor(
             FileLogger.d(TAG, "loadLibraries: starting library load")
             
             try {
-                // MNN_SO_BUILD=OFF: 使用预编译 MNN 库 (推荐生产使用)
-                // 加载 liblocalai-jni.so，它会 pull in libMNN.so
-                System.loadLibrary("localai-jni")
-                FileLogger.d(TAG, "loadLibraries: localai-jni loaded (DDT_NEEDED pulls in libMNN.so)")
+                // MNN 3.5.0 分离构建 - 需要按依赖顺序加载
+                System.loadLibrary("MNN")          // 核心库
+                FileLogger.d(TAG, "loadLibraries: MNN loaded (core library)")
                 
-                // 如需调试，加载 dlopen MNN 加载器
-                System.loadLibrary("MNN")
-                FileLogger.d(TAG, "loadLibraries: MNN loaded (includes Express+LLaMA, SET_BUILD=OFF)")
+                System.loadLibrary("MNN_Express") // Express/Module API
+                FileLogger.d(TAG, "loadLibraries: MNN_Express loaded (includes LLaMA)")
+                
+                System.loadLibrary("llm")          // LLM引擎
+                FileLogger.d(TAG, "loadLibraries: llm loaded (LLM engine)")
+                
+                System.loadLibrary("localai-jni") // 我们的JNI层
+                FileLogger.d(TAG, "loadLibraries: localai-jni loaded")
                 
             } catch (e: UnsatisfiedLinkError) {
                 FileLogger.e(TAG, "loadLibraries: native library not found or linking failed", e)
