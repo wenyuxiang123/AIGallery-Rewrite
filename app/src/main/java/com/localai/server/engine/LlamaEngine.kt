@@ -415,7 +415,7 @@ class LlamaEngine private constructor(
                 if (!logFile.parentFile.exists()) logFile.parentFile.mkdirs()
                 nativeSetLogFilePath(logFile.absolutePath)
                 FileLogger.d(TAG, "loadModel: set native log path to ${logFile.absolutePath}")
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 FileLogger.w(TAG, "loadModel: failed to set native log path")
             }
             
@@ -520,7 +520,7 @@ class LlamaEngine private constructor(
             // 发送完成信号
             close()
             
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             FileLogger.e(TAG, "generateStream failed")
             setTokenCallback(null)
             close(e)
@@ -537,7 +537,7 @@ class LlamaEngine private constructor(
     /**
      * 获取上下文大小
      */
-    fun getContextSize(): Int = try { nativeGetContextSize() } catch (e: Exception) { 0 }
+    fun getContextSize(): Int = try { nativeGetContextSize() } catch (e: Throwable) { 0 }
     
     /**
      * 获取已使用内存 (MB)
