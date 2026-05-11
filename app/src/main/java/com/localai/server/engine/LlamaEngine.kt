@@ -341,6 +341,14 @@ class LlamaEngine private constructor(
         precision: String = "low",
         openclCachePath: String? = null
     ): Boolean {
+
+        // 确保 native 库已加载
+        loadNativeLibraries()
+        if (libraryLoadError != null) {
+            FileLogger.e(TAG, "loadModel: native libraries not loaded - $libraryLoadError")
+            _lastError.value = "Native libraries not loaded: $libraryLoadError"
+            return false
+        }
         FileLogger.d(TAG, "loadModel: path=$path, nCtx=$nCtx, nThreads=$nThreads, backend=$backend, attentionMode=$attentionMode, precision=$precision")
         
         // 应用待处理的运行时配置
