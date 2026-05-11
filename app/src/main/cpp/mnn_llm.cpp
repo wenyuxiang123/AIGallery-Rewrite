@@ -657,6 +657,17 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGetLastError(JNI
 }
 
 JNIEXPORT void JNICALL
+Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeFree(JNIEnv*, jclass) {
+    fileLog("nativeFree called");
+    LlmSession* oldSession = gSession.exchange(nullptr, std::memory_order_acq_rel);
+    if (oldSession) {
+        if (oldSession->llm) MNN::Transformer::Llm::destroy(oldSession->llm);
+        delete oldSession;
+        gModelLoaded.store(false, std::memory_order_relaxed);
+    }
+}
+
+JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_initNativeCallback(JNIEnv* env, jobject, jobject callback) {
     fileLog("initNativeCallback: called");
     LlmSession* s = gSession.load(std::memory_order_relaxed);
