@@ -420,6 +420,13 @@ class LlamaEngine private constructor(
             }
             
             // 调用 native 加载模型
+            // Log memory state before native load
+            val runtime = Runtime.getRuntime()
+            val maxMem = runtime.maxMemory() / 1024 / 1024
+            val totalMem = runtime.totalMemory() / 1024 / 1024
+            val freeMem = runtime.freeMemory() / 1024 / 1024
+            val usedMem = totalMem - freeMem
+            FileLogger.d(TAG, "loadModel: memory before native - max=${maxMem}MB, used=${usedMem}MB, free=${freeMem}MB, total=${totalMem}MB")
             FileLogger.d(TAG, "loadModel: calling nativeLoadModel(path=$nativePath, nCtx=$nCtx, nThreads=$nThreads, cacheDir=$cacheDirPath, qnn=$qnnAvailable)")
             val success = nativeLoadModel(nativePath, nCtx, nThreads, cacheDirPath, qnnAvailable)
             FileLogger.d(TAG, "loadModel: nativeLoadModel returned $success")
