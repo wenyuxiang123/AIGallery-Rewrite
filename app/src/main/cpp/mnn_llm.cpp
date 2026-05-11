@@ -240,6 +240,7 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeStop(JNIEnv*, jc
 JNIEXPORT jboolean JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv* env, jclass,
     jstring jConfigPath, jint nCtx, jint nThreads, jstring jCacheDir, jboolean jUseQnn) {
+    __android_log_print(ANDROID_LOG_INFO, "MNN-Native", "nativeLoadModel: ENTRY (logcat)");
     fileLog("nativeLoadModel: ENTRY - about to read config path");
     const char* path = env->GetStringUTFChars(jConfigPath, nullptr);
     if (!path) { fileLog("nativeLoadModel: ERROR - null config path"); return JNI_FALSE; }
