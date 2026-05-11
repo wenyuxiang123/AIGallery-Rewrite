@@ -103,11 +103,11 @@ class MnnModelDownloader @Inject constructor(
     // MNN 模型 ID 映射（modelId -> ModelScope 路径）
     // ModelScope 路径格式: MNN/ModelName
     private val mnnModelPaths = mapOf(
-        // ============ 新5档位模型 ============
-        "qwen3.5-0.8b-int4" to "MNN/Qwen3.5-0.8B-Instruct-MNN",
-        "qwen3.5-1.5b-int4" to "MNN/Qwen3.5-1.5B-Instruct-MNN",
-        "qwen3.5-3b-int4" to "MNN/Qwen3.5-3B-Instruct-MNN",
-        "qwen3.5-4b-int4" to "MNN/Qwen3.5-4B-Instruct-MNN"
+        // ============ Qwen2.5-MNN 模型 ============
+        "qwen2.5-0.5b-int4" to "MNN/Qwen2.5-0.5B-Instruct-MNN",
+        "qwen2.5-1.5b-int4" to "MNN/Qwen2.5-1.5B-Instruct-MNN",
+        "qwen2.5-3b-int4" to "MNN/Qwen2.5-3B-Instruct-MNN",
+        "qwen2.5-3b-int4-optimal" to "MNN/Qwen2.5-3B-Instruct-MNN"
     )
     
     /**
@@ -143,10 +143,14 @@ class MnnModelDownloader @Inject constructor(
     /**
      * 获取已下载的 MNN 模型列表
      */
+    /**
+     * 获取已下载的模型列表
+     * 修复：使用 isModelDownloaded() 验证文件完整性，而非仅检查目录存在
+     */
     fun getDownloadedModels(): List<String> {
-        return modelDir.listFiles { file -> 
-            file.isDirectory && mnnModelPaths.containsKey(file.name)
-        }?.map { it.name } ?: emptyList()
+        return mnnModelPaths.keys.filter { modelId ->
+            isModelDownloaded(modelId)
+        }
     }
     
     /**
