@@ -404,22 +404,10 @@ class LlamaEngine private constructor(
             // 获取 cache 目录路径
             val cacheDirPath = appCacheDir.absolutePath
             
-            // Patch config.json with runtime settings before loading
-            val configFile = File(modelDir, "config.json")
-            if (configFile.exists()) {
-                try {
-                    val configJson = JSONObject(configFile.readText())
-                    configJson.put("backend_type", effectiveBackend)
-                    if (nThreads > 0) configJson.put("thread_num", nThreads)
-                    configJson.put("precision", effectivePrecision)
-                    if (effectiveAttentionMode != 8) configJson.put("attention_mode", effectiveAttentionMode)
-                    if (effectiveOpenclCache != null) configJson.put("opencl_cache_path", effectiveOpenclCache)
-                    configFile.writeText(configJson.toString(2))
-                    FileLogger.d(TAG, "loadModel: patched config.json with backend=$effectiveBackend, precision=$effectivePrecision, attentionMode=$effectiveAttentionMode")
-                } catch (e: Exception) {
-                    FileLogger.w(TAG, "loadModel: failed to patch config.json, using defaults")
-                }
-            }
+            // NOTE: 不再 patch config.json — MNN 的 createLLM() 读取原始 config.json 获取模型结构信息
+            // 运行时配置（backend/threads/precision/attention_mode）由 C++ 层 set_config() 独立管理
+            // 之前 Kotlin 写入 backend_type="cpu"（字符串），MNN 期望整数，导致 createLLM() 崩溃
+            FileLogger.d(TAG, "loadModel: using original config.json, runtime config handled by C++ layer")
             
             // 调用 native 加载模型
             val success = nativeLoadModel(nativePath, nCtx, nThreads, cacheDirPath, qnnAvailable)
