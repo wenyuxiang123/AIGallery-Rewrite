@@ -63,6 +63,7 @@ sealed class Screen(
         selectedIcon = Icons.Filled.Email,
         unselectedIcon = Icons.Filled.Email
     ) {
+        const val BASE_ROUTE = "chat_session"
         fun createRoute(sessionId: String) = "chat_session/$sessionId"
     }
 
