@@ -707,8 +707,8 @@ Java_com_localai_server_engine_LlamaEngine_nativeGenerate(JNIEnv* env, jclass cl
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeGenerateStream(JNIEnv* env, jclass cls,
-    jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP, jstring jSystemPrompt) {
-    return Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(env, cls, jPrompt, maxTokens, temperature, topK, topP, jSystemPrompt);
+    jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP, jboolean useGPU) {
+    return Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(env, cls, jPrompt, maxTokens, temperature, topK, topP, useGPU);
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -745,4 +745,3 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeFree(JNIEnv* env, jclass cls) {
     Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeFree(env, cls);
 }
-
