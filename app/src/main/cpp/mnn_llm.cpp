@@ -5,6 +5,9 @@
 #include <atomic>
 #include <exception>
 #include <android/log.h>
+#include <signal.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <sched.h>
 #include <fstream>
 #include <vector>
@@ -186,11 +189,44 @@ static void callJavaTokenCallbackWithEnv(JNIEnv* env, LlmSession* s, const std::
     if (js) { env->CallVoidMethod(s->javaCallback, s->onTokenMethod, js); env->DeleteLocalRef(js); }
 }
 
+// Native crash signal handler - uses raw write() which is async-signal-safe
+static void nativeCrashHandler(int sig) {
+    const char* signame = "UNKNOWN";
+    switch(sig) {
+        case SIGSEGV: signame = "SIGSEGV"; break;
+        case SIGABRT: signame = "SIGABRT"; break;
+        case SIGBUS:  signame = "SIGBUS"; break;
+        case SIGFPE:  signame = "SIGFPE"; break;
+        case SIGILL:  signame = "SIGILL"; break;
+    }
+    // Use raw write() - async-signal-safe, no buffering, no locks
+    int fd = open(g_logFilePath.c_str(), O_WRONLY|O_APPEND|O_CREAT, 0644);
+    if (fd >= 0) {
+        char crashbuf[256];
+        int len = snprintf(crashbuf, sizeof(crashbuf),
+            "[FATAL] Native crash! signal=%d (%s) - process will die\n", sig, signame);
+        write(fd, crashbuf, len);
+        close(fd);
+    }
+    __android_log_print(ANDROID_LOG_FATAL, "MNN-Native", "FATAL: native crash signal=%d (%s)", sig, signame);
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+static void installCrashHandler() {
+    signal(SIGSEGV, nativeCrashHandler);
+    signal(SIGABRT, nativeCrashHandler);
+    signal(SIGBUS, nativeCrashHandler);
+    signal(SIGFPE, nativeCrashHandler);
+    signal(SIGILL, nativeCrashHandler);
+}
+
 extern "C" {
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
-    fileLog("JNI_OnLoad: saving JavaVM pointer");
     gJavaVM = vm;
+    installCrashHandler();
+    fileLog("JNI_OnLoad: saved JavaVM, installed crash handler");
     return JNI_VERSION_1_6;
 }
 
@@ -204,6 +240,7 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeStop(JNIEnv*, jc
 JNIEXPORT jboolean JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv* env, jclass,
     jstring jConfigPath, jint nCtx, jint nThreads, jstring jCacheDir, jboolean jUseQnn) {
+    fileLog("nativeLoadModel: ENTRY - about to read config path");
     const char* path = env->GetStringUTFChars(jConfigPath, nullptr);
     if (!path) { fileLog("nativeLoadModel: ERROR - null config path"); return JNI_FALSE; }
     std::string configPath(path); env->ReleaseStringUTFChars(jConfigPath, path);
@@ -222,8 +259,17 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
         }
     }
 
-    fileLog("nativeLoadModel: calling createLLM...");
-    MNN::Transformer::Llm* llm = MNN::Transformer::Llm::createLLM(configPath);
+    fileLog("nativeLoadModel: calling createLLM with path=%s ...", configPath.c_str());
+    MNN::Transformer::Llm* llm = nullptr;
+    try {
+        llm = MNN::Transformer::Llm::createLLM(configPath);
+    } catch (const std::exception& e) {
+        fileLog("nativeLoadModel: createLLM threw std::exception: %s", e.what());
+        return JNI_FALSE;
+    } catch (...) {
+        fileLog("nativeLoadModel: createLLM threw unknown exception");
+        return JNI_FALSE;
+    }
     if (!llm) {
         fileLog("nativeLoadModel: ERROR - createLLM returned null!");
         return JNI_FALSE;
