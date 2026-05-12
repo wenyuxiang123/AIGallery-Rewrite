@@ -475,17 +475,18 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerate(JNIEnv*
         + ",\"repetition_penalty\":1.05}";
     s->llm->set_config(cfg);
 
-    // ===== 方案4：最简路径 - 直接传原始消息给MNN，让MNN内部处理模板和tokenization =====
-    // 这是MNN官方demo app使用的方式，绕开所有手动格式化
-    fileLog("nativeGenerate: 方案4 - 使用MNN内置模板系统 (response(string))");
-    s->llm->set_config("{\"use_template\":true}");
+    // ===== 方案4：使用 ChatMessages 传入 MNN，让 MNN 正确应用模板 =====
+    // 这是 MNN 官方 Android App 使用的方式：response(ChatMessages)
+    // ChatMessages = vector<pair<string,string>>，pair<role, content>
+    fileLog("nativeGenerate: 方案4 - 使用 ChatMessages + MNN内置模板 (response(ChatMessages))");
+
+    std::vector<std::pair<std::string, std::string>> chatMessages;
+    chatMessages.push_back({"user", prompt});
 
     std::ostringstream result_oss;
     auto t0 = std::chrono::steady_clock::now();
-
-    // 直接传原始用户消息给MNN的response(string)方法
-    // MNN内部会：1. 读取llm_config.json的prompt_template  2. 应用模板  3. tokenize  4. 推理
-    s->llm->response(prompt, &result_oss, "<|im_end|>", static_cast<int>(maxTokens));
+    
+    s->llm->response(chatMessages, &result_oss, "<|im_end|>", static_cast<int>(maxTokens));
 
     auto t1 = std::chrono::steady_clock::now();
     auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
@@ -545,17 +546,18 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(J
         + ",\"repetition_penalty\":1.05}";
     s->llm->set_config(cfg);
 
-    // ===== 方案4：最简路径 - 直接传原始消息给MNN，让MNN内部处理模板和tokenization =====
-    // 这是MNN官方demo app使用的方式，绕开所有手动格式化
-    fileLog("nativeGenerateStream: 方案4 - 使用MNN内置模板系统 (response(string))");
-    s->llm->set_config("{\"use_template\":true}");
+    // ===== 方案4：使用 ChatMessages 传入 MNN，让 MNN 正确应用模板 =====
+    // 这是 MNN 官方 Android App 使用的方式：response(ChatMessages)
+    // ChatMessages = vector<pair<string,string>>，pair<role, content>
+    fileLog("nativeGenerateStream: 方案4 - 使用 ChatMessages + MNN内置模板 (response(ChatMessages))");
+
+    std::vector<std::pair<std::string, std::string>> chatMessages;
+    chatMessages.push_back({"user", prompt});
 
     std::ostringstream result_oss;
     auto t0 = std::chrono::steady_clock::now();
-
-    // 直接传原始用户消息给MNN的response(string)方法
-    // MNN内部会：1. 读取llm_config.json的prompt_template  2. 应用模板  3. tokenize  4. 推理
-    s->llm->response(prompt, &result_oss, "<|im_end|>", static_cast<int>(maxTokens));
+    
+    s->llm->response(chatMessages, &result_oss, "<|im_end|>", static_cast<int>(maxTokens));
 
     auto t1 = std::chrono::steady_clock::now();
     auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
