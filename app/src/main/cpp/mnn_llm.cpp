@@ -18,6 +18,7 @@
 #include <cstdarg>
 #include <dlfcn.h>
 #include "llm/llm.hpp"
+#include "MNN/expr/ExecutorScope.hpp"
 #define TAG "MNNLlm"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
@@ -257,6 +258,11 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
             gModelLoaded.store(false, std::memory_order_relaxed);
         }
     }
+    // Create MNN Executor with ExecutorScope (required by MNN 3.4+)
+    MNN::BackendConfig backendConfig;
+    auto executor = MNN::Express::Executor::newExecutor(MNN_FORWARD_CPU, backendConfig, 1);
+    MNN::Express::ExecutorScope executorScope(executor);
+    fileLog("nativeLoadModel: Executor and ExecutorScope created");
     fileLog("nativeLoadModel: calling createLLM with path=%s ...", configPath.c_str());
     MNN::Transformer::Llm* llm = nullptr;
     try {
