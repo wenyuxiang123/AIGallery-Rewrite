@@ -112,7 +112,78 @@ static void setCpuAffinity() {
     sched_setaffinity(0, sizeof(cpuset), &cpuset);
     fileLog("setCpuAffinity: bound to %zu big cores", bigCores.size());
 }
-// ====== Session管理 ======
+// ====== Special Token Handling ======
+// Qwen2.5 ChatML 特殊token ID
+// <|im_start|> = 151644, <|im_end|> = 151645
+// MNN的tokenizer_encode不识别这些特殊token，会把它们当成普通文本编码
+// 导致模型收到错误的token序列，输出全F
+// 此函数手动处理特殊token，将它们替换为正确的token ID
+static std::vector<int> encodePromptWithSpecialTokens(MNN::Transformer::Llm* llm, const std::string& prompt) {
+    const std::string IM_START = "<|im_start|>";
+    const std::string IM_END = "<|im_end|>";
+    const int IM_START_ID = 151644;
+    const int IM_END_ID = 151645;
+    
+    std::vector<int> ids;
+    size_t pos = 0;
+    
+    while (pos < prompt.size()) {
+        // Find next special token
+        size_t im_start_pos = prompt.find(IM_START, pos);
+        size_t im_end_pos = prompt.find(IM_END, pos);
+        
+        // Determine which comes first
+        bool has_start = (im_start_pos != std::string::npos);
+        bool has_end = (im_end_pos != std::string::npos);
+        bool next_is_start;
+        size_t next_pos;
+        
+        if (has_start && has_end) {
+            next_is_start = (im_start_pos <= im_end_pos);
+            next_pos = next_is_start ? im_start_pos : im_end_pos;
+        } else if (has_start) {
+            next_is_start = true;
+            next_pos = im_start_pos;
+        } else if (has_end) {
+            next_is_start = false;
+            next_pos = im_end_pos;
+        } else {
+            // No more special tokens - encode remaining text
+            break;
+        }
+        
+        // Encode text before the special token
+        if (next_pos > pos) {
+            std::string text = prompt.substr(pos, next_pos - pos);
+            if (!text.empty()) {
+                auto text_ids = llm->tokenizer_encode(text);
+                ids.insert(ids.end(), text_ids.begin(), text_ids.end());
+            }
+        }
+        
+        // Insert the special token ID
+        if (next_is_start) {
+            ids.push_back(IM_START_ID);
+            pos = im_start_pos + IM_START.size();
+        } else {
+            ids.push_back(IM_END_ID);
+            pos = im_end_pos + IM_END.size();
+        }
+    }
+    
+    // Encode remaining text after last special token
+    if (pos < prompt.size()) {
+        std::string text = prompt.substr(pos);
+        if (!text.empty()) {
+            auto text_ids = llm->tokenizer_encode(text);
+            ids.insert(ids.end(), text_ids.begin(), text_ids.end());
+        }
+    }
+    
+    return ids;
+}
+
+
 namespace {
 struct LlmSession {
     MNN::Transformer::Llm* llm = nullptr;
@@ -427,9 +498,9 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerate(JNIEnv*
     // ===== 直接 tokenize + response(vector<int>) =====
     // Kotlin 层已通过 GSSC prompt builder 格式化完整的 prompt（含系统提示、历史等）
     // C++ 层不再套任何模板，直接 tokenize 后推理
-    fileLog("nativeGenerate: direct tokenize + response(vector<int>)");
+    fileLog("nativeGenerate: encode with special token handling (im_start=151644, im_end=151645)");
 
-    std::vector<int> input_ids = s->llm->tokenizer_encode(prompt);
+    std::vector<int> input_ids = encodePromptWithSpecialTokens(s->llm, prompt);
     fileLog("nativeGenerate: tokenized to %zu tokens", input_ids.size());
     if (!input_ids.empty()) {
         fileLog("nativeGenerate: first 20 token IDs: %s", 
@@ -477,9 +548,9 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(J
     // ===== 直接 tokenize + response(vector<int>) =====
     // Kotlin 层已通过 GSSC prompt builder 格式化完整的 prompt（含系统提示、历史等）
     // C++ 层不再套任何模板，直接 tokenize 后推理
-    fileLog("nativeGenerateStream: direct tokenize + response(vector<int>)");
+    fileLog("nativeGenerateStream: encode with special token handling (im_start=151644, im_end=151645)");
 
-    std::vector<int> input_ids = s->llm->tokenizer_encode(prompt);
+    std::vector<int> input_ids = encodePromptWithSpecialTokens(s->llm, prompt);
     fileLog("nativeGenerateStream: tokenized to %zu tokens", input_ids.size());
     if (!input_ids.empty()) {
         fileLog("nativeGenerateStream: first 20 token IDs: %s",
@@ -733,3 +804,4 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_localai_server_engine_LlamaEngine_nativeFree(JNIEnv* env, jclass cls) {
     Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeFree(env, cls);
 }
+
