@@ -134,8 +134,8 @@ class ContextManager(
     }
 
     /**
-     * Format selected context into MNN prompt format
-     * Uses \u0001/\u0002 delimiters (same as existing buildPrompt)
+     * Format selected context into ChatML prompt format for Qwen2.5
+     * Uses <|im_start|>/<|im_end|> delimiters that C++ layer converts to token IDs 151644/151645
      */
     private fun formatPrompt(
         systemPrompt: String,
@@ -145,19 +145,24 @@ class ContextManager(
     ): String {
         val sb = StringBuilder()
         
-        // System prompt (includes GSSC + memories)
-        if (systemPrompt.isNotEmpty()) {
-            sb.append("\u0001system\u0002$systemPrompt")
+        // ChatML format for Qwen2.5: <|im_start|>role\ncontent<|im_end|>\n
+        // C++ layer will convert <|im_start|>→151644, <|im_end|>→151645
+        
+        // System prompt (includes GSSC)
+        val systemContent = buildString {
+            append(systemPrompt)
+            if (memories.isNotEmpty()) {
+                val memContent = memories.joinToString("\n") { "- $it" }
+                if (systemPrompt.isNotEmpty()) {
+                    append("\n\n【记忆】\n$memContent")
+                } else {
+                    append("【记忆】\n$memContent")
+                }
+            }
         }
         
-        // Memories as additional context within system block
-        if (memories.isNotEmpty()) {
-            val memContent = memories.joinToString("\n") { "- $it" }
-            if (systemPrompt.isNotEmpty()) {
-                sb.append("\n\n【记忆】\n$memContent")
-            } else {
-                sb.append("\u0001system\u0002【记忆】\n$memContent")
-            }
+        if (systemContent.isNotEmpty()) {
+            sb.append("<|im_start|>system\n$systemContent<|im_end|>\n")
         }
         
         // History
@@ -167,11 +172,14 @@ class ContextManager(
                 MessageRole.ASSISTANT -> "assistant"
                 else -> continue
             }
-            sb.append("\u0001${role}\u0002${msg.content.take(maxMessageChars)}")
+            sb.append("<|im_start|>$role\n${msg.content.take(maxMessageChars)}<|im_end|>\n")
         }
         
         // Current user message
-        sb.append("\u0001user\u0002$currentUserMessage")
+        sb.append("<|im_start|>user\n$currentUserMessage<|im_end|>\n")
+        
+        // Assistant prompt (beginning of response)
+        sb.append("<|im_start|>assistant\n")
         
         return sb.toString()
     }
