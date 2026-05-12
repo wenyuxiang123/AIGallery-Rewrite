@@ -70,15 +70,9 @@ class LlamaEngine private constructor(
             FileLogger.d(TAG, "loadLibraries: starting library load")
             
             try {
-                // MNN 3.5.0 分离构建 - 需要按依赖顺序加载
-                System.loadLibrary("MNN")          // 核心库
-                FileLogger.d(TAG, "loadLibraries: MNN loaded (core library)")
-                
-                System.loadLibrary("MNN_Express") // Express/Module API
-                FileLogger.d(TAG, "loadLibraries: MNN_Express loaded (includes LLaMA)")
-                
-                System.loadLibrary("llm")          // LLM引擎
-                FileLogger.d(TAG, "loadLibraries: llm loaded (LLM engine)")
+                // MNN 统一构建 (MNN_SEP_BUILD=OFF) - 所有代码在 libMNN.so 中
+                System.loadLibrary("MNN")          // 统一库（含 core + express + llm + opencl）
+                FileLogger.d(TAG, "loadLibraries: MNN loaded (unified build)")
                 
                 System.loadLibrary("localai-jni") // 我们的JNI层
                 FileLogger.d(TAG, "loadLibraries: localai-jni loaded")
