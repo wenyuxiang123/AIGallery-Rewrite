@@ -379,8 +379,8 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
             fileLog("nativeLoadModel: context info - prompt_len=%d, gen_seq_len=%d, all_seq_len=%d, status=%d",
                  ctx->prompt_len, ctx->gen_seq_len, ctx->all_seq_len, (int)ctx->status);
         }
-        // 方案4+方案3：先尝试MNN内置模板，失败则回退手动ChatML格式
-        fileLog("nativeLoadModel: 方案4+方案3 - 优先MNN内置模板，失败则手动ChatML格式");
+        // 直接 tokenize + response(vector<int>)，Kotlin 层已处理 prompt 格式化
+        fileLog("nativeLoadModel: direct tokenize mode (no MNN template)");
         fileLog("nativeLoadModel: SUCCESS - model=%s", mn.c_str());
         return JNI_TRUE;
     }
@@ -404,61 +404,10 @@ JNIEXPORT jboolean JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeIsModelLoaded(JNIEnv*, jclass) {
     return gModelLoaded.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
 }
-// 手工拼接ChatML格式prompt
-// 输入: \x01role\x02content\x01role\x02content... 格式的多轮对话
-// 输出: <|im_start|>system\n...<|im_end|>\n<|im_start|>user\n...<|im_end|>\n<|im_start|>assistant\n
-static std::string buildChatMLPrompt(const std::string& rawPrompt) {
-    std::string chatml;
-    
-    // 解析 \x01role\x02content 格式
-    struct Msg { std::string role; std::string content; };
-    std::vector<Msg> messages;
-    
-    if (!rawPrompt.empty() && rawPrompt[0] == '\x01') {
-        size_t pos = 1;
-        while (pos < rawPrompt.size()) {
-            size_t sepPos = rawPrompt.find('\x02', pos);
-            if (sepPos == std::string::npos) break;
-            std::string role = rawPrompt.substr(pos, sepPos - pos);
-            pos = sepPos + 1;
-            size_t nextMsg = rawPrompt.find('\x01', pos);
-            if (nextMsg == std::string::npos) nextMsg = rawPrompt.size();
-            std::string content = rawPrompt.substr(pos, nextMsg - pos);
-            pos = nextMsg + 1;
-            if (!role.empty() && !content.empty()) {
-                messages.push_back({role, content});
-            }
-        }
-    }
-    
-    // 如果没解析出任何消息，整个prompt作为user消息
-    if (messages.empty()) {
-        messages.push_back({"user", rawPrompt});
-    }
-    
-    // 检查是否已有system消息
-    bool hasSystem = false;
-    for (const auto& m : messages) {
-        if (m.role == "system") { hasSystem = true; break; }
-    }
-    
-    // 如果没有system消息，添加默认system prompt
-    if (!hasSystem) {
-        chatml += "<|im_start|>system\n你是一个有帮助的AI助手。请用中文回答。<|im_end|>\n";
-    }
-    
-    // 拼接ChatML格式
-    for (const auto& m : messages) {
-        chatml += "<|im_start|>" + m.role + "\n" + m.content + "<|im_end|>\n";
-    }
-    
-    // 添加assistant开头
-    chatml += "<|im_start|>assistant\n";
-    
-    return chatml;
-}
 
-// Generate (sync) - 方案4：最简路径 + 方案3：手动ChatML
+// Generate (sync) - 直接 tokenize + response(vector<int>)
+// Kotlin 层已通过 GSSC prompt builder 格式化完整的 prompt（含系统提示、历史等）
+// C++ 层不再套任何模板，直接 tokenize 后推理
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerate(JNIEnv* env, jclass,
     jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP) {
@@ -475,61 +424,40 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerate(JNIEnv*
         + ",\"repetition_penalty\":1.05}";
     s->llm->set_config(cfg);
 
-    // ===== 方案4：使用 ChatMessages 传入 MNN，让 MNN 正确应用模板 =====
-    // 这是 MNN 官方 Android App 使用的方式：response(ChatMessages)
-    // ChatMessages = vector<pair<string,string>>，pair<role, content>
-    fileLog("nativeGenerate: 方案4 - 使用 ChatMessages + MNN内置模板 (response(ChatMessages))");
+    // ===== 直接 tokenize + response(vector<int>) =====
+    // Kotlin 层已通过 GSSC prompt builder 格式化完整的 prompt（含系统提示、历史等）
+    // C++ 层不再套任何模板，直接 tokenize 后推理
+    fileLog("nativeGenerate: direct tokenize + response(vector<int>)");
 
-    std::vector<std::pair<std::string, std::string>> chatMessages;
-    chatMessages.push_back({"user", prompt});
+    std::vector<int> input_ids = s->llm->tokenizer_encode(prompt);
+    fileLog("nativeGenerate: tokenized to %zu tokens", input_ids.size());
+    if (!input_ids.empty()) {
+        fileLog("nativeGenerate: first 20 token IDs: %s", 
+            [&]() { std::string ids; for (size_t i = 0; i < std::min(input_ids.size(), (size_t)20); i++) ids += std::to_string(input_ids[i]) + ","; return ids; }().c_str());
+    }
 
     std::ostringstream result_oss;
     auto t0 = std::chrono::steady_clock::now();
-    
-    s->llm->response(chatMessages, &result_oss, "<|im_end|>", static_cast<int>(maxTokens));
+
+    s->llm->response(input_ids, &result_oss, "<|im_end|>", static_cast<int>(maxTokens));
 
     auto t1 = std::chrono::steady_clock::now();
     auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
 
     std::string result = result_oss.str();
-    fileLog("nativeGenerate: 方案4 completed in %lld ms, result length=%zu", (long long)total_ms, result.length());
-    fileLog("nativeGenerate: 方案4 result first 200 chars: '%.200s'", result.c_str());
+    fileLog("nativeGenerate: completed in %lld ms, result length=%zu", (long long)total_ms, result.length());
+    fileLog("nativeGenerate: result first 200 chars: '%.200s'", result.c_str());
 
-    // 如果方案4有非空结果且不是全F，直接返回
-    if (!result.empty() && result.find("FFFF") == std::string::npos) {
-        fileLog("nativeGenerate: 方案4 SUCCESS - got meaningful output!");
-        auto* ctx = s->llm->getContext();
-        s->generated_tokens = ctx ? ctx->gen_seq_len : result.length() / 4;
-        s->prefill_ms = ctx ? ctx->prefill_us / 1000 : total_ms * 30 / 100;
-        s->decode_ms = ctx ? ctx->decode_us / 1000 : total_ms * 70 / 100;
-        return env->NewStringUTF(result.c_str());
-    }
-    fileLog("nativeGenerate: 方案4 failed, result empty or all F, falling through to 方案3");
-
-    // ===== 方案3：回退 - 自己拼ChatML + tokenizer_encode + response(vector<int>) =====
-    fileLog("nativeGenerate: 方案3 - ChatML prompt (len=%zu)", prompt.length());
-    std::string chatml = buildChatMLPrompt(prompt);
-    auto token_ids = s->llm->tokenizer_encode(chatml);
-    fileLog("nativeGenerate: tokenized to %zu tokens", token_ids.size());
-    
-    std::ostringstream oss;
-    t0 = std::chrono::steady_clock::now();
-    s->llm->response(token_ids, &oss, "<|im_end|>", static_cast<int>(maxTokens));
-    t1 = std::chrono::steady_clock::now();
-    total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
-    result = oss.str();
     auto* ctx = s->llm->getContext();
-    fileLog("nativeGenerate: completed in %lld ms, result len=%zu, gen_seq_len=%d, status=%d",
-         (long long)total_ms, result.length(),
-         ctx ? ctx->gen_seq_len : -1, ctx ? (int)ctx->status : -1);
-    fileLog("nativeGenerate: result first 100 chars: '%.100s'", result.c_str());
     s->generated_tokens = ctx ? ctx->gen_seq_len : result.length() / 4;
     s->prefill_ms = ctx ? ctx->prefill_us / 1000 : total_ms * 30 / 100;
     s->decode_ms = ctx ? ctx->decode_us / 1000 : total_ms * 70 / 100;
     return env->NewStringUTF(result.c_str());
 }
 
-// Generate (streaming) - 方案4：最简路径 + 方案3：手动ChatML
+// Generate (streaming) - 直接 tokenize + response(vector<int>)
+// Kotlin 层已通过 GSSC prompt builder 格式化完整的 prompt（含系统提示、历史等）
+// C++ 层不再套任何模板，直接 tokenize 后推理
 JNIEXPORT jstring JNICALL
 Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(JNIEnv* env, jclass,
     jstring jPrompt, jint maxTokens, jfloat temperature, jint topK, jfloat topP, jboolean useGPU) {
@@ -546,50 +474,18 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(J
         + ",\"repetition_penalty\":1.05}";
     s->llm->set_config(cfg);
 
-    // ===== 方案4：使用 ChatMessages 传入 MNN，让 MNN 正确应用模板 =====
-    // 这是 MNN 官方 Android App 使用的方式：response(ChatMessages)
-    // ChatMessages = vector<pair<string,string>>，pair<role, content>
-    fileLog("nativeGenerateStream: 方案4 - 使用 ChatMessages + MNN内置模板 (response(ChatMessages))");
+    // ===== 直接 tokenize + response(vector<int>) =====
+    // Kotlin 层已通过 GSSC prompt builder 格式化完整的 prompt（含系统提示、历史等）
+    // C++ 层不再套任何模板，直接 tokenize 后推理
+    fileLog("nativeGenerateStream: direct tokenize + response(vector<int>)");
 
-    std::vector<std::pair<std::string, std::string>> chatMessages;
-    chatMessages.push_back({"user", prompt});
-
-    std::ostringstream result_oss;
-    auto t0 = std::chrono::steady_clock::now();
-    
-    s->llm->response(chatMessages, &result_oss, "<|im_end|>", static_cast<int>(maxTokens));
-
-    auto t1 = std::chrono::steady_clock::now();
-    auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
-
-    std::string result = result_oss.str();
-    fileLog("nativeGenerateStream: 方案4 completed in %lld ms, result length=%zu", (long long)total_ms, result.length());
-    fileLog("nativeGenerateStream: 方案4 result first 200 chars: '%.200s'", result.c_str());
-
-    // 如果方案4有非空结果且不是全F，直接返回（非流式）
-    if (!result.empty() && result.find("FFFF") == std::string::npos) {
-        fileLog("nativeGenerateStream: 方案4 SUCCESS - got meaningful output!");
-        auto* ctx = s->llm->getContext();
-        s->generated_tokens = ctx ? ctx->gen_seq_len : result.length() / 4;
-        s->prefill_ms = ctx ? ctx->prefill_us / 1000 : total_ms * 30 / 100;
-        s->decode_ms = ctx ? ctx->decode_us / 1000 : total_ms * 70 / 100;
-        return env->NewStringUTF(result.c_str());
+    std::vector<int> input_ids = s->llm->tokenizer_encode(prompt);
+    fileLog("nativeGenerateStream: tokenized to %zu tokens", input_ids.size());
+    if (!input_ids.empty()) {
+        fileLog("nativeGenerateStream: first 20 token IDs: %s",
+            [&]() { std::string ids; for (size_t i = 0; i < std::min(input_ids.size(), (size_t)20); i++) ids += std::to_string(input_ids[i]) + ","; return ids; }().c_str());
     }
-    fileLog("nativeGenerateStream: 方案4 failed, result empty or all F, falling through to 方案3");
 
-    // ===== 方案3：回退 - 自己拼ChatML + tokenizer_encode + response(vector<int>) =====
-    // 完全绕开MNN模板系统，避免applyTemplate对单角色prompt_template的错误处理
-    std::string chatml = buildChatMLPrompt(prompt);
-    fileLog("nativeGenerateStream: 方案3 - ChatML prompt (len=%zu): %.300s", chatml.length(), chatml.c_str());
-    auto token_ids = s->llm->tokenizer_encode(chatml);
-    fileLog("nativeGenerateStream: tokenized to %zu tokens", token_ids.size());
-    // Log first 20 token IDs for debugging
-    std::string tidStr;
-    for (size_t i = 0; i < token_ids.size() && i < 20; i++) {
-        if (i > 0) tidStr += ",";
-        tidStr += std::to_string(token_ids[i]);
-    }
-    fileLog("nativeGenerateStream: first token IDs: [%s]", tidStr.c_str());
     // 重要：end_with 必须设为 "<|im_end|>" 而非 nullptr
     // MNN 内部 nullptr 默认用 "\n" 作为停止符，会导致提前终止
     s->stop_flag.store(false, std::memory_order_relaxed);
@@ -605,18 +501,18 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(J
     std::string accumulated;
     int tokenCount = 0;
     JNIEnv* cbEnv = callbackEnv;
-    // Bug2+3修复: 添加thinking过滤状态变量
+    // 添加thinking过滤状态变量
     bool inThinkingBlock = false;
     std::string thinkingBuffer;
     
     Utf8StreamProcessor utf8Processor([&](const std::string& chars) {
         std::string filtered = chars;
         
-        // Bug2+3修复: 过滤<|im_end|>
+        // 过滤<|im_end|>
         size_t pos = filtered.find("<|im_end|>");
         if (pos != std::string::npos) filtered = filtered.substr(0, pos);
         
-        // Bug2+3修复: 过滤thinking标签
+        // 过滤thinking标签
         // 处理<think>开始标签
         size_t thinkStart = filtered.find("<think>");
         while (thinkStart != std::string::npos) {
@@ -680,7 +576,7 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(J
             }
         }
         
-        // Bug2+3修复: 过滤英文思考输出
+        // 过滤英文思考输出
         if (!filtered.empty()) {
             // 检查是否包含英文思考前缀
             std::vector<std::string> thinking_prefixes = {
@@ -708,18 +604,20 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(J
             }
         }
     });
+
     LlmStreamBuffer stream_buffer([&](const char* str, size_t len) {
         utf8Processor.processStream(str, len);
     });
     std::ostream output_ostream(&stream_buffer);
     
+    auto t0 = std::chrono::steady_clock::now();
     fileLog("nativeGenerateStream: calling response(vector<int>) with end_with=\"<|im_end|>\"");
-    t0 = std::chrono::steady_clock::now();
-    s->llm->response(token_ids, &output_ostream, "<|im_end|>", static_cast<int>(maxTokens));
+    s->llm->response(input_ids, &output_ostream, "<|im_end|>", static_cast<int>(maxTokens));
     utf8Processor.flush();
+
     if (threadAttached && s->javaVM) s->javaVM->DetachCurrentThread();
-    t1 = std::chrono::steady_clock::now();
-    total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+    auto t1 = std::chrono::steady_clock::now();
+    auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
     auto* context = s->llm->getContext();
     s->generated_tokens = context ? context->gen_seq_len : tokenCount;
     s->prefill_ms = context ? context->prefill_us / 1000 : total_ms * 30 / 100;
@@ -786,7 +684,6 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_initNativeCallback(JNI
     }
 }
 } // extern "C"
-
 // ====== @JvmStatic 别名 ======
 // Kotlin 中带 @JvmStatic 注解的 companion object 方法，JVM 查找时不带 _00024Companion 后缀
 // 因此需要提供不带后缀的 JNI 入口，转发到带后缀的实际实现
