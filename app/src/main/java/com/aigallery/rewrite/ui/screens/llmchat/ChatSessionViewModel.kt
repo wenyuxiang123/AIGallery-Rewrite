@@ -301,8 +301,8 @@ class ChatSessionViewModel @Inject constructor(
                 modelTier = _state.value.selectedTier.name
             )
             
-            // 构建上下文
-            val fullPrompt = contextManager.buildContext(
+            // 构建上下文（JSON格式，传给MNN response(ChatMessages)）
+            val fullPrompt = contextManager.buildChatHistoryJson(
                 systemPrompt = systemPrompt,
                 memories = memoryStrings,
                 history = domainMessages,
@@ -313,7 +313,7 @@ class ChatSessionViewModel @Inject constructor(
             val compressedPrompt = if (memoryCompressor.needsCompression(domainMessages, 1500)) {
                 val compressed = memoryCompressor.compress(domainMessages)
                 // 重新构建带压缩内容的 prompt
-                contextManager.buildContext(
+                contextManager.buildChatHistoryJson(
                     systemPrompt = systemPrompt + "\n\n[压缩摘要] $compressed",
                     memories = emptyList(),
                     history = domainMessages.takeLast(4),
