@@ -183,4 +183,80 @@ class ContextManager(
         
         return sb.toString()
     }
+
+    /**
+     * Build chat history as JSON array for MNN response(ChatMessages) API
+     * Returns: [{"role":"system","content":"..."},{"role":"user","content":"..."},...]
+     * 
+     * This replaces the ChatML text format with structured role-content pairs,
+     * letting MNN's internal apply_chat_template handle formatting and tokenization.
+     * This is the same approach as MNN's official MnnLlmChat demo.
+     */
+    fun buildChatHistoryJson(
+        systemPrompt: String,
+        memories: List<String>,
+        history: List<ChatMessage>,
+        currentUserMessage: String
+    ): String {
+        val entries = StringBuilder()
+        entries.append("[")
+        
+        var first = true
+        
+        // System prompt (includes GSSC + memories)
+        val systemContent = buildString {
+            append(systemPrompt)
+            if (memories.isNotEmpty()) {
+                val memContent = memories.joinToString("\n") { "- $it" }
+                if (systemPrompt.isNotEmpty()) {
+                    append("\n\n【记忆】\n$memContent")
+                } else {
+                    append("【记忆】\n$memContent")
+                }
+            }
+        }
+        
+        if (systemContent.isNotEmpty()) {
+            entries.append("{\"role\":\"system\",\"content\":")
+            entries.append(jsonEscape(systemContent))
+            entries.append("}")
+            first = false
+        }
+        
+        // History messages
+        for (msg in history) {
+            val role = when (msg.role) {
+                MessageRole.USER -> "user"
+                MessageRole.ASSISTANT -> "assistant"
+                else -> continue
+            }
+            if (!first) entries.append(",")
+            entries.append("{\"role\":\"$role\",\"content\":")
+            entries.append(jsonEscape(msg.content.take(maxMessageChars)))
+            entries.append("}")
+            first = false
+        }
+        
+        // Current user message
+        if (!first) entries.append(",")
+        entries.append("{\"role\":\"user\",\"content\":")
+        entries.append(jsonEscape(currentUserMessage))
+        entries.append("}")
+        
+        entries.append("]")
+        return entries.toString()
+    }
+    
+    /**
+     * Escape a string for JSON value (adds surrounding quotes)
+     */
+    private fun jsonEscape(s: String): String {
+        val escaped = s.replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+        return "\"$escaped\""
+    }
+
 }
