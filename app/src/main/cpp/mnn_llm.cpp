@@ -560,7 +560,7 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
                 "eos": "<|im_end|>"
             }
         })";
-        s->llm->set_config(jinja_config);
+        llm->set_config(jinja_config);
         fileLog("nativeLoadModel: set Jinja chat template for Qwen2.5 ChatML");
         fileLog("nativeLoadModel: SUCCESS - model=%s", mn.c_str());
         return JNI_TRUE;
