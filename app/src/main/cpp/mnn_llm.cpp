@@ -184,6 +184,108 @@ static std::vector<int> encodePromptWithSpecialTokens(MNN::Transformer::Llm* llm
 }
 
 
+// ====== Chat History JSON Parser ======
+// Parses JSON format: [{"role":"system","content":"..."},{"role":"user","content":"..."},...]
+// Used by nativeGenerateStream to pass chat history to MNN's response(ChatMessages) method
+// This is the same approach as MNN's official MnnLlmChat demo
+using ChatHistory = std::vector<std::pair<std::string, std::string>>;
+
+static ChatHistory parseChatHistoryJson(const std::string& json) {
+    ChatHistory result;
+    
+    size_t pos = json.find('[');
+    if (pos == std::string::npos) return result;
+    pos++;
+    
+    while (pos < json.size()) {
+        // Skip whitespace
+        while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\n' || json[pos] == '\r' || json[pos] == '\t')) pos++;
+        if (pos >= json.size() || json[pos] == ']') break;
+        if (json[pos] == ',') { pos++; continue; }
+        if (json[pos] != '{') { pos++; continue; }
+        
+        pos++; // skip {
+        std::string role, content;
+        
+        while (pos < json.size() && json[pos] != '}') {
+            // Skip whitespace
+            while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\n' || json[pos] == '\r' || json[pos] == '\t')) pos++;
+            if (pos >= json.size()) break;
+            if (json[pos] == ',') { pos++; continue; }
+            if (json[pos] != '"') { pos++; continue; }
+            
+            // Parse key
+            size_t keyStart = pos + 1;
+            size_t keyEnd = json.find('"', keyStart);
+            if (keyEnd == std::string::npos) break;
+            std::string key = json.substr(keyStart, keyEnd - keyStart);
+            pos = keyEnd + 1;
+            
+            // Skip : and whitespace
+            while (pos < json.size() && (json[pos] == ' ' || json[pos] == ':' || json[pos] == '\t')) pos++;
+            
+            // Parse value string
+            if (pos >= json.size() || json[pos] != '"') break;
+            pos++; // skip opening "
+            std::string value;
+            while (pos < json.size() && json[pos] != '"') {
+                if (json[pos] == '\\' && pos + 1 < json.size()) {
+                    char next = json[pos + 1];
+                    if (next == '"') { value += '"'; pos += 2; }
+                    else if (next == '\\') { value += '\\'; pos += 2; }
+                    else if (next == 'n') { value += '\n'; pos += 2; }
+                    else if (next == 't') { value += '\t'; pos += 2; }
+                    else if (next == 'r') { value += '\r'; pos += 2; }
+                    else if (next == '/') { value += '/'; pos += 2; }
+                    else if (next == 'u') {
+                        // Unicode escape: \uXXXX -> UTF-8
+                        pos += 2;
+                        if (pos + 4 <= json.size()) {
+                            int codepoint = 0;
+                            for (int i = 0; i < 4; i++) {
+                                char c = json[pos + i];
+                                codepoint = codepoint * 16;
+                                if (c >= '0' && c <= '9') codepoint += c - '0';
+                                else if (c >= 'a' && c <= 'f') codepoint += c - 'a' + 10;
+                                else if (c >= 'A' && c <= 'F') codepoint += c - 'A' + 10;
+                            }
+                            // UTF-8 encode BMP codepoint
+                            if (codepoint < 0x80) {
+                                value += static_cast<char>(codepoint);
+                            } else if (codepoint < 0x800) {
+                                value += static_cast<char>(0xC0 | (codepoint >> 6));
+                                value += static_cast<char>(0x80 | (codepoint & 0x3F));
+                            } else {
+                                value += static_cast<char>(0xE0 | (codepoint >> 12));
+                                value += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+                                value += static_cast<char>(0x80 | (codepoint & 0x3F));
+                            }
+                            pos += 4;
+                        }
+                    }
+                    else { value += json[pos]; pos++; }
+                } else {
+                    value += json[pos];
+                    pos++;
+                }
+            }
+            if (pos < json.size()) pos++; // skip closing "
+            
+            if (key == "role") role = value;
+            else if (key == "content") content = value;
+        }
+        
+        if (pos < json.size() && json[pos] == '}') pos++;
+        
+        if (!role.empty()) {
+            result.emplace_back(role, content);
+            fileLog("parseChatHistoryJson: role='%s', content_len=%zu", role.c_str(), content.size());
+        }
+    }
+    
+    return result;
+}
+
 namespace {
 struct LlmSession {
     MNN::Transformer::Llm* llm = nullptr;
@@ -450,8 +552,16 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeLoadModel(JNIEnv
             fileLog("nativeLoadModel: context info - prompt_len=%d, gen_seq_len=%d, all_seq_len=%d, status=%d",
                  ctx->prompt_len, ctx->gen_seq_len, ctx->all_seq_len, (int)ctx->status);
         }
-        // 直接 tokenize + response(vector<int>)，Kotlin 层已处理 prompt 格式化
-        fileLog("nativeLoadModel: direct tokenize mode (no MNN template)");
+        // 设置 Jinja chat template，让 MNN 的 response(ChatMessages) 能正确格式化 Qwen2.5 ChatML
+        // 这与 MNN 官方 MnnLlmChat Demo 使用相同的方式
+        std::string jinja_config = R"({
+            "jinja": {
+                "chat_template": "{%- for message in messages %}<|im_start|>{{ message.role }}\n{{ message.content }}<|im_end|>\n{%- endfor %}{%- if add_generation_prompt %}<|im_start|>assistant\n{%- endif %}",
+                "eos": "<|im_end|>"
+            }
+        })";
+        s->llm->set_config(jinja_config);
+        fileLog("nativeLoadModel: set Jinja chat template for Qwen2.5 ChatML");
         fileLog("nativeLoadModel: SUCCESS - model=%s", mn.c_str());
         return JNI_TRUE;
     }
@@ -495,22 +605,22 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerate(JNIEnv*
         + ",\"repetition_penalty\":1.05}";
     s->llm->set_config(cfg);
 
-    // ===== 直接 tokenize + response(vector<int>) =====
-    // Kotlin 层已通过 GSSC prompt builder 格式化完整的 prompt（含系统提示、历史等）
-    // C++ 层不再套任何模板，直接 tokenize 后推理
-    fileLog("nativeGenerate: encode with special token handling (im_start=151644, im_end=151645)");
-
-    std::vector<int> input_ids = encodePromptWithSpecialTokens(s->llm, prompt);
-    fileLog("nativeGenerate: tokenized to %zu tokens", input_ids.size());
-    if (!input_ids.empty()) {
-        fileLog("nativeGenerate: first 20 token IDs: %s", 
-            [&]() { std::string ids; for (size_t i = 0; i < std::min(input_ids.size(), (size_t)20); i++) ids += std::to_string(input_ids[i]) + ","; return ids; }().c_str());
-    }
-
+    // ===== 检测输入格式：JSON 对话历史 vs 纯文本 ChatML =====
+    bool isJsonHistory = (!prompt.empty() && prompt[0] == '[');
+    
     std::ostringstream result_oss;
     auto t0 = std::chrono::steady_clock::now();
-
-    s->llm->response(input_ids, &result_oss, "<|im_end|>", static_cast<int>(maxTokens));
+    
+    if (isJsonHistory) {
+        ChatHistory chat_history_sync = parseChatHistoryJson(prompt);
+        fileLog("nativeGenerate: JSON chat history parsed, %zu entries", chat_history_sync.size());
+        s->llm->response(chat_history_sync, &result_oss, "<|im_end|>", static_cast<int>(maxTokens));
+    } else {
+        fileLog("nativeGenerate: plain text, encode with special token handling");
+        std::vector<int> input_ids = encodePromptWithSpecialTokens(s->llm, prompt);
+        fileLog("nativeGenerate: tokenized to %zu tokens", input_ids.size());
+        s->llm->response(input_ids, &result_oss, "<|im_end|>", static_cast<int>(maxTokens));
+    }
 
     auto t1 = std::chrono::steady_clock::now();
     auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
@@ -545,16 +655,26 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(J
         + ",\"repetition_penalty\":1.05}";
     s->llm->set_config(cfg);
 
-    // ===== 直接 tokenize + response(vector<int>) =====
-    // Kotlin 层已通过 GSSC prompt builder 格式化完整的 prompt（含系统提示、历史等）
-    // C++ 层不再套任何模板，直接 tokenize 后推理
-    fileLog("nativeGenerateStream: encode with special token handling (im_start=151644, im_end=151645)");
-
-    std::vector<int> input_ids = encodePromptWithSpecialTokens(s->llm, prompt);
-    fileLog("nativeGenerateStream: tokenized to %zu tokens", input_ids.size());
-    if (!input_ids.empty()) {
-        fileLog("nativeGenerateStream: first 20 token IDs: %s",
-            [&]() { std::string ids; for (size_t i = 0; i < std::min(input_ids.size(), (size_t)20); i++) ids += std::to_string(input_ids[i]) + ","; return ids; }().c_str());
+    // ===== 检测输入格式：JSON 对话历史 vs 纯文本 ChatML =====
+    bool isJsonHistory = (!prompt.empty() && prompt[0] == '[');
+    
+    ChatHistory chat_history;
+    std::vector<int> input_ids;
+    
+    if (isJsonHistory) {
+        // JSON 格式：解析为 role-content 对话历史，使用 MNN response(ChatMessages) 方法
+        // 这与 MNN 官方 MnnLlmChat Demo 完全一致
+        chat_history = parseChatHistoryJson(prompt);
+        fileLog("nativeGenerateStream: JSON chat history parsed, %zu entries", chat_history.size());
+    } else {
+        // 纯文本回退：手动 tokenize + response(vector<int>)
+        fileLog("nativeGenerateStream: plain text, encode with special token handling");
+        input_ids = encodePromptWithSpecialTokens(s->llm, prompt);
+        fileLog("nativeGenerateStream: tokenized to %zu tokens", input_ids.size());
+        if (!input_ids.empty()) {
+            fileLog("nativeGenerateStream: first 20 token IDs: %s",
+                [&]() { std::string ids; for (size_t i = 0; i < std::min(input_ids.size(), (size_t)20); i++) ids += std::to_string(input_ids[i]) + ","; return ids; }().c_str());
+        }
     }
 
     // 重要：end_with 必须设为 "<|im_end|>" 而非 nullptr
@@ -682,8 +802,16 @@ Java_com_localai_server_engine_LlamaEngine_00024Companion_nativeGenerateStream(J
     std::ostream output_ostream(&stream_buffer);
     
     auto t0 = std::chrono::steady_clock::now();
-    fileLog("nativeGenerateStream: calling response(vector<int>) with end_with=\"<|im_end|>\"");
-    s->llm->response(input_ids, &output_ostream, "<|im_end|>", static_cast<int>(maxTokens));
+    if (isJsonHistory && !chat_history.empty()) {
+        // 使用 MNN 官方 response(ChatMessages) 方法
+        // MNN 内部会用 Jinja 模板格式化 prompt，然后正确 tokenize 和 detokenize
+        fileLog("nativeGenerateStream: calling response(ChatMessages) with %zu entries, end_with=\"<|im_end|>\"", chat_history.size());
+        s->llm->response(chat_history, &output_ostream, "<|im_end|>", static_cast<int>(maxTokens));
+    } else {
+        // 回退：手动 tokenize + response(vector<int>)
+        fileLog("nativeGenerateStream: calling response(vector<int>) with %zu tokens, end_with=\"<|im_end|>\"", input_ids.size());
+        s->llm->response(input_ids, &output_ostream, "<|im_end|>", static_cast<int>(maxTokens));
+    }
     utf8Processor.flush();
 
     if (threadAttached && s->javaVM) s->javaVM->DetachCurrentThread();
